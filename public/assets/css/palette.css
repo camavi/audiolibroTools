@@ -1,0 +1,203 @@
+/* =========================================================
+   AUDIOBOOK TOOL - DESIGN TOKENS
+   Derivato da /Users/cmalleux/Sites/audiolibroTools_old/palette.css
+   ========================================================= */
+
+:root {
+  /* BODY / BACKGROUND */
+  --body-bg: #020b1c;
+  --body-bg-secondary: #06152d;
+  --body-bg-tertiary: #0a1c38;
+
+  --body-gradient:
+    radial-gradient(circle at 65% 25%, rgba(27, 99, 190, 0.20), transparent 34%),
+    radial-gradient(circle at 30% 35%, rgba(115, 52, 235, 0.12), transparent 28%),
+    linear-gradient(135deg, #020b1c 0%, #06152d 48%, #040b1c 100%);
+
+  /* SURFACES */
+  --surface-1: #08182f;
+  --surface-2: #0c203d;
+  --surface-3: #102847;
+  --surface-4: #162f52;
+  --surface-soft: rgba(13, 34, 64, 0.78);
+  --surface-glass: rgba(10, 27, 53, 0.72);
+  --surface-hover: rgba(24, 56, 96, 0.92);
+  --surface-active: rgba(35, 72, 119, 0.92);
+
+  /* BORDERS */
+  --border-color: #203b60;
+  --border-color-soft: rgba(92, 128, 178, 0.22);
+  --border-color-hover: #4d6f9e;
+  --border-color-focus: #7c4dff;
+
+  /* TEXT */
+  --text-primary: #f7f9ff;
+  --text-secondary: #c1cbe0;
+  --text-muted: #7f8da8;
+  --text-disabled: #53617a;
+  --text-inverse: #ffffff;
+  --text-link: #73a7ff;
+  --text-link-hover: #a4c4ff;
+
+  /* BRAND */
+  --brand-primary: #7c3aed;
+  --brand-primary-hover: #8b5cf6;
+  --brand-primary-active: #6d28d9;
+  --brand-secondary: #2563eb;
+  --brand-secondary-hover: #3b82f6;
+  --brand-pink: #ec4899;
+  --brand-cyan: #38bdf8;
+  --brand-orange: #f97316;
+  --brand-green: #22c55e;
+  --brand-yellow: #facc15;
+
+  --brand-gradient:
+    linear-gradient(135deg, #7c3aed 0%, #8b5cf6 45%, #ec4899 100%);
+  --brand-gradient-hover:
+    linear-gradient(135deg, #8b5cf6 0%, #9d6cff 45%, #f05ca8 100%);
+  --audio-gradient:
+    linear-gradient(135deg, #f97316 0%, #fb923c 100%);
+  --translation-gradient:
+    linear-gradient(135deg, #14b8a6 0%, #38bdf8 100%);
+
+  /* STATUS */
+  --success: #22c55e;
+  --success-bg: rgba(34, 197, 94, 0.14);
+  --success-border: rgba(34, 197, 94, 0.32);
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.14);
+  --warning-border: rgba(245, 158, 11, 0.32);
+  --danger: #ef4444;
+  --danger-bg: rgba(239, 68, 68, 0.14);
+  --danger-border: rgba(239, 68, 68, 0.32);
+  --info: #38bdf8;
+  --info-bg: rgba(56, 189, 248, 0.14);
+  --info-border: rgba(56, 189, 248, 0.32);
+
+  /* FORM ELEMENTS */
+  --input-bg: #0a1b35;
+  --input-bg-hover: #0d2241;
+  --input-bg-disabled: #071426;
+  --input-border: #294567;
+  --input-border-hover: #41658e;
+  --input-border-focus: #8b5cf6;
+  --input-text: #f7f9ff;
+  --input-placeholder: #6f7f9c;
+  --select-option-bg: #0d203d;
+  --select-option-text: #f7f9ff;
+
+  /* BUTTONS */
+  --btn-primary-bg: var(--brand-gradient);
+  --btn-primary-bg-hover: var(--brand-gradient-hover);
+  --btn-primary-text: #ffffff;
+  --btn-primary-border: transparent;
+  --btn-secondary-bg: #102442;
+  --btn-secondary-bg-hover: #183253;
+  --btn-secondary-text: #ffffff;
+  --btn-secondary-border: #385475;
+  --btn-ghost-bg: transparent;
+  --btn-ghost-bg-hover: rgba(124, 58, 237, 0.12);
+  --btn-ghost-text: #c8b7ff;
+  --btn-ghost-border: rgba(139, 92, 246, 0.45);
+  --btn-danger-bg: #dc2626;
+  --btn-danger-bg-hover: #ef4444;
+  --btn-danger-text: #ffffff;
+
+  /* CARDS / PANELS */
+  --card-bg: linear-gradient(145deg, rgba(14, 35, 66, 0.96), rgba(7, 24, 47, 0.96));
+  --card-bg-hover: linear-gradient(145deg, rgba(19, 45, 83, 0.98), rgba(10, 31, 59, 0.98));
+  --card-border: rgba(75, 111, 157, 0.26);
+  --card-border-hover: rgba(139, 92, 246, 0.48);
+
+  /* SHADOWS */
+  --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.18);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.42);
+  --shadow-primary: 0 10px 30px rgba(124, 58, 237, 0.35);
+  --shadow-focus: 0 0 0 4px rgba(139, 92, 246, 0.18);
+  --glow-purple: 0 0 30px rgba(124, 58, 237, 0.28);
+  --glow-blue: 0 0 30px rgba(37, 99, 235, 0.24);
+
+  /* RADIUS */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  /* SPACING */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* TYPOGRAPHY */
+  --font-body:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+
+  /* TRANSITIONS */
+  --transition-fast: 140ms ease;
+  --transition-base: 220ms ease;
+  --transition-slow: 360ms ease;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text-primary);
+  background: var(--body-gradient);
+  font-family: var(--font-body);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0;
+  color: var(--text-primary);
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+p {
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+a {
+  color: var(--text-link);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--text-link-hover);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+.text-gradient {
+  color: transparent;
+  background: var(--brand-gradient);
+  background-clip: text;
+  -webkit-background-clip: text;
+}
