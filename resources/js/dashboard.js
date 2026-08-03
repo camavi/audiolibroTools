@@ -81,8 +81,6 @@ function mountDashboard() {
           title: 'Audiobook Tools',
           subtitle: 'Editor',
           right: _.div({ style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
-            _.Chip({ color: "success", outline: true, size: "sm" }, "SLA 99.1%"),
-            _.Btn({ size: "sm", color: "primary" }, "Nuovo report")
           )
         }),
         tagPage: true,
