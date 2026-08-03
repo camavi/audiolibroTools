@@ -22,10 +22,10 @@
 
 ## 3. Libri
 
-- Creazione libro vuoto.
+- Creazione libro vuoto: primo flusso dashboard avviato.
 - Upload libro.
 - Metadati libro.
-- Categorie.
+- Categorie: tabella, seed e API iniziali avviati.
 - Copertina.
 - Stato progetto.
 - Lista libri.

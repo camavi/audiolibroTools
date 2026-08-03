@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\DashboardBookController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/project-plan', function () {
@@ -34,6 +35,11 @@ Route::get('/project-plan/file/{path}', function (string $path) {
 Route::get('/dashboard', function () {
     return view('dashboard');
 })->name('dashboard');
+
+Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
+    Route::get('/book-categories', [DashboardBookController::class, 'categories'])->name('book-categories');
+    Route::post('/books', [DashboardBookController::class, 'store'])->name('books.store');
+});
 
 Route::get('/{locale?}', function (?string $locale = null) {
     $supportedLocales = array_keys(config('audiobook.locales'));

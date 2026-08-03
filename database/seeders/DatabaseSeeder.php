@@ -2,9 +2,11 @@
 
 namespace Database\Seeders;
 
+use App\Models\BookCategory;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Str;
 
 class DatabaseSeeder extends Seeder
 {
@@ -17,9 +19,26 @@ class DatabaseSeeder extends Seeder
     {
         // User::factory(10)->create();
 
-        User::factory()->create([
-            'name' => 'Test User',
+        User::query()->firstOrCreate([
             'email' => 'test@example.com',
+        ], [
+            'name' => 'Test User',
+            'password' => bcrypt('password'),
         ]);
+
+        collect([
+            'Fiction',
+            'Non-fiction',
+            'Biography',
+            'Business',
+            'Education',
+            'Fantasy',
+            'Science Fiction',
+            'Self Help',
+        ])->each(fn (string $name) => BookCategory::query()->firstOrCreate([
+            'slug' => Str::slug($name),
+        ], [
+            'name' => $name,
+        ]));
     }
 }

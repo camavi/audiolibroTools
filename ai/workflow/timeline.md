@@ -33,7 +33,7 @@ Obiettivi:
 
 ## Fase 2 - Database e Dominio
 
-Stato: da fare.
+Stato: in corso.
 
 Obiettivi:
 
@@ -45,13 +45,13 @@ Obiettivi:
 
 ## Fase 3 - Dashboard e Libri
 
-Stato: da fare.
+Stato: in corso.
 
 Obiettivi:
 
 - dashboard utente CMSwift;
 - lista libri;
-- creazione libro;
+- creazione libro: primo flusso `New book` / `Write book` avviato;
 - upload libro;
 - pannello libro;
 - metadati e copertina.

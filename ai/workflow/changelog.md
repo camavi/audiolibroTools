@@ -21,3 +21,9 @@
 - Aggiunto uso Google Material Symbols Rounded per le icone.
 - Pulito il hero: rimossa la ricostruzione HTML/CSS del mockup e lasciata solo immagine `public/assets/images/hero-audiobook-tool.png`.
 - Riorganizzata documentazione AI: `ai/ai.md` e' ora indice, i dettagli sono in file separati.
+
+## 2026-08-03
+
+- Avviata dashboard CMSwift con prima pagina menu `New book`.
+- Aggiunto flusso frontend CMSwift per scelta `Write book` / `Upload book` e form `Write book`.
+- Aggiunti backend Laravel, migrazioni, modelli e test per categorie libro e creazione libro vuoto.
