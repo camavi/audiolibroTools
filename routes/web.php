@@ -34,12 +34,14 @@ Route::get('/project-plan/file/{path}', function (string $path) {
 
 Route::get('/dashboard', function () {
     return view('dashboard');
-})->name('dashboard');
-
+})->where('any', '.*');
 Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::get('/book-categories', [DashboardBookController::class, 'categories'])->name('book-categories');
     Route::post('/books', [DashboardBookController::class, 'store'])->name('books.store');
 });
+Route::get('/dashboard/{any?}', function () {
+    return view('dashboard');
+})->where('any', '.*');
 
 Route::get('/{locale?}', function (?string $locale = null) {
     $supportedLocales = array_keys(config('audiobook.locales'));

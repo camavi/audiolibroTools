@@ -1,6 +1,6 @@
 import 'cmswift';
 
-const _ = window._;
+let currentLayout = null;
 const currentView = _.rod('new-book');
 const categoryOptions = _.rod([]);
 const loadingCategories = _.rod(false);
@@ -18,7 +18,7 @@ const navGroups = [
         icon: 'menu_book',
         expanded: true,
         items: [
-            { label: 'New book', key: 'new-book', icon: 'add' },
+            { label: 'New book', key: 'new-book', icon: 'add', link: '/dashboard/new-book' },
             { label: 'List of books', key: 'books-list', icon: 'format_list_bulleted' },
         ],
     },
@@ -174,6 +174,7 @@ function choiceCard({ icon, title, subtitle, action, disabled = false }) {
 }
 
 function newBookStart() {
+    loadCategories();
     return [
         _.Card({
             title: 'Choose how to start',
@@ -185,8 +186,19 @@ function newBookStart() {
                         title: 'Write book',
                         subtitle: 'Create an empty book with title, description and categories.',
                         action: () => {
-                            currentView.value = 'new-book-write';
-                            loadCategories();
+                            console.log('Write book');
+                            _.Dialog({
+                                size: "lg",
+                                stickyActions: true,
+                                slots: {
+                                    header: _.div(
+                                        _.h3('Create a new book'),
+                                        _.span({ class: 'text-muted' }, 'A blank book follows the old Write book flow; upload will handle manuscript import.'),
+                                    ),
+                                    content: () => writeBookForm(),
+                                    footer: ({ close }) => _.Row({ gap: "md" }, _.Btn({ color: "secondary", onClick: close }, "Close"), _.Btn({ color: "primary", onClick: close }, "Create book")),
+                                }
+                            }).open();
                         },
                     }),
                 ),
@@ -215,115 +227,56 @@ function statusAlert() {
 }
 
 function writeBookForm() {
-    const book = createdBook.value;
+    return _.form({
+        onSubmit: (event) => {
+            event.preventDefault();
+            createBook();
+        },
+    },
+        _.Row({ gap: 'md' },
+            _.Input({
+                class: 'cms-col-24',
+                label: 'Title',
+                icon: 'title',
+                clearable: true,
+                model: title,
+            }),
+            _.Select({
+                class: 'cms-col-24',
+                label: () => loadingCategories.value ? 'Loading categories...' : 'Categories',
+                icon: 'category',
+                multiple: true,
+                filterable: true,
+                model: categories,
+                options: () => categoryOptions.value,
+            }),
+            _.Textarea({
+                class: 'cms-col-24',
+                label: 'Description',
+                icon: 'notes',
+                rows: 5,
+                model: description,
+            }),
+        )
+    );
 
-    return [
-        statusAlert(),
-        _.Card({
-            title: 'Write book',
-            subtitle: 'Create the empty book record and prepare its editing file.',
-            body: _.form({
-                onSubmit: (event) => {
-                    event.preventDefault();
-                    createBook();
-                },
-            },
-                _.Input({
-                    label: 'Title',
-                    icon: 'title',
-                    clearable: true,
-                    model: title,
-                }),
-                _.Select({
-                    label: () => loadingCategories.value ? 'Loading categories...' : 'Categories',
-                    icon: 'category',
-                    multiple: true,
-                    filterable: true,
-                    model: categories,
-                    options: () => categoryOptions.value,
-                }),
-                _.Textarea({
-                    label: 'Description',
-                    icon: 'notes',
-                    rows: 5,
-                    model: description,
-                }),
-                _.Toolbar({
-                    align: 'center',
-                    justify: 'space-between',
-                },
-                    _.Btn({
-                        type: 'button',
-                        icon: 'arrow_back',
-                        outline: true,
-                        onClick: () => {
-                            currentView.value = 'new-book';
-                            formStatus.value = null;
-                        },
-                    }, 'Back'),
-                    _.Btn({
-                        type: 'submit',
-                        color: 'primary',
-                        icon: 'add',
-                        loading: submittingBook.value,
-                    }, 'Create new book'),
-                ),
-            ),
-        }),
-        book ? _.Card({
-                icon: 'check_circle',
-                title: book.name,
-                subtitle: `Key book: ${book.key_book}`,
-                actions: _.Btn({
-                    icon: 'edit',
-                    color: 'primary',
-                    outline: true,
-                    disabled: true,
-                }, 'Editor page next'),
-            }) : null,
-    ];
 }
 
-function placeholderPage() {
-    const meta = pageMeta[currentView.value] || {
-        title: navGroups.flatMap((item) => item.items || item).find((item) => item.key === currentView.value)?.label || 'Dashboard',
-        subtitle: 'This dashboard page is not implemented yet.',
+function pageDashboard() {
+    return _.Card({
         icon: 'dashboard',
-    };
-
-    return [
-        _.EmptyState({
-            icon: meta.icon,
-            title: meta.title,
-            message: meta.subtitle,
-        }),
-    ];
-}
-
-function pageBody() {
-    if (currentView.value === 'new-book') return newBookStart();
-    if (currentView.value === 'new-book-write') return writeBookForm();
-    return placeholderPage();
-}
-
-function page() {
-    return _.Page({
-        icon: () => (pageMeta[currentView.value]?.icon || 'dashboard'),
-        title: () => (pageMeta[currentView.value]?.title || (currentView.value === 'new-book-write' ? 'Write book' : 'Dashboard')),
-        subtitle: () => (pageMeta[currentView.value]?.subtitle || 'Create a blank book with Laravel backend.'),
-        body: pageBody,
+        title: 'Dashboard',
+        subtitle: 'Create a blank book with Laravel backend.',
+        body: 'Welcome to Audiobook Tools editor dashboard.',
     });
 }
 
-function mountDashboard() {
-    const root = document.getElementById('dashboard-root');
-    if (!root || !_) return;
-
-    const layout = _.Layout({
+function mountDashboard(contentPage) {
+    currentLayout = _.Layout({
         header: _.Header({
-          left: false,
-          title: 'Audiobook Tools',
-          subtitle: 'Editor',
+            left: false,
+            title: 'Audiobook Tools',
+            subtitle: 'Editor',
         }),
         tagPage: true,
         disposition: 'classic',
@@ -337,13 +290,18 @@ function mountDashboard() {
         stickyAside: true,
         layoutBreakpoint: 760,
         aside,
-        page,
+        page: contentPage,
     });
 
-    _.mount(root, layout, { clear: true });
+    return currentLayout;
 }
 
-_.ready(() => {
-    loadCategories();
-    mountDashboard();
-});
+//const root = document.getElementById('dashboard-root');
+
+let contentPage = _.div({ class: "cmswift-route-outlet" });
+const layoutPage = mountDashboard(contentPage);
+_.mount("#dashboard-root", layoutPage);
+_.router.setOutlet(contentPage);
+_.router.add('/dashboard', pageDashboard);
+_.router.add('/dashboard/new-book', newBookStart);
+_.router.start();
