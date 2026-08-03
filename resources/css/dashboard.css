@@ -1,0 +1,7 @@
+@import 'cmswift/css/base.css';
+@import 'cmswift/css/ui.css';
+@import 'cmswift/css/responsive.css';
+body{
+    padding: 0;
+    margin: 0;
+}

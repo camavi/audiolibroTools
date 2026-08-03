@@ -31,6 +31,10 @@ Route::get('/project-plan/file/{path}', function (string $path) {
     ]);
 })->where('path', '.*')->name('project-plan.file');
 
+Route::get('/dashboard', function () {
+    return view('dashboard');
+})->name('dashboard');
+
 Route::get('/{locale?}', function (?string $locale = null) {
     $supportedLocales = array_keys(config('audiobook.locales'));
 

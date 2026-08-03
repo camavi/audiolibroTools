@@ -7,6 +7,10 @@ Non deve diventare un file enorme: i dettagli vanno nei file collegati sotto `ai
 
 Quando una sezione cresce oltre poche righe, va spostata in un file dedicato e linkata qui.
 
+Per tutta la dashboard, CMSwift e' il framework ufficiale: JS, layout, componenti UI, token CSS e temi devono partire da CMSwift. Nel JS della dashboard usare l'API tramite alias `_.` (`_.Layout`, `_.Icon`, `_.mount`, helper DOM, ecc.). CSS nativo del progetto e' ammesso solo per composizione specifica, branding Audiobook Tools o casi non coperti da CMSwift.
+
+Quando si usa una immagine come reference per la dashboard, copiarne solo la struttura richiesta. Non copiare colori, logo, stile visuale o dettagli grafici se non viene richiesto esplicitamente.
+
 ## Mappa Documenti
 
 - [Overview prodotto](project/overview.md)
@@ -22,8 +26,8 @@ Quando una sezione cresce oltre poche righe, va spostata in un file dedicato e l
 ## Stato Rapido
 
 - Backend: Laravel 13 creato.
-- Frontend: Node/Vite con CSS e JS nativi.
-- Dashboard: da integrare con CMSwift.
+- Frontend: Node/Vite.
+- Dashboard: da sviluppare con CMSwift come framework ufficiale.
 - Multilingua: configurazione iniziale `en` e `it`, lista locale completa in `config/audiobook.php`.
 - Palette globale: `public/assets/css/palette.css`.
 - Home: impostata sul mockup base; hero usa solo immagine `public/assets/images/hero-audiobook-tool.png`.
