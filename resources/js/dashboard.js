@@ -32,18 +32,6 @@ const navGroups = [
     { label: 'Logout', icon: 'logout' },
 ];
 
-function brandMark() {
-    return _.div(
-        _.div({  'aria-hidden': 'true' },
-            _.Icon({ name: 'headphones', size: 'xl' }),
-        ),
-        _.div(
-            _.span('Audiobook Tools'),
-            _.strong('Editor'),
-        ),
-    );
-}
-
 function navItem(item) {
     return _.div(
         _.Btn({ type: 'button' },
@@ -59,7 +47,6 @@ function navItem(item) {
 
 function aside() {
     return _.Drawer({
-        header: brandMark(),
         items: navGroups,
     },
     );
