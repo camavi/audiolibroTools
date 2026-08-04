@@ -67,6 +67,17 @@ async function createBook() {
         submittingBook.value = false;
     }
 }
+function statusAlert() {
+    const status = formStatus.value;
+    if (!status) return null;
+
+    return _.Alert({
+        type: status.type,
+        title: status.title,
+        message: status.message,
+    });
+}
+
 function writeBookForm(close) {
     return _.form({
         action: '#',
@@ -124,7 +135,7 @@ function choiceCard({ icon, title, subtitle, action, disabled = false }) {
     });
 }
 
-async function newBookStart() {
+export default function newBookStart() {
     loadCategories();
     return [
         _.Card({
@@ -164,4 +175,3 @@ async function newBookStart() {
         }),
     ];
 }
-

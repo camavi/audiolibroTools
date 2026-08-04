@@ -1,4 +1,5 @@
 import 'cmswift';
+import newBookStartPage from './dashboard/newBookStart.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
@@ -82,10 +83,8 @@ function statusAlert() {
         message: status.message,
     });
 }
-async function newBookStart() {
-    const writeBookForm = await import('./dashboard/newBookStart.js');
-    console.log(writeBookForm);
-    return writeBookForm;
+function newBookStart() {
+    return newBookStartPage;
 }
 
 function pageDashboard() {
