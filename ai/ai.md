@@ -11,6 +11,17 @@ Per tutta la dashboard, CMSwift e' il framework ufficiale: JS, layout, component
 
 Quando si usa una immagine come reference per la dashboard, copiarne solo la struttura richiesta. Non copiare colori, logo, stile visuale o dettagli grafici se non viene richiesto esplicitamente.
 
+## Regole Dashboard
+
+Prima di lavorare sulla dashboard leggere e seguire come base `resources/js/dashboard.js` e `resources/js/dashboard/newBookStart.js`.
+
+- `resources/js/dashboard.js` deve restare la shell principale: importa `cmswift`, monta `#dashboard-root`, crea `_.Layout`, gestisce drawer, header, outlet e routing con `_.router`.
+- Ogni pagina/feature della dashboard va in un file JS dedicato sotto `resources/js/dashboard/` ed esporta una funzione/componente, poi viene importata e registrata nella shell.
+- Usare CMSwift tramite alias globale `_` per layout, form, card, dialog, grid, input, select, button, alert, router, mount e stato reattivo con `_.rod`.
+- Non creare CSS custom per la dashboard se CMSwift copre il caso. Classi custom o CSS di progetto sono ammessi solo per composizione specifica, branding Audiobook Tools o casi non coperti dai componenti/token CMSwift.
+- Per chiamate backend usare `_.http.getJSON`, `_.http.postJSON` e gli helper HTTP CMSwift; evitare `fetch` diretto salvo motivo tecnico documentato nel codice.
+- I form devono gestire stato locale con `_.rod`, validazione minima lato client, stato loading/submitting, feedback tramite `_.Alert` e `try/catch/finally`.
+
 ## Mappa Documenti
 
 - [Overview prodotto](project/overview.md)

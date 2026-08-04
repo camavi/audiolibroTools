@@ -6,6 +6,7 @@ const currentView = _.rod('new-book');
 
 
 const navGroups = [
+    { label: 'Dashboard', key: 'dashboard', icon: 'dashboard', link: '/dashboard' },
     {
         label: 'My books',
         icon: 'menu_book',
@@ -68,7 +69,6 @@ function aside() {
         onSelect: (item) => {
             if (!item.key || item.items?.length) return;
             currentView.value = item.key;
-            if (item.key === 'new-book') loadCategories();
         },
     });
 }
