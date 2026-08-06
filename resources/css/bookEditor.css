@@ -1,0 +1,50 @@
+.at-page-bookEditor {
+    height: calc(100vh - 90px);
+    position: relative;
+}
+
+.at-page-bookEditor .at-content-editor {
+    width: 100%;
+    display: flex;
+    flex-wrap: nowrap;
+}
+
+.at-page-bookEditor .at-content-editor>div {
+    height: 100%;
+    border: 1px solid #e0e0e0;
+    box-sizing: border-box;
+    height: calc(100vh - 120px);
+}
+
+.at-content-editor .at-indexBook {
+    width: 300px;
+}
+
+.at-content-editor .at-content {
+    width: 100%;
+}
+
+.at-content-editor .at-navCommand {
+    width: 500px;
+}
+
+.at-page-bookEditor .at-bottomBar {
+    width: 100%;
+    position: absolute;
+    bottom: 0;
+}
+
+.at-topBar {
+    display: grid;
+    grid-template-columns: 45px 1fr 45px;
+    grid-template-rows: 1fr;
+    grid-column-gap: 10px;
+    grid-row-gap: 0px;
+    width: 100%;
+}
+
+.at-topBar-title {
+    padding: 5px 10px;
+    font-size: 16px;
+    text-align: center;
+}

@@ -3,10 +3,19 @@ const loadingCategories = _.rod(false);
 const createdBook = _.rod(null);
 const formStatus = _.rod(null);
 const submittingBook = _.rod(false);
+const loadingCreateBook = _.rod(false);
 
 const title = _.rod('');
 const description = _.rod('');
 const categories = _.rod([]);
+
+const uploadFile = _.Upload({
+    label: 'Upload book',
+    multiple: false,
+    model: 'upload',
+    accept: ".txt,.pdf/*",
+    uploadButton: false,
+});
 async function loadCategories() {
     if (loadingCategories.value || categoryOptions.value.length) return;
     loadingCategories.value = true;
@@ -45,6 +54,7 @@ async function createBook() {
 
     submittingBook.value = true;
     try {
+        loadingCreateBook.value = true;
         const payload = await _.http.postJSON('/dashboard/api/books', {
             title: title.value.trim(),
             description: description.value.trim(),
@@ -57,6 +67,8 @@ async function createBook() {
             title: 'Book created',
             message: `${createdBook.value.name} is ready for the editor workflow.`,
         };
+        // redirect to editor
+        _.router.navigate(`/dashboard/book/${createdBook.value.key_book}/edit`);
     } catch (error) {
         formStatus.value = {
             type: 'danger',
@@ -64,6 +76,7 @@ async function createBook() {
             message: error.message,
         };
     } finally {
+        loadingCreateBook.value = false;
         submittingBook.value = false;
     }
 }
@@ -79,6 +92,7 @@ function statusAlert() {
 }
 
 function writeBookForm(close) {
+
     return _.form({
         action: '#',
         method: 'post',
@@ -113,11 +127,28 @@ function writeBookForm(close) {
             }),
             _.div({ class: 'cms-col-24' }, () => formStatus.value?.message ? statusAlert() : null),
             _.div({ class: 'cms-col-24', align: 'right' },
-                _.Btn({ type: "button", class: 'cms-m-r-sm', color: "secondary", onClick: close }, "Close"), _.Btn({ type: "submit", color: "primary" }, "Create book")
+                _.Btn({ type: "button", class: 'cms-m-r-sm', color: "secondary", onClick: close }, "Close"), _.Btn({ type: "submit", color: "primary", loading: loadingCreateBook }, "Create book")
             )
         )
     );
 
+}
+function uploadBook(close) {
+    return _.form({
+        action: '#',
+        method: 'post',
+        onSubmit: (event) => {
+            event.preventDefault();
+        },
+    },
+        _.div(uploadFile),
+        _.Row({ gap: 'md' },
+            _.div({ class: 'cms-col-24' }, () => formStatus.value?.message ? statusAlert() : null),
+            _.div({ class: 'cms-col-24', align: 'right' },
+                _.Btn({ type: "button", class: 'cms-m-r-sm', color: "secondary", onClick: close }, "Close"), _.Btn({ type: "submit", color: "primary" }, "Upload book")
+            )
+        )
+    );
 }
 function choiceCard({ icon, title, subtitle, action, disabled = false }) {
     return _.Card({
@@ -148,7 +179,6 @@ export default function newBookStart() {
                         title: 'Write book',
                         subtitle: 'Create an empty book with title, description and categories.',
                         action: () => {
-                            console.log('Write book');
                             _.Dialog({
                                 size: "lg",
                                 stickyActions: true,
@@ -168,7 +198,19 @@ export default function newBookStart() {
                         icon: 'upload_file',
                         title: 'Upload book',
                         subtitle: 'Import a manuscript and prepare it for block editing.',
-                        disabled: true,
+                        action: () => {
+                            _.Dialog({
+                                size: "lg",
+                                stickyActions: true,
+                                slots: {
+                                    header: _.div(
+                                        _.h3('Upload a book'),
+                                        _.span({ class: 'text-muted' }, 'Import a manuscript and prepare it for block editing.'),
+                                    ),
+                                    content: ({ close }) => uploadBook(close),
+                                }
+                            }).open();
+                        },
                     }),
                 ),
             ),

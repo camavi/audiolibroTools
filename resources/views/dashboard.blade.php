@@ -31,7 +31,7 @@
             }
             };
         </script>
-        @vite(['resources/css/dashboard.css', 'resources/js/dashboard.js'])
+        @vite(['resources/css/dashboard.css', 'resources/css/bookEditor.css', 'resources/js/dashboard.js'])
     </head>
     <body>
         <div id="dashboard-root"></div>

@@ -1,5 +1,6 @@
 import 'cmswift';
-import newBookStartPage from './dashboard/newBookStart.js';
+import newBookStartPage from './dashboard/page/newBookStart.js';
+import bookEditorPage from './dashboard/page/bookEditor.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
@@ -86,6 +87,9 @@ function statusAlert() {
 function newBookStart() {
     return newBookStartPage;
 }
+function bookEditor() {
+    return bookEditorPage;
+}
 
 function pageDashboard() {
     return _.Card({
@@ -129,4 +133,5 @@ _.mount("#dashboard-root", layoutPage);
 _.router.setOutlet(contentPage);
 _.router.add('/dashboard', pageDashboard);
 _.router.add('/dashboard/new-book', newBookStart);
+_.router.add('/dashboard/book/:key_book/edit', bookEditor);
 _.router.start();
