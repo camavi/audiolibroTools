@@ -39,6 +39,10 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::get('/book-categories', [DashboardBookController::class, 'categories'])->name('book-categories');
     Route::post('/books', [DashboardBookController::class, 'store'])->name('books.store');
     Route::get('/books/{keyBook}/editor', [DashboardBookController::class, 'editor'])->name('books.editor');
+    Route::get('/books/{keyBook}/blocks/{blockUuid}/versions', [DashboardBookController::class, 'blockVersions'])->name('books.blocks.versions');
+    Route::get('/books/{keyBook}/blocks/{blockUuid}/reviews', [DashboardBookController::class, 'blockReviews'])->name('books.blocks.reviews');
+    Route::post('/books/{keyBook}/blocks/{blockUuid}/reviews', [DashboardBookController::class, 'storeBlockReview'])->name('books.blocks.reviews.store');
+    Route::patch('/books/{keyBook}/blocks/{blockUuid}/reviews/{review}', [DashboardBookController::class, 'updateBlockReview'])->name('books.blocks.reviews.update');
     Route::patch('/books/{keyBook}/blocks', [DashboardBookController::class, 'updateBlocks'])->name('books.blocks.update');
 });
 Route::get('/dashboard/{any?}', function () {

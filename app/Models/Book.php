@@ -29,4 +29,9 @@ class Book extends Model
     {
         return $this->hasMany(BookBlock::class)->orderBy('sort_order');
     }
+
+    public function blockReviews(): HasMany
+    {
+        return $this->hasMany(BookBlockReview::class);
+    }
 }

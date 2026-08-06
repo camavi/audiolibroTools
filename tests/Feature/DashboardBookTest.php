@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Book;
+use App\Models\BookBlockReview;
 use App\Models\BookCategory;
 use App\Services\BookBlockService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -256,6 +257,258 @@ class DashboardBookTest extends TestCase
         ]);
 
         $this->assertDatabaseCount('book_block_versions', 1);
+    }
+
+    public function test_dashboard_can_return_editor_block_versions(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $first = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('First paragraph.'),
+            'text_plain' => 'First paragraph.',
+        ]);
+
+        $second = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'base_version_id' => $first['version']->id,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Second paragraph.'),
+            'text_plain' => 'Second paragraph.',
+        ]);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/versions")
+            ->assertOk()
+            ->assertJsonPath('data.block.block_uuid', $blockUuid)
+            ->assertJsonPath('data.block.current_version_id', $second['version']->id)
+            ->assertJsonPath('data.versions.0.id', $second['version']->id)
+            ->assertJsonPath('data.versions.0.version_number', 2)
+            ->assertJsonPath('data.versions.0.is_current', true)
+            ->assertJsonPath('data.versions.1.id', $first['version']->id)
+            ->assertJsonPath('data.versions.1.version_number', 1)
+            ->assertJsonPath('data.versions.1.is_current', false);
+    }
+
+    public function test_dashboard_can_return_editor_block_reviews(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $first = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Original phrase.'),
+            'text_plain' => 'Original phrase.',
+        ]);
+
+        $second = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'base_version_id' => $first['version']->id,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Original phrase updated.'),
+            'text_plain' => 'Original phrase updated.',
+        ]);
+
+        BookBlockReview::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $second['block']->id,
+            'book_block_version_id' => $second['version']->id,
+            'type' => 'grammar',
+            'status' => 'draft',
+            'source' => 'ai',
+            'original_text' => 'Original phrase updated.',
+            'suggested_text' => 'Updated original phrase.',
+            'notes_json' => ['reason' => 'word order'],
+        ]);
+
+        BookBlockReview::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $second['block']->id,
+            'book_block_version_id' => $first['version']->id,
+            'type' => 'style',
+            'status' => 'stale',
+            'source' => 'ai',
+            'original_text' => 'Original phrase.',
+            'suggested_text' => 'Initial phrase.',
+        ]);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/reviews")
+            ->assertOk()
+            ->assertJsonPath('data.block.block_uuid', $blockUuid)
+            ->assertJsonPath('data.reviews.0.type', 'style')
+            ->assertJsonPath('data.reviews.0.status', 'stale')
+            ->assertJsonPath('data.reviews.0.is_current_version', false)
+            ->assertJsonPath('data.reviews.1.type', 'grammar')
+            ->assertJsonPath('data.reviews.1.status', 'draft')
+            ->assertJsonPath('data.reviews.1.source', 'ai')
+            ->assertJsonPath('data.reviews.1.version_number', 2)
+            ->assertJsonPath('data.reviews.1.is_current_version', true);
+    }
+
+    public function test_dashboard_can_create_mock_editor_block_review(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $saved = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Original phrase  , with spacing. Next sentence.'),
+            'text_plain' => 'Original phrase  , with spacing. Next sentence.',
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/reviews", [
+            'type' => 'grammar',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.review.type', 'grammar')
+            ->assertJsonPath('data.review.status', 'draft')
+            ->assertJsonPath('data.review.source', 'mock-ai')
+            ->assertJsonPath('data.review.block_version_id', $saved['version']->id)
+            ->assertJsonPath('data.review.version_number', 1)
+            ->assertJsonPath('data.review.is_current_version', true)
+            ->assertJsonPath('data.review.original_text', 'Original phrase , with spacing. Next sentence.')
+            ->assertJsonPath('data.review.suggested_text', 'Original phrase, with spacing. Next sentence.');
+
+        $this->assertDatabaseHas('book_block_reviews', [
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+            'source' => 'mock-ai',
+            'status' => 'draft',
+        ]);
+    }
+
+    public function test_dashboard_reuses_existing_mock_draft_review_for_same_block_version(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $saved = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Paragraph to check.'),
+            'text_plain' => 'Paragraph to check.',
+        ]);
+
+        $first = $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/reviews", [
+            'type' => 'grammar',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.created', true)
+            ->json('data.review.id');
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/reviews", [
+            'type' => 'grammar',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.created', false)
+            ->assertJsonPath('data.review.id', $first)
+            ->assertJsonPath('data.review.block_version_id', $saved['version']->id);
+
+        $this->assertDatabaseCount('book_block_reviews', 1);
+    }
+
+    public function test_dashboard_can_reject_editor_block_review(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $saved = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Paragraph to reject.'),
+            'text_plain' => 'Paragraph to reject.',
+        ]);
+
+        $review = BookBlockReview::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+            'type' => 'grammar',
+            'status' => 'draft',
+            'source' => 'mock-ai',
+            'original_text' => 'Paragraph to reject.',
+            'suggested_text' => 'Paragraph rejected.',
+        ]);
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/reviews/{$review->id}", [
+            'status' => 'rejected',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.review.id', $review->id)
+            ->assertJsonPath('data.review.status', 'rejected')
+            ->assertJsonPath('data.review.applied_block_version_id', null);
+
+        $this->assertDatabaseHas('book_block_reviews', [
+            'id' => $review->id,
+            'status' => 'rejected',
+            'applied_book_block_version_id' => null,
+        ]);
+    }
+
+    public function test_dashboard_can_mark_editor_block_review_applied_to_version(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $first = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Original phrase.'),
+            'text_plain' => 'Original phrase.',
+        ]);
+
+        $second = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'base_version_id' => $first['version']->id,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Suggested phrase.'),
+            'text_plain' => 'Suggested phrase.',
+        ]);
+
+        $review = BookBlockReview::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $first['block']->id,
+            'book_block_version_id' => $first['version']->id,
+            'type' => 'grammar',
+            'status' => 'draft',
+            'source' => 'mock-ai',
+            'original_text' => 'Original phrase.',
+            'suggested_text' => 'Suggested phrase.',
+        ]);
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/reviews/{$review->id}", [
+            'status' => 'applied',
+            'applied_book_block_version_id' => $second['version']->id,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.review.id', $review->id)
+            ->assertJsonPath('data.review.status', 'applied')
+            ->assertJsonPath('data.review.applied_block_version_id', $second['version']->id);
+
+        $this->assertDatabaseHas('book_block_reviews', [
+            'id' => $review->id,
+            'status' => 'applied',
+            'applied_book_block_version_id' => $second['version']->id,
+        ]);
     }
 
     private function createBook(): Book

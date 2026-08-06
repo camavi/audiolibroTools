@@ -29,7 +29,10 @@
 }
 
 .at-content-editor .at-navCommand {
-    width: 500px;
+    width: 420px;
+    flex: 0 0 420px;
+    background: #ffffff;
+    overflow: hidden;
 }
 
 .at-page-bookEditor .at-bottomBar {
@@ -170,6 +173,430 @@
     color: #ca8a04;
     font-size: 16px;
     line-height: 1;
+}
+
+.at-rightWorkspace {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    height: 100%;
+    min-width: 0;
+    background: #ffffff;
+}
+
+.at-rightWorkspace-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 4px;
+    border-right: 1px solid #e0e0e0;
+    background: #f8fafc;
+}
+
+.at-rightWorkspace-railBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #475569;
+    cursor: pointer;
+    overflow: hidden;
+    min-width: 38px;
+    padding: 0;
+}
+
+.at-rightWorkspace-railBtn:hover,
+.at-rightWorkspace-railBtn.is-active {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+
+.at-rightWorkspace-railBtn.is-active {
+    box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.at-rightWorkspace-railBtn .cms-icon,
+.at-rightWorkspace-titleIcon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    width: 22px;
+    height: 22px;
+    font-size: 21px;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.at-rightWorkspace-panel {
+    min-width: 0;
+    overflow: auto;
+}
+
+.at-rightWorkspace-header {
+    padding: 12px 14px;
+    border-bottom: 1px solid #e0e0e0;
+    background: #ffffff;
+}
+
+.at-rightWorkspace-title {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 8px;
+    color: #111827;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.at-rightWorkspace-titleIcon {
+    color: #2563eb;
+    font-size: 21px;
+    flex: 0 0 auto;
+}
+
+.at-rightWorkspace-context {
+    margin-top: 5px;
+    overflow: hidden;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.at-rightWorkspace-body {
+    padding: 12px;
+}
+
+.at-rightWorkspace-summary {
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 12px;
+    margin-bottom: 14px;
+}
+
+.at-rightWorkspace-summaryRow {
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    gap: 10px;
+    align-items: baseline;
+    min-width: 0;
+    padding: 4px 0;
+    color: #64748b;
+    font-size: 12px;
+}
+
+.at-rightWorkspace-summaryRow strong {
+    min-width: 0;
+    overflow: hidden;
+    color: #111827;
+    font-size: 12px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.at-rightWorkspace-note {
+    margin-top: 8px;
+    padding: 7px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.at-rightWorkspace-note.warning {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.at-rightWorkspace-section h3 {
+    margin: 0 0 8px;
+    color: #111827;
+    font-size: 14px;
+    line-height: 1.3;
+}
+
+.at-rightWorkspace-section p {
+    margin: 0;
+    color: #475569;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.at-rightWorkspace-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 7px;
+    margin-top: 14px;
+}
+
+.at-rightWorkspace-actions.is-top {
+    margin-top: 0;
+    margin-bottom: 12px;
+}
+
+.at-rightWorkspace-action {
+    min-height: 34px;
+    padding: 6px 9px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #334155;
+    font-size: 13px;
+    text-align: left;
+}
+
+.at-rightWorkspace-action:not(:disabled) {
+    cursor: pointer;
+}
+
+.at-rightWorkspace-action:not(:disabled):hover {
+    border-color: #94a3b8;
+    background: #f8fafc;
+}
+
+.at-rightWorkspace-action.is-primary:not(:disabled) {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-weight: 600;
+}
+
+.at-rightWorkspace-action.is-primary:not(:disabled):hover {
+    background: #dbeafe;
+}
+
+.at-rightWorkspace-action:disabled {
+    border-color: #e2e8f0;
+    background: #f8fafc;
+    color: #94a3b8;
+    cursor: not-allowed;
+}
+
+.at-rightWorkspace-emptyState {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 4px;
+    background: #f8fafc;
+}
+
+.at-rightWorkspace-emptyState strong {
+    display: block;
+    color: #0f172a;
+    font-size: 13px;
+}
+
+.at-rightWorkspace-emptyState p {
+    margin-top: 5px;
+}
+
+.at-versionList {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.at-versionItem {
+    padding: 9px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.at-versionItem.is-current {
+    border-color: #93c5fd;
+    background: #eff6ff;
+}
+
+.at-versionItem-head {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.at-versionItem-head strong {
+    color: #0f172a;
+    font-size: 13px;
+}
+
+.at-versionItem-head span {
+    min-width: 0;
+    overflow: hidden;
+    color: #64748b;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.at-versionBadge {
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: #dbeafe;
+    color: #1d4ed8 !important;
+    font-weight: 700;
+}
+
+.at-versionItem-date {
+    margin-top: 5px;
+    color: #64748b;
+    font-size: 11px;
+}
+
+.at-versionItem-preview {
+    display: -webkit-box;
+    margin-top: 7px;
+    overflow: hidden;
+    color: #334155;
+    font-size: 12px;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+}
+
+.at-reviewList {
+    display: grid;
+    gap: 9px;
+    margin-top: 10px;
+}
+
+.at-reviewItem {
+    padding: 9px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.at-reviewItem.is-stale {
+    background: #f8fafc;
+    opacity: 0.82;
+}
+
+.at-reviewItem-head {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+
+.at-reviewItem-head strong {
+    min-width: 0;
+    overflow: hidden;
+    color: #0f172a;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    text-transform: capitalize;
+    white-space: nowrap;
+}
+
+.at-reviewItem-head span {
+    color: #64748b;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.at-reviewStatus {
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: #e2e8f0;
+    color: #475569 !important;
+    font-weight: 700;
+}
+
+.at-reviewStatus.status-draft {
+    background: #fef3c7;
+    color: #92400e !important;
+}
+
+.at-reviewStatus.status-applied,
+.at-reviewStatus.status-accepted {
+    background: #dcfce7;
+    color: #166534 !important;
+}
+
+.at-reviewStatus.status-rejected,
+.at-reviewStatus.status-stale {
+    background: #fee2e2;
+    color: #991b1b !important;
+}
+
+.at-reviewItem-version {
+    margin-top: 5px;
+    color: #64748b;
+    font-size: 11px;
+}
+
+.at-reviewItem-text {
+    margin-top: 8px;
+}
+
+.at-reviewItem-text span {
+    display: block;
+    margin-bottom: 3px;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.at-reviewItem-text p {
+    display: -webkit-box;
+    margin: 0;
+    overflow: hidden;
+    color: #334155;
+    font-size: 12px;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+}
+
+.at-reviewItem-text.suggested p {
+    color: #0f172a;
+}
+
+.at-reviewItem-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    margin-top: 10px;
+}
+
+.at-reviewItem-action {
+    min-height: 30px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.at-reviewItem-action:hover:not(:disabled) {
+    border-color: #94a3b8;
+    background: #f1f5f9;
+}
+
+.at-reviewItem-action.is-apply {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.at-reviewItem-action.is-apply:hover:not(:disabled) {
+    background: #dbeafe;
+}
+
+.at-reviewItem-action:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 .at-editorText {

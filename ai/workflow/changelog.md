@@ -41,3 +41,9 @@
 - Aggiunto primo Book Index laterale dell'editor: lista blocchi/capitoli aggiornata da TipTap, evidenza blocco attivo, stato dirty e click per navigare al blocco.
 - Migliorato Book Index: gli heading TipTap diventano capitoli numerati, i blocchi successivi vengono indentati sotto il capitolo corrente e il contatore mostra capitoli/blocchi.
 - Corretto recupero autosave: la risposta `PATCH` viene normalizzata come il `GET`, i metadata locali ricevono il nuovo `current_version_id` e un `409` da versione stale ricarica i metadata e ritenta una volta il salvataggio locale.
+- Avviato Right Workspace dell'editor: rail verticale stile applicazione desktop con tool AI Chat, Comments, Correct, Voices, Audio, Translate, Versions e Settings, piu' pannello contenuto contestuale al blocco selezionato.
+- Collegato il tool Versions del Right Workspace: nuovo endpoint API per versioni del blocco selezionato, lista versioni nel pannello, versione corrente evidenziata e test feature dedicato.
+- Avviata base dati del tool Correct: tabella `book_block_reviews`, modello Laravel, relazioni, endpoint API read-only per review del blocco selezionato e UI del pannello Correct con empty/loading/error/lista review.
+- Reso operativo `Check selected block` nel tool Correct: nuovo endpoint POST crea una review `mock-ai` legata alla versione corrente del blocco, il frontend salva la review e aggiorna la lista senza provider AI esterno.
+- Reso idempotente `Check selected block`: se esiste gia' una review `draft` `mock-ai` dello stesso tipo per la stessa versione del blocco, il backend riusa quella esistente invece di creare duplicati.
+- Aggiunto workflow Apply/Reject per le correzioni: le review possono essere marcate `applied` o `rejected`, Apply aggiorna il blocco TipTap, forza il salvataggio e collega la review alla versione applicata.

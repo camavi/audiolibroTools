@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\BookBlockVersionConflictException;
 use App\Models\Book;
 use App\Models\BookBlock;
+use App\Models\BookBlockReview;
 use App\Models\BookCategory;
 use App\Services\BookBlockService;
 use Illuminate\Http\JsonResponse;
@@ -171,6 +172,179 @@ class DashboardBookController extends Controller
         ]);
     }
 
+    public function blockVersions(string $keyBook, string $blockUuid): JsonResponse
+    {
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        $versions = $block->versions()
+            ->orderByDesc('version_number')
+            ->get();
+
+        return response()->json([
+            'data' => [
+                'block' => $this->serializeEditorBlock($block),
+                'versions' => $versions
+                    ->map(fn ($version) => [
+                        'id' => $version->id,
+                        'version_number' => $version->version_number,
+                        'source' => $version->source,
+                        'text_plain' => $version->text_plain,
+                        'content_hash' => $version->content_hash,
+                        'created_at' => $version->created_at?->toISOString(),
+                        'is_current' => $block->current_version_id === $version->id,
+                    ])
+                    ->values(),
+            ],
+        ]);
+    }
+
+    public function blockReviews(string $keyBook, string $blockUuid): JsonResponse
+    {
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        $reviews = $block->reviews()
+            ->with('blockVersion:id,version_number')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get();
+
+        return response()->json([
+            'data' => [
+                'block' => $this->serializeEditorBlock($block),
+                'reviews' => $reviews
+                    ->map(fn (BookBlockReview $review) => $this->serializeBlockReview($review, $block))
+                    ->values(),
+            ],
+        ]);
+    }
+
+    public function storeBlockReview(Request $request, string $keyBook, string $blockUuid): JsonResponse
+    {
+        $validated = $request->validate([
+            'type' => ['nullable', 'string', 'in:grammar,style,continuity,rewrite'],
+        ]);
+
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->with('currentVersion')
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        if (! $block->currentVersion) {
+            return response()->json([
+                'message' => 'The selected block has no saved version to review.',
+                'errors' => [
+                    'block' => ['Save the block before creating a review.'],
+                ],
+            ], 422);
+        }
+
+        $reviewType = $validated['type'] ?? 'grammar';
+        $existingReview = $block->reviews()
+            ->with('blockVersion:id,version_number')
+            ->where('book_block_version_id', $block->currentVersion->id)
+            ->where('type', $reviewType)
+            ->where('status', 'draft')
+            ->where('source', 'mock-ai')
+            ->latest('id')
+            ->first();
+
+        if ($existingReview) {
+            return response()->json([
+                'data' => [
+                    'review' => $this->serializeBlockReview($existingReview, $block),
+                    'created' => false,
+                ],
+            ]);
+        }
+
+        $originalText = $block->currentVersion->text_plain ?? $block->text_plain ?? '';
+        $suggestedText = $this->mockSuggestedText($originalText);
+
+        $review = BookBlockReview::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $block->id,
+            'book_block_version_id' => $block->currentVersion->id,
+            'type' => $reviewType,
+            'status' => 'draft',
+            'source' => 'mock-ai',
+            'original_text' => $originalText,
+            'suggested_text' => $suggestedText,
+            'notes_json' => [
+                'mode' => 'local-mock',
+                'changes_detected' => $originalText !== $suggestedText,
+                'message' => 'Local placeholder correction. AI provider integration comes next.',
+            ],
+            'created_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'data' => [
+                'review' => $this->serializeBlockReview($review->load('blockVersion:id,version_number'), $block),
+                'created' => true,
+            ],
+        ], 201);
+    }
+
+    public function updateBlockReview(Request $request, string $keyBook, string $blockUuid, BookBlockReview $review): JsonResponse
+    {
+        $validated = $request->validate([
+            'status' => ['required', 'string', 'in:applied,rejected'],
+            'applied_book_block_version_id' => ['nullable', 'integer', 'exists:book_block_versions,id'],
+        ]);
+
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        abort_unless(
+            $review->book_id === $book->id && $review->book_block_id === $block->id,
+            404
+        );
+
+        if ($validated['status'] === 'applied' && isset($validated['applied_book_block_version_id'])) {
+            $versionBelongsToBlock = $block->versions()
+                ->whereKey($validated['applied_book_block_version_id'])
+                ->exists();
+
+            abort_unless($versionBelongsToBlock, 422);
+        }
+
+        $review->forceFill([
+            'status' => $validated['status'],
+            'applied_book_block_version_id' => $validated['status'] === 'applied'
+                ? ($validated['applied_book_block_version_id'] ?? null)
+                : null,
+            'resolved_at' => now(),
+            'resolved_by' => auth()->id(),
+        ])->save();
+
+        return response()->json([
+            'data' => [
+                'review' => $this->serializeBlockReview($review->load('blockVersion:id,version_number'), $block),
+            ],
+        ]);
+    }
+
     private function serializeEditorBlock(BookBlock $block): array
     {
         return [
@@ -200,5 +374,33 @@ class DashboardBookController extends Controller
                 'blockId' => $block->block_uuid,
             ],
         ];
+    }
+
+    private function serializeBlockReview(BookBlockReview $review, BookBlock $block): array
+    {
+        return [
+            'id' => $review->id,
+            'type' => $review->type,
+            'status' => $review->status,
+            'source' => $review->source,
+            'original_text' => $review->original_text,
+            'suggested_text' => $review->suggested_text,
+            'notes_json' => $review->notes_json,
+            'created_at' => $review->created_at?->toISOString(),
+            'resolved_at' => $review->resolved_at?->toISOString(),
+            'block_version_id' => $review->book_block_version_id,
+            'applied_block_version_id' => $review->applied_book_block_version_id,
+            'version_number' => $review->blockVersion?->version_number,
+            'is_current_version' => $block->current_version_id === $review->book_block_version_id,
+        ];
+    }
+
+    private function mockSuggestedText(string $text): string
+    {
+        $suggested = trim(preg_replace('/[ \t]+/u', ' ', $text) ?? $text);
+        $suggested = preg_replace('/\s+([,.;:!?])/u', '$1', $suggested) ?? $suggested;
+        $suggested = preg_replace('/([.!?])([^\s"”’])/u', '$1 $2', $suggested) ?? $suggested;
+
+        return $suggested;
     }
 }
