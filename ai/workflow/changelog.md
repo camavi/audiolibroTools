@@ -38,3 +38,6 @@
 - Avviato Step 5 autosave: aggiunto debounce frontend, confronto blocchi dirty, salvataggio `PATCH` solo dei blocchi modificati e stato UI `Unsaved/Saving/Saved/Error/Conflict`.
 - Avviato Step 6 gestione blocchi rimossi/riordinati: l'autosave invia `deleted_block_uuids`, il backend marca i blocchi come `deleted`, l'editor non li ricarica e il riordino aggiorna `sort_order` senza creare nuove versioni contenuto.
 - Corretto autosave TipTap: i nuovi paragrafi ricevono sempre un `blockId`, il documento iniziale non contiene piu' testo demo hardcoded e l'apertura dell'editor non autosalva un documento vuoto.
+- Aggiunto primo Book Index laterale dell'editor: lista blocchi/capitoli aggiornata da TipTap, evidenza blocco attivo, stato dirty e click per navigare al blocco.
+- Migliorato Book Index: gli heading TipTap diventano capitoli numerati, i blocchi successivi vengono indentati sotto il capitolo corrente e il contatore mostra capitoli/blocchi.
+- Corretto recupero autosave: la risposta `PATCH` viene normalizzata come il `GET`, i metadata locali ricevono il nuovo `current_version_id` e un `409` da versione stale ricarica i metadata e ritenta una volta il salvataggio locale.

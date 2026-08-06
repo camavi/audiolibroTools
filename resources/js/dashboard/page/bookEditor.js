@@ -3,13 +3,17 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 
 
-const indexView = _.rod(false);
+const indexView = _.rod(true);
 const commandView = _.rod(false);
 const editorReady = _.rod(false);
 const editorUiTick = _.rod(0);
 const editorPageFormat = _.rod('book');
 const editorStatus = _.rod(null);
 const saveStatus = _.rod('idle');
+const editorOutline = _.rod([]);
+const activeEditorBlockId = _.rod(null);
+
+let focusEditorBlock = () => {};
 
 const AUTOSAVE_DELAY = 1200;
 
@@ -139,7 +143,7 @@ function documentFromBlocks(blocks) {
     const content = (blocks || [])
         .map((block) => block.content_json)
         .filter(Boolean)
-        .map(withBlockIds);
+        .map((block) => withBlockIds(block));
 
     return content.length
         ? { type: 'doc', content }
@@ -188,6 +192,60 @@ function extractEditorBlocks(doc, blockMeta) {
     return blocks;
 }
 
+function blockKindLabel(type) {
+    const labels = {
+        heading: 'CH',
+        paragraph: 'Text',
+        blockquote: 'Quote',
+        scene_break: 'Break',
+    };
+
+    return labels[type] || 'Block';
+}
+
+function outlineLabel(block, index) {
+    if (block.type === 'scene_break') return 'Scene break';
+    if (block.text_plain) return block.text_plain;
+
+    return `${blockKindLabel(block.type)} ${index + 1}`;
+}
+
+function outlineKindLabel(item) {
+    if (item.type === 'heading') return `CH ${item.chapterNumber}`;
+
+    return blockKindLabel(item.type);
+}
+
+function buildEditorOutline(blocks, blockMeta) {
+    let chapterNumber = 0;
+    let blockNumberInChapter = 0;
+    let hasChapter = false;
+
+    return blocks.map((block, index) => {
+        const meta = blockMeta.get(block.block_uuid);
+        const isChapter = block.type === 'heading';
+
+        if (isChapter) {
+            chapterNumber += 1;
+            blockNumberInChapter = 0;
+            hasChapter = true;
+        } else if (hasChapter) {
+            blockNumberInChapter += 1;
+        }
+
+        return {
+            block_uuid: block.block_uuid,
+            type: block.type,
+            label: outlineLabel(block, index),
+            dirty: !meta || meta.signature !== blockSignature(block),
+            isChapter,
+            level: isChapter || !hasChapter ? 0 : 1,
+            chapterNumber: isChapter ? chapterNumber : null,
+            blockNumberInChapter: !isChapter && hasChapter ? blockNumberInChapter : null,
+        };
+    });
+}
+
 function blockSignature(block) {
     return JSON.stringify({
         type: block.type,
@@ -207,7 +265,48 @@ function readRouteBookKey(ctx) {
 function indexBook() {
     return _.div({
         class: () => !indexView.value ? 'at-indexBook cms-d-none' : 'at-indexBook', area: 'indexBook'
-    }, 'Index Book');
+    },
+        _.div({ class: 'at-indexBook-header' },
+            _.span('Book Index'),
+            _.span({ class: 'at-indexBook-count' }, () => {
+                const outline = editorOutline.value;
+                const chapterCount = outline.filter((item) => item.isChapter).length;
+
+                return chapterCount
+                    ? `${chapterCount} ch / ${outline.length}`
+                    : `${outline.length}`;
+            })
+        ),
+        _.div({ class: 'at-indexBook-list' }, () => {
+            const outline = editorOutline.value;
+
+            if (!outline.length) {
+                return _.div({ class: 'at-indexBook-empty' }, 'No blocks');
+            }
+
+            return outline.map((item) => _.button({
+                type: 'button',
+                class: () => {
+                    const classes = [
+                        'at-indexBook-item',
+                        `level-${item.level}`,
+                        `type-${item.type}`,
+                    ];
+
+                    if (item.isChapter) classes.push('is-chapter');
+                    if (item.block_uuid === activeEditorBlockId.value) classes.push('is-active');
+
+                    return classes.join(' ');
+                },
+                onclick: () => focusEditorBlock(item.block_uuid),
+                title: item.label,
+            },
+                _.span({ class: `at-indexBook-kind kind-${item.type}` }, outlineKindLabel(item)),
+                _.span({ class: 'at-indexBook-label' }, item.label),
+                item.dirty ? _.span({ class: 'at-indexBook-dirty', title: 'Unsaved' }, '•') : null,
+            ));
+        })
+    );
 }
 
 function editorText(keyBook) {
@@ -347,6 +446,50 @@ function editorText(keyBook) {
     const syncEditorBlocks = () => {
         if (!editor) return;
         currentEditorBlocks = extractEditorBlocks(editor.getJSON(), blockMeta);
+        editorOutline.value = buildEditorOutline(currentEditorBlocks, blockMeta);
+    };
+
+    const updateActiveBlock = () => {
+        if (!editor) return;
+
+        const selection = editor.state.selection;
+        let blockId = null;
+
+        for (let depth = selection.$from.depth; depth > 0; depth -= 1) {
+            const node = selection.$from.node(depth);
+            if (!isTrackableNode(node) || !node.attrs?.blockId) continue;
+
+            blockId = node.attrs.blockId;
+            break;
+        }
+
+        activeEditorBlockId.value = blockId;
+    };
+
+    focusEditorBlock = (blockUuid) => {
+        if (!editor || !blockUuid) return;
+
+        let targetPos = null;
+
+        editor.state.doc.descendants((node, pos) => {
+            if (!isTrackableNode(node) || node.attrs?.blockId !== blockUuid) return true;
+
+            targetPos = pos;
+            return false;
+        });
+
+        if (targetPos === null) return;
+
+        editor.chain().focus(targetPos + 1).run();
+
+        const escapedBlockUuid = globalThis.CSS?.escape
+            ? globalThis.CSS.escape(blockUuid)
+            : blockUuid.replace(/"/g, '\\"');
+        const blockElement = editor.view.dom.querySelector(`[data-block-id="${escapedBlockUuid}"]`);
+        blockElement?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+
+        activeEditorBlockId.value = blockUuid;
+        refreshEditorUi();
     };
 
     const updateBlockMetaFromSaved = (savedBlocks, localBlocks = currentEditorBlocks) => {
@@ -380,7 +523,24 @@ function editorText(keyBook) {
         saveStatus.value = status;
     };
 
-    const saveDirtyBlocks = async () => {
+    const refreshBlockMeta = async () => {
+        const payload = await _.http.getJSON(`/dashboard/api/books/${keyBook}/editor`);
+        const data = normalizeEditorPayload(payload);
+        const documentContent = data.document?.content || [];
+
+        blockMeta.clear();
+        (data.blocks || []).forEach((block) => {
+            blockMeta.set(block.block_uuid, {
+                ...block,
+                signature: blockSignature({
+                    ...block,
+                    content_json: documentContent.find((node) => node.attrs?.blockId === block.block_uuid) || block.content_json || null,
+                }),
+            });
+        });
+    };
+
+    const saveDirtyBlocks = async ({ retryOnConflict = true } = {}) => {
         if (!keyBook || autosaveBlocked) return;
 
         if (saveInFlight) {
@@ -401,6 +561,7 @@ function editorText(keyBook) {
         saveInFlight = true;
         pendingSave = false;
         setSaveStatus('saving');
+        let retryAfterConflict = false;
 
         try {
             const payload = await _.http.patchJSON(`/dashboard/api/books/${keyBook}/blocks`, {
@@ -408,9 +569,10 @@ function editorText(keyBook) {
                 blocks,
                 deleted_block_uuids,
             });
+            const data = normalizeEditorPayload(payload);
 
-            updateBlockMetaFromSaved(payload.data?.blocks || [], blocks);
-            (payload.data?.deleted_block_uuids || []).forEach((blockUuid) => {
+            updateBlockMetaFromSaved(data.blocks || [], blocks);
+            (data.deleted_block_uuids || []).forEach((blockUuid) => {
                 const meta = blockMeta.get(blockUuid);
                 if (!meta) return;
 
@@ -419,11 +581,22 @@ function editorText(keyBook) {
                     status: 'deleted',
                 });
             });
+            syncEditorBlocks();
             setSaveStatus('saved');
         } catch (error) {
             const statusCode = error?.response?.status || error?.status;
 
-            if (statusCode === 409) {
+            if (statusCode === 409 && retryOnConflict) {
+                try {
+                    await refreshBlockMeta();
+                    setSaveStatus('dirty');
+                    pendingSave = false;
+                    retryAfterConflict = true;
+                } catch {
+                    autosaveBlocked = true;
+                    setSaveStatus('conflict');
+                }
+            } else if (statusCode === 409) {
                 autosaveBlocked = true;
                 setSaveStatus('conflict');
             } else {
@@ -431,6 +604,11 @@ function editorText(keyBook) {
             }
         } finally {
             saveInFlight = false;
+
+            if (retryAfterConflict && !autosaveBlocked) {
+                saveDirtyBlocks({ retryOnConflict: false });
+                return;
+            }
 
             if (pendingSave && !autosaveBlocked) {
                 pendingSave = false;
@@ -450,17 +628,20 @@ function editorText(keyBook) {
     const afterEditorChange = () => {
         if (isApplyingRemoteContent) {
             syncEditorBlocks();
+            updateActiveBlock();
             refreshEditorUi();
             return;
         }
 
         syncEditorBlocks();
+        updateActiveBlock();
         scheduleAutosave();
         refreshEditorUi();
     };
 
     const afterEditorCreate = () => {
         syncEditorBlocks();
+        updateActiveBlock();
         refreshEditorUi();
     };
 
@@ -521,6 +702,7 @@ function editorText(keyBook) {
         }
 
         syncEditorBlocks();
+        updateActiveBlock();
         editorReady.value = true;
         refreshEditorUi();
     };
@@ -533,6 +715,9 @@ function editorText(keyBook) {
         clearTimeout(autosaveTimer);
         blockMeta.clear();
         currentEditorBlocks = [];
+        editorOutline.value = [];
+        activeEditorBlockId.value = null;
+        focusEditorBlock = () => {};
         editor?.destroy();
         editor = null;
     };
@@ -549,7 +734,10 @@ function editorText(keyBook) {
             content: defaultDocument(),
             onCreate: afterEditorCreate,
             onUpdate: afterEditorChange,
-            onSelectionUpdate: refreshEditorUi,
+            onSelectionUpdate: () => {
+                updateActiveBlock();
+                refreshEditorUi();
+            },
         });
 
         applyRemoteContent();

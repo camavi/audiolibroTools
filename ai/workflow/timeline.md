@@ -58,12 +58,13 @@ Obiettivi:
 
 ## Fase 4 - Editor e Versioni
 
-Stato: in preparazione.
+Stato: in corso.
 
 Obiettivi:
 
 - editor TipTap con blocchi identificabili;
 - salvataggio a blocchi modificati;
+- indice laterale dei blocchi/capitoli;
 - cronologia append-only per blocco;
 - diff e conflitti;
 - stati revisione;

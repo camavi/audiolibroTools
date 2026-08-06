@@ -18,10 +18,14 @@
 
 .at-content-editor .at-indexBook {
     width: 300px;
+    flex: 0 0 300px;
+    background: #ffffff;
+    overflow: hidden;
 }
 
 .at-content-editor .at-content {
-    width: 100%;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .at-content-editor .at-navCommand {
@@ -47,6 +51,125 @@
     padding: 5px 10px;
     font-size: 16px;
     text-align: center;
+}
+
+.at-indexBook-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 40px;
+    padding: 0 12px;
+    border-bottom: 1px solid #e0e0e0;
+    color: #1f2937;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.at-indexBook-count {
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.at-indexBook-list {
+    height: calc(100% - 40px);
+    overflow: auto;
+    padding: 6px;
+}
+
+.at-indexBook-empty {
+    padding: 10px 8px;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.at-indexBook-item {
+    display: grid;
+    grid-template-columns: 58px 1fr 10px;
+    align-items: center;
+    width: 100%;
+    min-height: 34px;
+    margin: 0;
+    padding: 5px 7px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #1f2937;
+    text-align: left;
+    cursor: pointer;
+    gap: 7px;
+}
+
+.at-indexBook-item.level-1 {
+    grid-template-columns: 48px 1fr 10px;
+    padding-left: 20px;
+}
+
+.at-indexBook-item.is-chapter {
+    min-height: 38px;
+    margin-top: 5px;
+    border-top: 1px solid #eef2f7;
+    font-weight: 600;
+}
+
+.at-indexBook-item.is-chapter:first-child {
+    margin-top: 0;
+    border-top: 0;
+}
+
+.at-indexBook-item:hover,
+.at-indexBook-item.is-active {
+    background: #f1f5f9;
+}
+
+.at-indexBook-item.is-active {
+    box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.at-indexBook-kind {
+    color: #64748b;
+    font-size: 10px;
+    line-height: 1;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.at-indexBook-kind.kind-heading {
+    color: #1d4ed8;
+    font-weight: 700;
+}
+
+.at-indexBook-kind.kind-blockquote {
+    color: #7c3aed;
+}
+
+.at-indexBook-kind.kind-scene_break {
+    color: #475569;
+}
+
+.at-indexBook-label {
+    min-width: 0;
+    overflow: hidden;
+    color: #111827;
+    font-size: 13px;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.at-indexBook-item.is-chapter .at-indexBook-label {
+    color: #0f172a;
+    font-weight: 600;
+}
+
+.at-indexBook-item.level-1 .at-indexBook-label {
+    color: #334155;
+}
+
+.at-indexBook-dirty {
+    color: #ca8a04;
+    font-size: 16px;
+    line-height: 1;
 }
 
 .at-editorText {
