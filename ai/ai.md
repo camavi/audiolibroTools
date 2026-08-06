@@ -30,6 +30,7 @@ Prima di lavorare sulla dashboard leggere e seguire come base `resources/js/dash
 - [UI, palette e design system](project/ui-design.md)
 - [Moduli funzionali](project/modules.md)
 - [Timeline sviluppo](workflow/timeline.md)
+- [Piano editor blocchi e salvataggio](workflow/editor-block-save-plan.md)
 - [Decisioni tecniche](workflow/decisions.md)
 - [Registro avanzamento](workflow/changelog.md)
 - [Riferimenti vecchio progetto](reference/old-project.md)

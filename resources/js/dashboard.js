@@ -87,8 +87,8 @@ function statusAlert() {
 function newBookStart() {
     return newBookStartPage;
 }
-function bookEditor() {
-    return bookEditorPage;
+function bookEditor(ctx) {
+    return bookEditorPage(ctx);
 }
 
 function pageDashboard() {

@@ -58,15 +58,31 @@ Obiettivi:
 
 ## Fase 4 - Editor e Versioni
 
-Stato: da fare.
+Stato: in preparazione.
 
 Obiettivi:
 
-- editor blocchi;
-- salvataggio;
-- cronologia;
-- diff;
-- stati revisione.
+- editor TipTap con blocchi identificabili;
+- salvataggio a blocchi modificati;
+- cronologia append-only per blocco;
+- diff e conflitti;
+- stati revisione;
+- tracciamento versioni per AI, traduzione e audio.
+
+Documento operativo:
+
+- [Editor blocchi, versioni e salvataggio](editor-block-save-plan.md)
+
+Timeline operativa:
+
+1. Schema base: `book_blocks`, `book_block_versions`, modelli e relazioni.
+2. Servizio dominio: normalizzazione testo, hash, creazione versioni, no-op se hash uguale.
+3. API editor: caricamento documento, patch blocchi, gestione conflitti `409`.
+4. TipTap block IDs: attributo `blockId`, estrazione blocchi, mappa locale hash/versione.
+5. Autosave: debounce, dirty blocks, aggiornamento versioni locali.
+6. Operazioni struttura: insert, delete, reorder e snapshot ordine.
+7. Stale derivati: audio/traduzioni/AI legati a `source_version_id`.
+8. Snapshot JSON: cache/export ricostruibile dal database.
 
 ## Fase 5 - AI e Traduzione
 

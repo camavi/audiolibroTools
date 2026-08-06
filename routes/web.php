@@ -38,6 +38,8 @@ Route::get('/dashboard', function () {
 Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::get('/book-categories', [DashboardBookController::class, 'categories'])->name('book-categories');
     Route::post('/books', [DashboardBookController::class, 'store'])->name('books.store');
+    Route::get('/books/{keyBook}/editor', [DashboardBookController::class, 'editor'])->name('books.editor');
+    Route::patch('/books/{keyBook}/blocks', [DashboardBookController::class, 'updateBlocks'])->name('books.blocks.update');
 });
 Route::get('/dashboard/{any?}', function () {
     return view('dashboard');

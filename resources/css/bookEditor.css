@@ -48,3 +48,166 @@
     font-size: 16px;
     text-align: center;
 }
+
+.at-editorText {
+    min-width: 0;
+    overflow: hidden;
+    height: calc(100% - 40px);
+}
+
+.at-editorText-inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+}
+
+.at-editorToolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    padding: 8px;
+    border-bottom: 1px solid #e0e0e0;
+    background: #ffffff;
+}
+
+.at-editorToolbar-btn.is-active {
+    background: #ededed;
+}
+
+.at-pageFormatSelect {
+    position: relative;
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: center;
+    width: 180px;
+    height: 44px;
+    margin: 0;
+    padding: 6px 10px 5px;
+    border: 1px solid #d4d4d4;
+    border-radius: 4px;
+    background: #ffffff;
+    box-sizing: border-box;
+}
+
+.at-pageFormatSelect-label {
+    color: #64748b;
+    font-size: 10px;
+    line-height: 1.1;
+    margin-bottom: 3px;
+}
+
+.at-pageFormatSelect select {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #1f2937;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.at-editorToolbar-divider {
+    width: 1px;
+    height: 26px;
+    margin: 0 4px;
+    background: #e0e0e0;
+}
+
+.at-saveStatus {
+    margin-left: auto;
+    color: #64748b;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.at-saveStatus.saving,
+.at-saveStatus.dirty {
+    color: #854d0e;
+}
+
+.at-saveStatus.saved {
+    color: #166534;
+}
+
+.at-saveStatus.error,
+.at-saveStatus.conflict {
+    color: #b91c1c;
+}
+
+.at-editorStatus {
+    padding: 8px 12px;
+    border-bottom: 1px solid #e0e0e0;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 13px;
+}
+
+.at-editorStatus.danger {
+    background: #fff1f2;
+    color: #9f1239;
+}
+
+.at-tiptap-editor {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 32px;
+    background: #f0f0f0;
+}
+
+.at-tiptap-editor .tiptap {
+    box-sizing: border-box;
+    width: min(100%, var(--at-editor-page-width, 760px));
+    min-height: 100%;
+    margin: 0 auto;
+    padding: var(--at-editor-page-padding, 64px 72px);
+    border: 1px solid #d6d6d6;
+    background: #ffffff;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
+    outline: none;
+    line-height: 1.65;
+}
+
+.at-tiptap-editor.page-book {
+    --at-editor-page-width: 720px;
+    --at-editor-page-padding: 56px 68px;
+}
+
+.at-tiptap-editor.page-paperback-5x8 {
+    --at-editor-page-width: 520px;
+    --at-editor-page-padding: 48px 52px;
+}
+
+.at-tiptap-editor.page-paperback-6x9 {
+    --at-editor-page-width: 620px;
+    --at-editor-page-padding: 56px 62px;
+}
+
+.at-tiptap-editor.page-a5 {
+    --at-editor-page-width: 560px;
+    --at-editor-page-padding: 48px 52px;
+}
+
+.at-tiptap-editor.page-a4 {
+    --at-editor-page-width: 794px;
+    --at-editor-page-padding: 76px 84px;
+}
+
+.at-tiptap-editor.page-letter {
+    --at-editor-page-width: 816px;
+    --at-editor-page-padding: 72px 84px;
+}
+
+.at-tiptap-editor.page-draft {
+    --at-editor-page-width: 880px;
+    --at-editor-page-padding: 48px 56px;
+}
+
+.at-tiptap-editor .tiptap>*:first-child {
+    margin-top: 0;
+}

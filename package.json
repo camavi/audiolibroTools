@@ -12,6 +12,8 @@
         "vite": "^8.0.0"
     },
     "dependencies": {
+        "@tiptap/core": "^3.29.2",
+        "@tiptap/starter-kit": "^3.29.2",
         "cmswift": "^1.0.29"
     }
 }

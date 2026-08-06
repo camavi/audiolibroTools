@@ -9,6 +9,7 @@ export default defineConfig({
                 'resources/css/app.css',
                 'resources/js/app.js',
                 'resources/css/dashboard.css',
+                'resources/css/bookEditor.css',
                 'resources/js/dashboard.js',
             ],
             refresh: true,
