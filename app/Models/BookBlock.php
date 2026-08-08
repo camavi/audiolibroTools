@@ -48,6 +48,11 @@ class BookBlock extends Model
         return $this->hasMany(BookBlockReview::class);
     }
 
+    public function comments(): HasMany
+    {
+        return $this->hasMany(BookBlockComment::class);
+    }
+
     public function currentVersion(): BelongsTo
     {
         return $this->belongsTo(BookBlockVersion::class, 'current_version_id');

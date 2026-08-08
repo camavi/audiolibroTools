@@ -21,6 +21,12 @@ const blockReviewsStatus = _.rod('idle');
 const blockReviewsContextKey = _.rod(null);
 const blockReviewsError = _.rod(null);
 const blockReviewActionStatus = _.rod('idle');
+const blockComments = _.rod([]);
+const blockCommentDraft = _.rod('');
+const blockCommentsStatus = _.rod('idle');
+const blockCommentsContextKey = _.rod(null);
+const blockCommentsError = _.rod(null);
+const blockCommentActionStatus = _.rod('idle');
 const aiChatMessages = _.rod([]);
 const aiChatDraft = _.rod('');
 const aiChatStatus = _.rod('idle');
@@ -51,6 +57,9 @@ let loadBlockReviews = () => { };
 let createBlockReview = () => { };
 let applyBlockReview = () => { };
 let rejectBlockReview = () => { };
+let loadBlockComments = () => { };
+let createBlockComment = () => { };
+let updateBlockCommentStatus = () => { };
 let askAiChat = () => { };
 let loadAiChatMessages = () => { };
 let loadAiProviders = () => { };
@@ -772,6 +781,84 @@ function aiChatPanel(block, keyBook) {
     );
 }
 
+function commentsPanel(block) {
+    if (!block) {
+        return _.div({ class: 'at-rightWorkspace-section' },
+            _.h3('Editorial comments'),
+            _.p('Select a block to add and review editorial comments.')
+        );
+    }
+
+    const status = blockCommentsStatus.value;
+    const actionStatus = blockCommentActionStatus.value;
+    const comments = blockComments.value;
+
+    return _.div({ class: 'at-rightWorkspace-section' },
+        _.h3('Editorial comments'),
+        block.dirty ? _.div({ class: 'at-rightWorkspace-note warning' }, 'Save the selected block before adding a comment.') : null,
+        !block.current_version_id ? _.div({ class: 'at-rightWorkspace-note warning' }, 'This block needs a saved version before comments can be tracked.') : null,
+        _.Textarea({
+            label: 'Comment',
+            icon: 'comment',
+            rows: 3,
+            model: blockCommentDraft,
+            placeholder: 'Add a note for this block',
+        }),
+        () => blockCommentsError.value ? _.div({ class: 'at-chatError' }, blockCommentsError.value) : null,
+        _.div({ class: 'at-rightWorkspace-actions is-top' },
+            _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-action is-primary',
+                disabled: () => !Boolean(blockCommentDraft.value.trim())
+                    || block.dirty
+                    || !block.current_version_id
+                    || blockCommentActionStatus.value !== 'idle',
+                onclick: () => createBlockComment(block),
+            }, actionStatus === 'creating' ? 'Adding...' : 'Add comment'),
+            _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-action',
+                disabled: () => actionStatus !== 'idle',
+                onclick: () => loadBlockComments(block, { force: true }),
+            }, 'Refresh')
+        ),
+        status === 'loading'
+            ? _.div({ class: 'at-chatNotice' }, 'Loading comments...')
+            : null,
+        comments.length
+            ? _.div({ class: 'at-commentList' }, comments.map((comment) => {
+                const isOpen = (comment.status || 'open') === 'open';
+                const isBusy = actionStatus === `updating:${comment.id}`;
+
+                return _.div({
+                    class: comment.is_current_version ? 'at-commentItem' : 'at-commentItem is-stale',
+                },
+                    _.div({ class: 'at-commentItem-head' },
+                        _.strong(isOpen ? 'Open comment' : 'Resolved comment'),
+                        _.span({ class: `at-commentStatus status-${comment.status}` }, comment.status || 'open')
+                    ),
+                    _.div({ class: 'at-commentItem-version' }, comment.version_number
+                        ? `v${comment.version_number}${comment.is_current_version ? ' current' : ' stale'}`
+                        : ''
+                    ),
+                    _.p({ class: 'at-commentBody' }, comment.body || ''),
+                    _.div({ class: 'at-commentItem-actions' },
+                        _.button({
+                            type: 'button',
+                            class: isOpen ? 'at-commentItem-action' : 'at-commentItem-action is-apply',
+                            disabled: isBusy || actionStatus !== 'idle',
+                            onclick: () => updateBlockCommentStatus(block, comment, isOpen ? 'resolved' : 'open'),
+                        }, isBusy ? 'Saving...' : (isOpen ? 'Resolve' : 'Reopen'))
+                    )
+                );
+            }))
+            : _.div({ class: 'at-rightWorkspace-emptyState' },
+                _.strong('No comments yet'),
+                _.p('Add comments to track manual editorial notes on this block version.')
+            )
+    );
+}
+
 function correctionPanel(block, keyBook) {
     if (!block) {
         return _.div({ class: 'at-rightWorkspace-section' },
@@ -1061,6 +1148,15 @@ function rightWorkspaceBody(tool, block, keyBook) {
         return _.div({ class: 'at-rightWorkspace-body' },
             blockContextSummary(block),
             aiChatPanel(block, keyBook)
+        );
+    }
+
+    if (tool.id === 'comments') {
+        runUntracked(() => loadBlockComments(block));
+
+        return _.div({ class: 'at-rightWorkspace-body' },
+            blockContextSummary(block),
+            commentsPanel(block)
         );
     }
 
@@ -1717,6 +1813,111 @@ function editorText(keyBook) {
         }
     };
 
+    loadBlockComments = (block, { force = false } = {}) => {
+        if (!keyBook || !block?.block_uuid) {
+            blockComments.value = [];
+            blockCommentsStatus.value = 'idle';
+            blockCommentsContextKey.value = null;
+            blockCommentsError.value = null;
+            return;
+        }
+
+        const contextKey = `${keyBook}:${block.block_uuid}:${block.current_version_id || 'new'}`;
+        if (!force && blockCommentsContextKey.value === contextKey && blockCommentsStatus.value !== 'error') return;
+
+        blockCommentsContextKey.value = contextKey;
+        blockComments.value = [];
+        blockCommentsStatus.value = 'loading';
+        blockCommentsError.value = null;
+
+        _.http.getJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/comments`)
+            .then((payload) => {
+                if (blockCommentsContextKey.value !== contextKey) return;
+
+                const data = normalizeDataPayload(payload);
+                blockComments.value = data.comments || [];
+                blockCommentsStatus.value = 'ready';
+            })
+            .catch((error) => {
+                if (blockCommentsContextKey.value !== contextKey) return;
+
+                blockComments.value = [];
+                blockCommentsError.value = requestErrorMessage(error, 'Unable to load comments for this block.');
+                blockCommentsStatus.value = 'error';
+            });
+    };
+
+    const upsertCommentInList = (comment) => {
+        if (!comment) return;
+
+        blockComments.value = [
+            comment,
+            ...blockComments.value.filter((item) => item.id !== comment.id),
+        ].sort((a, b) => {
+            if ((a.status === 'open') !== (b.status === 'open')) return a.status === 'open' ? -1 : 1;
+            return (b.id || 0) - (a.id || 0);
+        });
+        blockCommentsError.value = null;
+        blockCommentsStatus.value = 'ready';
+    };
+
+    createBlockComment = (block) => {
+        const body = blockCommentDraft.value.trim();
+        if (!keyBook || !block?.block_uuid || !body || block.dirty || !block.current_version_id || blockCommentActionStatus.value !== 'idle') return;
+
+        blockCommentActionStatus.value = 'creating';
+        blockCommentsError.value = null;
+
+        _.http.postJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/comments`, {
+            body,
+        })
+            .then((payload) => {
+                const data = normalizeDataPayload(payload);
+
+                if (data.comment) {
+                    blockCommentsContextKey.value = `${keyBook}:${block.block_uuid}:${block.current_version_id || 'new'}`;
+                    upsertCommentInList(data.comment);
+                    blockCommentDraft.value = '';
+                } else {
+                    loadBlockComments(block, { force: true });
+                }
+            })
+            .catch((error) => {
+                blockCommentsError.value = requestErrorMessage(error, 'Unable to create comment.');
+                blockCommentsStatus.value = 'error';
+            })
+            .finally(() => {
+                blockCommentActionStatus.value = 'idle';
+            });
+    };
+
+    updateBlockCommentStatus = (block, comment, status) => {
+        if (!keyBook || !block?.block_uuid || !comment?.id || blockCommentActionStatus.value !== 'idle') return;
+
+        blockCommentActionStatus.value = `updating:${comment.id}`;
+        blockCommentsError.value = null;
+
+        _.http.patchJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/comments/${comment.id}`, {
+            status,
+        })
+            .then((payload) => {
+                const data = normalizeDataPayload(payload);
+
+                if (data.comment) {
+                    upsertCommentInList(data.comment);
+                } else {
+                    loadBlockComments(block, { force: true });
+                }
+            })
+            .catch((error) => {
+                blockCommentsError.value = requestErrorMessage(error, 'Unable to update comment.');
+                blockCommentsStatus.value = 'error';
+            })
+            .finally(() => {
+                blockCommentActionStatus.value = 'idle';
+            });
+    };
+
     loadAiChatMessages = (block, { force = false } = {}) => {
         if (!keyBook) {
             aiChatMessages.value = [];
@@ -2093,6 +2294,12 @@ function editorText(keyBook) {
         blockReviewsContextKey.value = null;
         blockReviewsError.value = null;
         blockReviewActionStatus.value = 'idle';
+        blockComments.value = [];
+        blockCommentDraft.value = '';
+        blockCommentsStatus.value = 'idle';
+        blockCommentsContextKey.value = null;
+        blockCommentsError.value = null;
+        blockCommentActionStatus.value = 'idle';
         aiChatMessages.value = [];
         aiChatDraft.value = '';
         aiChatStatus.value = 'idle';
@@ -2112,6 +2319,9 @@ function editorText(keyBook) {
         createBlockReview = () => { };
         applyBlockReview = () => { };
         rejectBlockReview = () => { };
+        loadBlockComments = () => { };
+        createBlockComment = () => { };
+        updateBlockCommentStatus = () => { };
         askAiChat = () => { };
         loadAiChatMessages = () => { };
         loadAiProviders = () => { };

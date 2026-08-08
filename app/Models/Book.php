@@ -35,6 +35,11 @@ class Book extends Model
         return $this->hasMany(BookBlockReview::class);
     }
 
+    public function blockComments(): HasMany
+    {
+        return $this->hasMany(BookBlockComment::class);
+    }
+
     public function aiChatThreads(): HasMany
     {
         return $this->hasMany(AiChatThread::class);

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AiChatMessage;
 use App\Models\AiChatThread;
 use App\Models\Book;
+use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
 use App\Models\BookCategory;
 use App\Services\BookBlockService;
@@ -780,6 +781,90 @@ class DashboardBookTest extends TestCase
             'status' => 'applied',
             'applied_book_block_version_id' => $second['version']->id,
         ]);
+    }
+
+    public function test_dashboard_can_create_and_return_block_comments(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $saved = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Paragraph with a note.'),
+            'text_plain' => 'Paragraph with a note.',
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/comments", [
+            'body' => 'Check this sentence rhythm.',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.comment.status', 'open')
+            ->assertJsonPath('data.comment.body', 'Check this sentence rhythm.')
+            ->assertJsonPath('data.comment.block_uuid', $blockUuid)
+            ->assertJsonPath('data.comment.block_version_id', $saved['version']->id)
+            ->assertJsonPath('data.comment.version_number', 1)
+            ->assertJsonPath('data.comment.is_current_version', true);
+
+        $this->assertDatabaseHas('book_block_comments', [
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+            'status' => 'open',
+            'body' => 'Check this sentence rhythm.',
+        ]);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/comments")
+            ->assertOk()
+            ->assertJsonPath('data.block.block_uuid', $blockUuid)
+            ->assertJsonPath('data.comments.0.body', 'Check this sentence rhythm.')
+            ->assertJsonPath('data.comments.0.status', 'open');
+    }
+
+    public function test_dashboard_can_resolve_and_reopen_block_comment(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $saved = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Paragraph to comment.'),
+            'text_plain' => 'Paragraph to comment.',
+        ]);
+
+        $comment = BookBlockComment::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+            'block_uuid' => $blockUuid,
+            'status' => 'open',
+            'body' => 'Resolve this note.',
+        ]);
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/comments/{$comment->id}", [
+            'status' => 'resolved',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.comment.id', $comment->id)
+            ->assertJsonPath('data.comment.status', 'resolved');
+
+        $this->assertDatabaseHas('book_block_comments', [
+            'id' => $comment->id,
+            'status' => 'resolved',
+        ]);
+        $this->assertNotNull($comment->refresh()->resolved_at);
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/comments/{$comment->id}", [
+            'status' => 'open',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.comment.status', 'open')
+            ->assertJsonPath('data.comment.resolved_at', null);
     }
 
     private function createBook(): Book

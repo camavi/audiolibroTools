@@ -7,6 +7,7 @@ use App\Models\AiChatMessage;
 use App\Models\AiChatThread;
 use App\Models\Book;
 use App\Models\BookBlock;
+use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
 use App\Models\BookCategory;
 use App\Services\Ai\EditorAiChatService;
@@ -234,6 +235,34 @@ class DashboardBookController extends Controller
         ]);
     }
 
+    public function blockComments(string $keyBook, string $blockUuid): JsonResponse
+    {
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->with('currentVersion')
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        $comments = $block->comments()
+            ->with('blockVersion:id,version_number')
+            ->orderByRaw("case when status = 'open' then 0 else 1 end")
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get();
+
+        return response()->json([
+            'data' => [
+                'block' => $this->serializeEditorBlock($block),
+                'comments' => $comments
+                    ->map(fn (BookBlockComment $comment) => $this->serializeBlockComment($comment, $block))
+                    ->values(),
+            ],
+        ]);
+    }
+
     public function aiChatThread(Request $request, string $keyBook): JsonResponse
     {
         $validated = $request->validate([
@@ -301,6 +330,84 @@ class DashboardBookController extends Controller
                 'thread' => $this->serializeChatThread($thread->refresh()),
                 'message' => $message,
                 'messages' => $this->serializeChatMessages($thread),
+            ],
+        ]);
+    }
+
+    public function storeBlockComment(Request $request, string $keyBook, string $blockUuid): JsonResponse
+    {
+        $validated = $request->validate([
+            'body' => ['required', 'string', 'max:5000'],
+        ]);
+
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->with('currentVersion')
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        if (! $block->currentVersion) {
+            return response()->json([
+                'message' => 'The selected block has no saved version to comment.',
+                'errors' => [
+                    'block' => ['Save the block before adding a comment.'],
+                ],
+            ], 422);
+        }
+
+        $comment = BookBlockComment::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $block->id,
+            'book_block_version_id' => $block->currentVersion->id,
+            'block_uuid' => $block->block_uuid,
+            'status' => 'open',
+            'body' => trim($validated['body']),
+            'created_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'data' => [
+                'comment' => $this->serializeBlockComment($comment->load('blockVersion:id,version_number'), $block),
+                'created' => true,
+            ],
+        ], 201);
+    }
+
+    public function updateBlockComment(
+        Request $request,
+        string $keyBook,
+        string $blockUuid,
+        BookBlockComment $comment,
+    ): JsonResponse {
+        $validated = $request->validate([
+            'status' => ['required', 'string', 'in:open,resolved'],
+        ]);
+
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        abort_unless(
+            $comment->book_id === $book->id && $comment->book_block_id === $block->id,
+            404
+        );
+
+        $comment->forceFill([
+            'status' => $validated['status'],
+            'resolved_at' => $validated['status'] === 'resolved' ? now() : null,
+            'resolved_by' => $validated['status'] === 'resolved' ? auth()->id() : null,
+        ])->save();
+
+        return response()->json([
+            'data' => [
+                'comment' => $this->serializeBlockComment($comment->load('blockVersion:id,version_number'), $block),
             ],
         ]);
     }
@@ -471,6 +578,22 @@ class DashboardBookController extends Controller
             'applied_block_version_id' => $review->applied_book_block_version_id,
             'version_number' => $review->blockVersion?->version_number,
             'is_current_version' => $block->current_version_id === $review->book_block_version_id,
+        ];
+    }
+
+    private function serializeBlockComment(BookBlockComment $comment, BookBlock $block): array
+    {
+        return [
+            'id' => $comment->id,
+            'status' => $comment->status,
+            'body' => $comment->body,
+            'metadata_json' => $comment->metadata_json,
+            'created_at' => $comment->created_at?->toISOString(),
+            'resolved_at' => $comment->resolved_at?->toISOString(),
+            'block_uuid' => $comment->block_uuid,
+            'block_version_id' => $comment->book_block_version_id,
+            'version_number' => $comment->blockVersion?->version_number,
+            'is_current_version' => $block->current_version_id === $comment->book_block_version_id,
         ];
     }
 

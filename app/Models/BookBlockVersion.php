@@ -41,4 +41,9 @@ class BookBlockVersion extends Model
     {
         return $this->hasMany(BookBlockReview::class, 'book_block_version_id');
     }
+
+    public function comments(): HasMany
+    {
+        return $this->hasMany(BookBlockComment::class, 'book_block_version_id');
+    }
 }
