@@ -243,6 +243,14 @@
     background: #ffffff;
 }
 
+.at-rightWorkspace-headerTop {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
 .at-rightWorkspace-title {
     display: flex;
     align-items: center;
@@ -251,6 +259,31 @@
     color: #111827;
     font-size: 14px;
     font-weight: 700;
+}
+
+.at-rightWorkspace-toolSettings {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+}
+
+.at-rightWorkspace-toolSettings:hover {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+    color: #0f172a;
+}
+
+.at-rightWorkspace-toolSettingsIcon {
+    font-size: 19px;
+    line-height: 1;
 }
 
 .at-rightWorkspace-titleIcon {
@@ -327,10 +360,12 @@
 }
 
 .at-rightWorkspace-actions {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 7px;
+    text-align: right;
     margin-top: 14px;
+}
+
+.at-rightWorkspace-actions>button {
+    margin-left: 8px;
 }
 
 .at-rightWorkspace-actions.is-top {
@@ -561,6 +596,59 @@
     color: #0f172a;
 }
 
+.at-reviewDiff {
+    display: grid;
+    gap: 8px;
+    margin-top: 9px;
+}
+
+.at-reviewDiff-row {
+    min-width: 0;
+}
+
+.at-reviewDiff-label {
+    display: block;
+    margin-bottom: 4px;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.at-reviewDiff-row p {
+    display: -webkit-box;
+    margin: 0;
+    overflow: hidden;
+    color: #334155;
+    font-size: 12px;
+    line-height: 1.45;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+}
+
+.at-reviewDiff-token {
+    color: inherit;
+}
+
+.at-reviewDiff-token.is-removed {
+    border-radius: 3px;
+    background: #fee2e2;
+    color: #991b1b;
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+}
+
+.at-reviewDiff-token.is-added {
+    border-radius: 3px;
+    background: #dcfce7;
+    color: #166534;
+}
+
+.at-reviewDiff-empty {
+    color: #94a3b8;
+    font-style: italic;
+}
+
 .at-reviewItem-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -597,6 +685,40 @@
 .at-reviewItem-action:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+}
+
+.at-aiSettings {
+    display: grid;
+    gap: 10px;
+}
+
+.at-aiSettingsDialog {
+    min-width: 0;
+}
+
+.at-aiSettings-providerCard {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    padding: 9px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    background: #f8fafc;
+}
+
+.at-aiSettings-providerCard span,
+.at-aiSettings-providerCard small {
+    color: #64748b;
+    font-size: 11px;
+}
+
+.at-aiSettings-providerCard strong {
+    min-width: 0;
+    overflow: hidden;
+    color: #0f172a;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .at-editorText {

@@ -47,3 +47,7 @@
 - Reso operativo `Check selected block` nel tool Correct: nuovo endpoint POST crea una review `mock-ai` legata alla versione corrente del blocco, il frontend salva la review e aggiorna la lista senza provider AI esterno.
 - Reso idempotente `Check selected block`: se esiste gia' una review `draft` `mock-ai` dello stesso tipo per la stessa versione del blocco, il backend riusa quella esistente invece di creare duplicati.
 - Aggiunto workflow Apply/Reject per le correzioni: le review possono essere marcate `applied` o `rejected`, Apply aggiorna il blocco TipTap, forza il salvataggio e collega la review alla versione applicata.
+- Aggiunto diff visuale nel tool Correct: ogni review mostra le parole rimosse e aggiunte tra testo originale e suggerito prima di Apply/Reject.
+- Avviato layer provider AI: provider predefiniti, provider custom con hosting/modelli, impostazioni per servizio AI e pannello Settings con dialog per aggiungere provider custom.
+- Aggiunta gestione API key per provider AI: credential separate e criptate, campo key nel pannello Settings e nel dialog provider custom, risposta API limitata a `has_api_key`.
+- Aggiunte impostazioni AI per singolo tool del Right Workspace: ogni box apre il proprio dialog provider/model/key e il backend mantiene setting separati per chat, comments, correction, voices, audio, translate e versions.

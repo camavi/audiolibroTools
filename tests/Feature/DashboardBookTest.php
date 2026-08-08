@@ -7,6 +7,7 @@ use App\Models\BookBlockReview;
 use App\Models\BookCategory;
 use App\Services\BookBlockService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -259,6 +260,80 @@ class DashboardBookTest extends TestCase
         $this->assertDatabaseCount('book_block_versions', 1);
     }
 
+    public function test_dashboard_can_return_default_ai_provider_settings(): void
+    {
+        $book = $this->createBook();
+
+        $this->getJson("/dashboard/api/ai/providers?service=correction&key_book={$book->key_book}")
+            ->assertOk()
+            ->assertJsonPath('data.setting.service', 'correction')
+            ->assertJsonPath('data.setting.provider_key', 'mock')
+            ->assertJsonPath('data.setting.model', 'mock-correction-v1')
+            ->assertJsonPath('data.providers.0.provider_key', 'mock')
+            ->assertJsonPath('data.services.2.key', 'correction')
+            ->assertJsonPath('data.services.7.key', 'versions');
+    }
+
+    public function test_dashboard_can_create_custom_ai_provider_and_save_service_setting(): void
+    {
+        $book = $this->createBook();
+
+        $providerKey = $this->postJson('/dashboard/api/ai/providers', [
+            'name' => 'Local Studio',
+            'base_url' => 'http://127.0.0.1:9000/v1',
+            'models' => ['local-editor', 'local-fast'],
+            'default_model' => 'local-editor',
+            'api_key' => 'local-secret-key',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.provider.name', 'Local Studio')
+            ->assertJsonPath('data.provider.base_url', 'http://127.0.0.1:9000/v1')
+            ->assertJsonPath('data.provider.has_api_key', true)
+            ->json('data.provider.provider_key');
+
+        $this->patchJson('/dashboard/api/ai/settings', [
+            'service' => 'correction',
+            'key_book' => $book->key_book,
+            'provider_key' => $providerKey,
+            'model' => 'local-fast',
+            'api_key' => 'local-secret-key-updated',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.setting.service', 'correction')
+            ->assertJsonPath('data.setting.provider_key', $providerKey)
+            ->assertJsonPath('data.setting.model', 'local-fast');
+
+        $providersPayload = $this->getJson("/dashboard/api/ai/providers?service=correction&key_book={$book->key_book}")
+            ->assertOk()
+            ->json('data.providers');
+
+        $savedProvider = collect($providersPayload)->firstWhere('provider_key', $providerKey);
+
+        $this->assertTrue($savedProvider['has_api_key']);
+        $this->assertArrayNotHasKey('api_key', $savedProvider);
+
+        $this->assertDatabaseHas('ai_providers', [
+            'name' => 'Local Studio',
+            'default_model' => 'local-editor',
+            'is_custom' => true,
+        ]);
+
+        $this->assertDatabaseHas('ai_service_settings', [
+            'book_id' => $book->id,
+            'service' => 'correction',
+            'provider_key' => $providerKey,
+            'model' => 'local-fast',
+        ]);
+
+        $encryptedKey = $this->getConnection()
+            ->table('ai_provider_credentials')
+            ->where('provider_key', $providerKey)
+            ->value('api_key');
+
+        $this->assertNotSame('local-secret-key-updated', $encryptedKey);
+        $this->assertSame('local-secret-key-updated', Crypt::decryptString($encryptedKey));
+    }
+
     public function test_dashboard_can_return_editor_block_versions(): void
     {
         $book = $this->createBook();
@@ -369,6 +444,8 @@ class DashboardBookTest extends TestCase
 
         $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/reviews", [
             'type' => 'grammar',
+            'provider_key' => 'openai',
+            'model' => 'gpt-5-mini',
         ])
             ->assertCreated()
             ->assertJsonPath('data.review.type', 'grammar')
@@ -377,6 +454,8 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.review.block_version_id', $saved['version']->id)
             ->assertJsonPath('data.review.version_number', 1)
             ->assertJsonPath('data.review.is_current_version', true)
+            ->assertJsonPath('data.review.notes_json.provider_key', 'openai')
+            ->assertJsonPath('data.review.notes_json.model', 'gpt-5-mini')
             ->assertJsonPath('data.review.original_text', 'Original phrase , with spacing. Next sentence.')
             ->assertJsonPath('data.review.suggested_text', 'Original phrase, with spacing. Next sentence.');
 

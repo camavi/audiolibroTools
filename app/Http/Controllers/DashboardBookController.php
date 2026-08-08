@@ -234,6 +234,8 @@ class DashboardBookController extends Controller
     {
         $validated = $request->validate([
             'type' => ['nullable', 'string', 'in:grammar,style,continuity,rewrite'],
+            'provider_key' => ['nullable', 'string', 'max:80'],
+            'model' => ['nullable', 'string', 'max:120'],
         ]);
 
         $book = Book::query()
@@ -255,12 +257,16 @@ class DashboardBookController extends Controller
         }
 
         $reviewType = $validated['type'] ?? 'grammar';
+        $providerKey = $validated['provider_key'] ?? 'mock';
+        $model = $validated['model'] ?? 'mock-correction-v1';
         $existingReview = $block->reviews()
             ->with('blockVersion:id,version_number')
             ->where('book_block_version_id', $block->currentVersion->id)
             ->where('type', $reviewType)
             ->where('status', 'draft')
             ->where('source', 'mock-ai')
+            ->where('notes_json->provider_key', $providerKey)
+            ->where('notes_json->model', $model)
             ->latest('id')
             ->first();
 
@@ -287,6 +293,8 @@ class DashboardBookController extends Controller
             'suggested_text' => $suggestedText,
             'notes_json' => [
                 'mode' => 'local-mock',
+                'provider_key' => $providerKey,
+                'model' => $model,
                 'changes_detected' => $originalText !== $suggestedText,
                 'message' => 'Local placeholder correction. AI provider integration comes next.',
             ],

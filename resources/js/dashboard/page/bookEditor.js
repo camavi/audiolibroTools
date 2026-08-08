@@ -20,13 +20,34 @@ const blockReviews = _.rod([]);
 const blockReviewsStatus = _.rod('idle');
 const blockReviewsContextKey = _.rod(null);
 const blockReviewActionStatus = _.rod('idle');
+const aiProviders = _.rod([]);
+const aiProviderSetting = _.rod({ service: 'correction', provider_key: 'mock', model: 'mock-correction-v1' });
+const aiServiceSettings = _.rod({});
+const aiServices = _.rod([]);
+const aiProviderStatus = _.rod('idle');
+const aiProviderContextKey = _.rod(null);
+const aiServiceModel = _.rod('correction');
+const aiProviderModel = _.rod('mock');
+const aiModelModel = _.rod('mock-correction-v1');
+const aiProviderApiKey = _.rod('');
+const customProviderName = _.rod('');
+const customProviderBaseUrl = _.rod('');
+const customProviderModels = _.rod('');
+const customProviderApiKey = _.rod('');
+const customProviderStatus = _.rod(null);
+const savingAiProvider = _.rod(false);
+const savingAiSetting = _.rod(false);
 
-let focusEditorBlock = () => {};
-let loadBlockVersions = () => {};
-let loadBlockReviews = () => {};
-let createBlockReview = () => {};
-let applyBlockReview = () => {};
-let rejectBlockReview = () => {};
+let focusEditorBlock = () => { };
+let loadBlockVersions = () => { };
+let loadBlockReviews = () => { };
+let createBlockReview = () => { };
+let applyBlockReview = () => { };
+let rejectBlockReview = () => { };
+let loadAiProviders = () => { };
+let saveAiProviderSetting = () => { };
+let openCustomProviderDialog = () => { };
+let openToolAiSettingsDialog = () => { };
 
 const AUTOSAVE_DELAY = 1200;
 
@@ -50,6 +71,20 @@ const rightWorkspaceTools = [
     { id: 'versions', icon: 'history', label: 'Versions' },
     { id: 'settings', icon: 'tune', label: 'Settings' },
 ];
+
+const toolAiServices = {
+    chat: 'chat',
+    comments: 'comments',
+    correct: 'correction',
+    voices: 'voices',
+    audio: 'audio',
+    translate: 'translate',
+    versions: 'versions',
+};
+
+function aiServiceForTool(toolId) {
+    return toolAiServices[toolId] || toolId || 'correction';
+}
 
 const TrackableBlocks = Extension.create({
     name: 'trackableBlocks',
@@ -201,6 +236,132 @@ function textFromNode(node) {
         .trim();
 }
 
+function diffTokens(text) {
+    return (text || '')
+        .match(/\S+/g) || [];
+}
+
+function diffTokenParts(originalText, suggestedText) {
+    const original = diffTokens(originalText);
+    const suggested = diffTokens(suggestedText);
+    const rows = Array.from({ length: original.length + 1 }, () => Array(suggested.length + 1).fill(0));
+
+    for (let i = original.length - 1; i >= 0; i -= 1) {
+        for (let j = suggested.length - 1; j >= 0; j -= 1) {
+            rows[i][j] = original[i] === suggested[j]
+                ? rows[i + 1][j + 1] + 1
+                : Math.max(rows[i + 1][j], rows[i][j + 1]);
+        }
+    }
+
+    const parts = [];
+    let i = 0;
+    let j = 0;
+
+    while (i < original.length && j < suggested.length) {
+        if (original[i] === suggested[j]) {
+            parts.push({ type: 'same', text: original[i] });
+            i += 1;
+            j += 1;
+        } else if (rows[i + 1][j] >= rows[i][j + 1]) {
+            parts.push({ type: 'removed', text: original[i] });
+            i += 1;
+        } else {
+            parts.push({ type: 'added', text: suggested[j] });
+            j += 1;
+        }
+    }
+
+    while (i < original.length) {
+        parts.push({ type: 'removed', text: original[i] });
+        i += 1;
+    }
+
+    while (j < suggested.length) {
+        parts.push({ type: 'added', text: suggested[j] });
+        j += 1;
+    }
+
+    return parts;
+}
+
+function renderDiffLine(parts, mode) {
+    const visibleParts = parts.filter((part) => {
+        if (mode === 'original') return part.type !== 'added';
+        return part.type !== 'removed';
+    });
+
+    if (!visibleParts.length) return _.span({ class: 'at-reviewDiff-empty' }, 'Empty block');
+
+    return visibleParts.map((part, index) => _.span({
+        class: part.type === 'same'
+            ? 'at-reviewDiff-token'
+            : `at-reviewDiff-token is-${part.type}`,
+    }, `${index ? ' ' : ''}${part.text}`));
+}
+
+function reviewDiff(originalText, suggestedText) {
+    const parts = diffTokenParts(originalText || '', suggestedText || '');
+
+    return _.div({ class: 'at-reviewDiff' },
+        _.div({ class: 'at-reviewDiff-row' },
+            _.span({ class: 'at-reviewDiff-label' }, 'Original'),
+            _.p(renderDiffLine(parts, 'original'))
+        ),
+        _.div({ class: 'at-reviewDiff-row' },
+            _.span({ class: 'at-reviewDiff-label' }, 'Suggested'),
+            _.p(renderDiffLine(parts, 'suggested'))
+        )
+    );
+}
+
+function selectedAiProvider() {
+    return aiProviders.value.find((provider) => provider.provider_key === aiProviderSetting.value.provider_key)
+        || aiProviders.value[0]
+        || null;
+}
+
+function selectedAiModelOptions() {
+    return selectedAiProvider()?.models || [];
+}
+
+function syncAiSettingModels(setting) {
+    const service = setting.service || 'correction';
+    const providerKey = setting.provider_key || 'mock';
+    const model = setting.model || 'mock-correction-v1';
+
+    if (aiServiceModel.value !== service) aiServiceModel.value = service;
+    if (aiProviderModel.value !== providerKey) aiProviderModel.value = providerKey;
+    if (aiModelModel.value !== model) aiModelModel.value = model;
+}
+
+function setAiProviderSetting(nextSetting) {
+    const normalized = {
+        service: nextSetting.service || 'correction',
+        provider_key: nextSetting.provider_key || 'mock',
+        model: nextSetting.model || 'mock-correction-v1',
+    };
+
+    const current = aiProviderSetting.value;
+    if (
+        current.service !== normalized.service
+        || current.provider_key !== normalized.provider_key
+        || current.model !== normalized.model
+    ) {
+        aiProviderSetting.value = normalized;
+    }
+
+    syncAiSettingModels(normalized);
+}
+
+function selectChangeValue(value, fallback = '') {
+    if (value && typeof value === 'object' && 'target' in value) {
+        return value.target?.value ?? fallback;
+    }
+
+    return value ?? fallback;
+}
+
 function extractEditorBlocks(doc, blockMeta) {
     const blocks = [];
 
@@ -345,11 +506,21 @@ function indexBook() {
     );
 }
 
-function rightWorkspaceHeader(tool, block) {
+function rightWorkspaceHeader(tool, block, keyBook) {
+    const service = aiServiceForTool(tool.id);
+
     return _.div({ class: 'at-rightWorkspace-header' },
-        _.div({ class: 'at-rightWorkspace-title' },
-            _.Icon ? _.Icon({ name: tool.icon, class: 'at-rightWorkspace-titleIcon' }) : null,
-            _.span(tool.label)
+        _.div({ class: 'at-rightWorkspace-headerTop' },
+            _.div({ class: 'at-rightWorkspace-title' },
+                _.Icon ? _.Icon({ name: tool.icon, class: 'at-rightWorkspace-titleIcon' }) : null,
+                _.span(tool.label)
+            ),
+            tool.id !== 'settings' ? _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-toolSettings',
+                title: `${tool.label} AI settings`,
+                onclick: () => openToolAiSettingsDialog(keyBook, service, tool.label),
+            }, _.Icon ? _.Icon({ name: 'settings', class: 'at-rightWorkspace-toolSettingsIcon' }) : 'Settings') : null
         ),
         _.div({ class: 'at-rightWorkspace-context' }, block
             ? `${outlineKindLabel(block)} · ${block.label}`
@@ -502,14 +673,7 @@ function correctionPanel(block) {
                         ? `v${review.version_number}${review.is_current_version ? ' current' : ' stale'}`
                         : ''
                     ),
-                    _.div({ class: 'at-reviewItem-text' },
-                        _.span('Original'),
-                        _.p(review.original_text || 'Empty block')
-                    ),
-                    _.div({ class: 'at-reviewItem-text suggested' },
-                        _.span('Suggested'),
-                        _.p(review.suggested_text || 'No suggestion text')
-                    ),
+                    reviewDiff(review.original_text, review.suggested_text),
                     isDraft ? _.div({ class: 'at-reviewItem-actions' },
                         _.button({
                             type: 'button',
@@ -533,7 +697,126 @@ function correctionPanel(block) {
     );
 }
 
-function rightWorkspaceBody(tool, block) {
+function aiSettingsPanel(keyBook, options = {}) {
+    const serviceLocked = options.serviceLocked || false;
+    const status = aiProviderStatus.value;
+    const provider = selectedAiProvider();
+    const models = selectedAiModelOptions();
+
+    if (status === 'loading') {
+        return _.div({ class: 'at-rightWorkspace-section' },
+            _.h3('AI providers'),
+            _.p('Loading provider settings...')
+        );
+    }
+
+    if (status === 'error') {
+        return _.div({ class: 'at-rightWorkspace-section' },
+            _.h3('AI providers'),
+            _.p('Unable to load AI provider settings.'),
+            _.div({ class: 'at-rightWorkspace-actions is-inline' },
+                _.button({
+                    type: 'button',
+                    class: 'at-rightWorkspace-action is-primary',
+                    onclick: () => loadAiProviders(keyBook, aiProviderSetting.value.service),
+                }, 'Retry')
+            )
+        );
+    }
+
+    return _.div({ class: 'at-rightWorkspace-section' },
+        _.h3('AI providers'),
+        _.div({ class: 'at-aiSettings' },
+            serviceLocked ? _.div({ class: 'at-aiSettings-providerCard' },
+                _.span('Service'),
+                _.strong(aiServices.value.find((service) => service.key === aiProviderSetting.value.service)?.label || options.serviceLabel || aiProviderSetting.value.service),
+                _.small('This setting belongs only to this tool')
+            ) : _.Select({
+                label: 'Service',
+                icon: 'apps',
+                model: aiServiceModel,
+                options: () => aiServices.value.map((service) => ({
+                    label: service.label,
+                    value: service.key,
+                })),
+                onChange: (value) => {
+                    const nextService = selectChangeValue(value, aiProviderSetting.value.service);
+                    if (!nextService || nextService === aiProviderSetting.value.service) return;
+
+                    loadAiProviders(keyBook, nextService);
+                },
+            }),
+            _.Select({
+                label: 'Provider',
+                icon: 'hub',
+                model: aiProviderModel,
+                options: () => aiProviders.value.map((item) => ({
+                    label: item.is_custom ? `${item.name} · Custom` : item.name,
+                    value: item.provider_key,
+                })),
+                onChange: (value) => {
+                    const nextProviderKey = selectChangeValue(value, aiProviderSetting.value.provider_key);
+                    if (!nextProviderKey || nextProviderKey === aiProviderSetting.value.provider_key) return;
+
+                    const nextProvider = aiProviders.value.find((item) => item.provider_key === nextProviderKey);
+                    setAiProviderSetting({
+                        ...aiProviderSetting.value,
+                        provider_key: nextProviderKey,
+                        model: nextProvider?.default_model || nextProvider?.models?.[0] || '',
+                    });
+                    aiProviderApiKey.value = '';
+                },
+            }),
+            _.Select({
+                label: 'Model',
+                icon: 'memory',
+                model: aiModelModel,
+                options: () => models.map((model) => ({
+                    label: model,
+                    value: model,
+                })),
+                onChange: (value) => {
+                    const nextModel = selectChangeValue(value, aiProviderSetting.value.model);
+                    if (!nextModel || nextModel === aiProviderSetting.value.model) return;
+
+                    setAiProviderSetting({
+                        ...aiProviderSetting.value,
+                        model: nextModel,
+                    });
+                },
+            }),
+            _.Input({
+                label: provider?.has_api_key ? 'API key saved' : 'API key',
+                icon: 'key',
+                model: aiProviderApiKey,
+                type: 'password',
+                placeholder: provider?.has_api_key ? 'Leave empty to keep current key' : 'Paste provider API key',
+                autocomplete: 'off',
+            }),
+            _.div({ class: 'at-aiSettings-providerCard' },
+                _.span('Hosting'),
+                _.strong(provider?.base_url || 'Internal mock provider'),
+                _.small(provider?.has_api_key ? 'Credential stored' : 'No credential stored'),
+                _.small(provider?.is_custom ? 'Custom provider' : 'Built-in provider')
+            ),
+            _.div({ class: 'at-rightWorkspace-actions is-inline' },
+                _.button({
+                    type: 'button',
+                    class: 'at-rightWorkspace-action is-primary',
+                    disabled: savingAiSetting.value || !aiProviderSetting.value.provider_key || !aiProviderSetting.value.model,
+                    onclick: () => saveAiProviderSetting(keyBook),
+                }, savingAiSetting.value ? 'Saving...' : 'Save provider setting'),
+                _.button({
+                    type: 'button',
+                    class: 'at-rightWorkspace-action',
+                    onclick: () => openCustomProviderDialog(keyBook),
+                }, 'Add custom provider')
+            )
+        )
+    );
+}
+
+function rightWorkspaceBody(tool, block, keyBook) {
     const placeholders = {
         chat: {
             title: 'AI conversation',
@@ -596,6 +879,15 @@ function rightWorkspaceBody(tool, block) {
         );
     }
 
+    if (tool.id === 'settings') {
+        loadAiProviders(keyBook, aiProviderSetting.value.service);
+
+        return _.div({ class: 'at-rightWorkspace-body' },
+            blockContextSummary(block),
+            aiSettingsPanel(keyBook)
+        );
+    }
+
     return _.div({ class: 'at-rightWorkspace-body' },
         blockContextSummary(block),
         _.div({ class: 'at-rightWorkspace-section' },
@@ -612,7 +904,7 @@ function rightWorkspaceBody(tool, block) {
     );
 }
 
-function rightWorkspace() {
+function rightWorkspace(keyBook) {
     return _.div({ class: () => !commandView.value ? 'at-navCommand cms-d-none' : 'at-navCommand', area: 'navCommand' },
         _.div({ class: 'at-rightWorkspace' },
             _.div({ class: 'at-rightWorkspace-rail' },
@@ -630,8 +922,8 @@ function rightWorkspace() {
                 const block = activeOutlineItem();
 
                 return [
-                    rightWorkspaceHeader(tool, block),
-                    rightWorkspaceBody(tool, block),
+                    rightWorkspaceHeader(tool, block, keyBook),
+                    rightWorkspaceBody(tool, block, keyBook),
                 ];
             })
         )
@@ -903,6 +1195,209 @@ function editorText(keyBook) {
         saveStatus.value = status;
     };
 
+    const applyAiProviderPayload = (payload, service) => {
+        const data = normalizeDataPayload(payload);
+
+        aiProviders.value = data.providers || [];
+        aiServices.value = data.services || [];
+        setAiProviderSetting({
+            service,
+            provider_key: data.setting?.provider_key || 'mock',
+            model: data.setting?.model || 'mock-correction-v1',
+        });
+        aiServiceSettings.value = {
+            ...aiServiceSettings.value,
+            [service]: aiProviderSetting.value,
+        };
+        aiProviderStatus.value = 'ready';
+    };
+
+    loadAiProviders = (bookKey = keyBook, service = 'correction', { force = false } = {}) => {
+        const contextKey = `${bookKey || 'global'}:${service}`;
+        if (!force && aiProviderContextKey.value === contextKey && aiProviderStatus.value === 'loading') return;
+        if (!force && aiProviderContextKey.value === contextKey && aiProviderStatus.value !== 'error') return;
+
+        aiProviderContextKey.value = contextKey;
+        aiProviderStatus.value = 'loading';
+
+        const params = new URLSearchParams({
+            service,
+        });
+
+        if (bookKey) params.set('key_book', bookKey);
+
+        return _.http.getJSON(`/dashboard/api/ai/providers?${params.toString()}`)
+            .then((payload) => applyAiProviderPayload(payload, service))
+            .catch(() => {
+                aiProviders.value = [];
+                aiProviderStatus.value = 'error';
+            });
+    };
+
+    saveAiProviderSetting = async (bookKey = keyBook) => {
+        if (savingAiSetting.value) return;
+
+        savingAiSetting.value = true;
+
+        try {
+            const payload = await _.http.patchJSON('/dashboard/api/ai/settings', {
+                service: aiProviderSetting.value.service,
+                key_book: bookKey,
+                provider_key: aiProviderSetting.value.provider_key,
+                model: aiProviderSetting.value.model,
+                api_key: aiProviderApiKey.value.trim() || null,
+            });
+            const data = normalizeDataPayload(payload);
+
+            if (data.setting) {
+                setAiProviderSetting(data.setting);
+                aiServiceSettings.value = {
+                    ...aiServiceSettings.value,
+                    [data.setting.service]: data.setting,
+                };
+            }
+
+            aiProviderApiKey.value = '';
+            loadAiProviders(bookKey, aiProviderSetting.value.service, { force: true });
+        } finally {
+            savingAiSetting.value = false;
+        }
+    };
+
+    const customProviderForm = (bookKey, close) => _.form({
+        action: '#',
+        method: 'post',
+        onSubmit: async (event) => {
+            event.preventDefault();
+
+            const models = customProviderModels.value
+                .split(/[\n,]/)
+                .map((model) => model.trim())
+                .filter(Boolean);
+
+            if (!customProviderName.value.trim() || !models.length) {
+                customProviderStatus.value = {
+                    type: 'warning',
+                    title: 'Missing provider data',
+                    message: 'Add a provider name and at least one model.',
+                };
+                return;
+            }
+
+            savingAiProvider.value = true;
+            customProviderStatus.value = null;
+
+            try {
+                const payload = await _.http.postJSON('/dashboard/api/ai/providers', {
+                    name: customProviderName.value.trim(),
+                    base_url: customProviderBaseUrl.value.trim() || null,
+                    models,
+                    default_model: models[0],
+                    api_key: customProviderApiKey.value.trim() || null,
+                });
+                const data = normalizeDataPayload(payload);
+
+                await loadAiProviders(bookKey, aiProviderSetting.value.service, { force: true });
+
+                if (data.provider) {
+                    setAiProviderSetting({
+                        ...aiProviderSetting.value,
+                        provider_key: data.provider.provider_key,
+                        model: data.provider.default_model || data.provider.models?.[0] || '',
+                    });
+                }
+
+                close();
+            } catch (error) {
+                customProviderStatus.value = {
+                    type: 'danger',
+                    title: 'Provider not saved',
+                    message: error.message || 'Unable to save custom provider.',
+                };
+            } finally {
+                savingAiProvider.value = false;
+            }
+        },
+    },
+        _.Row({ gap: 'md' },
+            _.Input({
+                class: 'cms-col-24',
+                label: 'Provider name',
+                icon: 'badge',
+                model: customProviderName,
+            }),
+            _.Input({
+                class: 'cms-col-24',
+                label: 'Hosting / base URL',
+                icon: 'dns',
+                model: customProviderBaseUrl,
+            }),
+            _.Textarea({
+                class: 'cms-col-24',
+                label: 'Models',
+                icon: 'memory',
+                rows: 5,
+                model: customProviderModels,
+            }),
+            _.Input({
+                class: 'cms-col-24',
+                label: 'API key',
+                icon: 'key',
+                type: 'password',
+                model: customProviderApiKey,
+            }),
+            _.div({ class: 'cms-col-24' }, () => customProviderStatus.value
+                ? _.Alert(customProviderStatus.value)
+                : null),
+            _.div({ class: 'cms-col-24', align: 'right' },
+                _.Btn({ type: 'button', class: 'cms-m-r-sm', color: 'secondary', onClick: close }, 'Close'),
+                _.Btn({ type: 'submit', color: 'primary', loading: savingAiProvider }, 'Add provider')
+            )
+        )
+    );
+
+    openCustomProviderDialog = (bookKey = keyBook) => {
+        customProviderName.value = '';
+        customProviderBaseUrl.value = '';
+        customProviderModels.value = '';
+        customProviderApiKey.value = '';
+        customProviderStatus.value = null;
+
+        _.Dialog({
+            size: 'lg',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3('Add custom AI provider'),
+                    _.span({ class: 'text-muted' }, 'Configure hosting and model names for a provider used by editor tools.'),
+                ),
+                content: ({ close }) => customProviderForm(bookKey, close),
+            },
+        }).open();
+    };
+
+    openToolAiSettingsDialog = (bookKey = keyBook, service = 'correction', label = 'Tool') => {
+        aiProviderApiKey.value = '';
+        loadAiProviders(bookKey, service, { force: true });
+
+        _.Dialog({
+            size: 'lg',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3(`${label} AI settings`),
+                    _.span({ class: 'text-muted' }, 'Provider, model and credential used only by this tool.'),
+                ),
+                content: () => _.div({ class: 'at-aiSettingsDialog' }, () => (
+                    aiSettingsPanel(bookKey, {
+                        serviceLocked: true,
+                        serviceLabel: label,
+                    })
+                )),
+            },
+        }).open();
+    };
+
     loadBlockVersions = (block) => {
         if (!keyBook || !block?.block_uuid) {
             blockVersions.value = [];
@@ -990,10 +1485,13 @@ function editorText(keyBook) {
         if (!keyBook || !block?.block_uuid || block.dirty || blockReviewActionStatus.value !== 'idle') return;
 
         const contextKey = `${keyBook}:${block.block_uuid}:${block.current_version_id || 'new'}`;
+        const correctionSetting = aiServiceSettings.value.correction || aiProviderSetting.value;
         blockReviewActionStatus.value = 'checking';
 
         _.http.postJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/reviews`, {
             type,
+            provider_key: correctionSetting.provider_key,
+            model: correctionSetting.model,
         })
             .then((payload) => {
                 const data = normalizeDataPayload(payload);
@@ -1275,12 +1773,23 @@ function editorText(keyBook) {
         blockReviewsStatus.value = 'idle';
         blockReviewsContextKey.value = null;
         blockReviewActionStatus.value = 'idle';
-        focusEditorBlock = () => {};
-        loadBlockVersions = () => {};
-        loadBlockReviews = () => {};
-        createBlockReview = () => {};
-        applyBlockReview = () => {};
-        rejectBlockReview = () => {};
+        aiProviders.value = [];
+        aiProviderStatus.value = 'idle';
+        aiProviderContextKey.value = null;
+        setAiProviderSetting({ service: 'correction', provider_key: 'mock', model: 'mock-correction-v1' });
+        aiServiceSettings.value = {};
+        aiProviderApiKey.value = '';
+        customProviderApiKey.value = '';
+        focusEditorBlock = () => { };
+        loadBlockVersions = () => { };
+        loadBlockReviews = () => { };
+        createBlockReview = () => { };
+        applyBlockReview = () => { };
+        rejectBlockReview = () => { };
+        loadAiProviders = () => { };
+        saveAiProviderSetting = () => { };
+        openCustomProviderDialog = () => { };
+        openToolAiSettingsDialog = () => { };
         editor?.destroy();
         editor = null;
     };
@@ -1304,6 +1813,7 @@ function editorText(keyBook) {
         });
 
         applyRemoteContent();
+        loadAiProviders(keyBook, aiProviderSetting.value.service);
         refreshEditorUi();
     }, 0);
 
@@ -1354,6 +1864,6 @@ export default function bookEditor(ctx = null) {
     return _.div({
         class: 'at-page-bookEditor',
     }, _.div({ class: 'at-content-editor' },
-        indexBook(), content(keyBook), rightWorkspace()
+        indexBook(), content(keyBook), rightWorkspace(keyBook)
     ), bottomBar());
 }
