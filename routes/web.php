@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Controllers\DashboardBookController;
 use App\Http\Controllers\DashboardAiController;
+use App\Http\Controllers\DashboardBookController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/project-plan', function () {
@@ -43,6 +43,7 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::get('/book-categories', [DashboardBookController::class, 'categories'])->name('book-categories');
     Route::post('/books', [DashboardBookController::class, 'store'])->name('books.store');
     Route::get('/books/{keyBook}/editor', [DashboardBookController::class, 'editor'])->name('books.editor');
+    Route::post('/books/{keyBook}/ai/chat', [DashboardBookController::class, 'aiChat'])->name('books.ai.chat');
     Route::get('/books/{keyBook}/blocks/{blockUuid}/versions', [DashboardBookController::class, 'blockVersions'])->name('books.blocks.versions');
     Route::get('/books/{keyBook}/blocks/{blockUuid}/reviews', [DashboardBookController::class, 'blockReviews'])->name('books.blocks.reviews');
     Route::post('/books/{keyBook}/blocks/{blockUuid}/reviews', [DashboardBookController::class, 'storeBlockReview'])->name('books.blocks.reviews.store');

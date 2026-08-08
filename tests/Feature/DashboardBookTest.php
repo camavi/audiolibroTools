@@ -348,6 +348,88 @@ class DashboardBookTest extends TestCase
         $this->assertSame('local-secret-key-updated', Crypt::decryptString($encryptedKey));
     }
 
+    public function test_dashboard_can_ask_mock_ai_chat_about_selected_block(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('A quiet forest paragraph for chat.'),
+            'text_plain' => 'A quiet forest paragraph for chat.',
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/ai/chat", [
+            'scope' => 'block',
+            'block_uuid' => $blockUuid,
+            'message' => 'What is the mood?',
+            'provider_key' => 'mock',
+            'model' => 'mock-correction-v1',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.message.source', 'mock-ai')
+            ->assertJsonPath('data.message.provider_key', 'mock')
+            ->assertJsonPath('data.message.model', 'mock-correction-v1')
+            ->assertJsonPath('data.message.metadata.message', 'What is the mood?')
+            ->assertJsonPath('data.message.metadata.context_preview', 'A quiet forest paragraph for chat.');
+    }
+
+    public function test_dashboard_can_ask_openai_ai_chat_about_selected_block(): void
+    {
+        Http::fake([
+            'https://api.openai.com/v1/responses' => Http::response([
+                'id' => 'resp_chat_123',
+                'output_text' => 'The paragraph has a quiet, reflective mood.',
+            ]),
+        ]);
+
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('A quiet forest paragraph for chat.'),
+            'text_plain' => 'A quiet forest paragraph for chat.',
+        ]);
+
+        $this->patchJson('/dashboard/api/ai/settings', [
+            'service' => 'chat',
+            'key_book' => $book->key_book,
+            'provider_key' => 'openai',
+            'model' => 'gpt-5-mini',
+            'api_key' => 'sk-chat-openai',
+            'system_prompt' => 'Answer as a concise literary editor.',
+        ])->assertOk();
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/ai/chat", [
+            'scope' => 'block',
+            'block_uuid' => $blockUuid,
+            'message' => 'What is the mood?',
+            'provider_key' => 'openai',
+            'model' => 'gpt-5-mini',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.message.source', 'ai')
+            ->assertJsonPath('data.message.answer', 'The paragraph has a quiet, reflective mood.')
+            ->assertJsonPath('data.message.provider_key', 'openai')
+            ->assertJsonPath('data.message.model', 'gpt-5-mini')
+            ->assertJsonPath('data.message.metadata.response_id', 'resp_chat_123');
+
+        Http::assertSent(fn ($request) => $request->url() === 'https://api.openai.com/v1/responses'
+            && $request->hasHeader('Authorization', 'Bearer sk-chat-openai')
+            && $request['model'] === 'gpt-5-mini'
+            && $request['store'] === false
+            && $request['input'][0]['content'][0]['text'] === 'Answer as a concise literary editor.'
+            && str_contains($request['input'][1]['content'][0]['text'], 'A quiet forest paragraph for chat.')
+            && str_contains($request['input'][1]['content'][0]['text'], 'What is the mood?'));
+    }
+
     public function test_dashboard_can_return_editor_block_versions(): void
     {
         $book = $this->createBook();

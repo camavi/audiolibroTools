@@ -21,6 +21,10 @@ const blockReviewsStatus = _.rod('idle');
 const blockReviewsContextKey = _.rod(null);
 const blockReviewsError = _.rod(null);
 const blockReviewActionStatus = _.rod('idle');
+const aiChatMessages = _.rod([]);
+const aiChatDraft = _.rod('');
+const aiChatStatus = _.rod('idle');
+const aiChatError = _.rod(null);
 const aiProviders = _.rod([]);
 const aiProviderSetting = _.rod({ service: 'correction', provider_key: 'mock', model: 'mock-correction-v1' });
 const aiServiceSettings = _.rod({});
@@ -46,6 +50,7 @@ let loadBlockReviews = () => { };
 let createBlockReview = () => { };
 let applyBlockReview = () => { };
 let rejectBlockReview = () => { };
+let askAiChat = () => { };
 let loadAiProviders = () => { };
 let saveAiProviderSetting = () => { };
 let openCustomProviderDialog = () => { };
@@ -361,6 +366,31 @@ function correctionAiSummary() {
     };
 }
 
+function chatAiSetting() {
+    if (aiServiceSettings.value.chat) return aiServiceSettings.value.chat;
+    if (aiProviderSetting.value.service === 'chat') return aiProviderSetting.value;
+
+    return {
+        service: 'chat',
+        provider_key: 'mock',
+        model: 'mock-correction-v1',
+    };
+}
+
+function chatAiSummary() {
+    const setting = chatAiSetting();
+    const provider = providerByKey(setting.provider_key);
+
+    return {
+        setting,
+        provider,
+        providerName: provider?.name || setting.provider_key || 'AI provider',
+        model: setting.model || provider?.default_model || '',
+        hasApiKey: Boolean(provider?.has_api_key),
+        missingApiKey: providerNeedsApiKey(setting.provider_key) && !provider?.has_api_key,
+    };
+}
+
 function syncAiSettingModels(setting) {
     const service = setting.service || 'correction';
     const providerKey = setting.provider_key || 'mock';
@@ -409,6 +439,12 @@ function requestErrorMessage(error, fallback) {
         : null;
 
     return firstError || payload.message || error?.message || fallback;
+}
+
+function runUntracked(fn) {
+    const untracked = globalThis.CMSwift?.reactive?.untracked;
+
+    return typeof untracked === 'function' ? untracked(fn) : fn();
 }
 
 function extractEditorBlocks(doc, blockMeta) {
@@ -656,6 +692,81 @@ function versionsPanel(block) {
                 disabled: true,
             }, 'Restore version')
         )
+    );
+}
+
+function aiChatPanel(block, keyBook) {
+    return _.div({ class: 'at-rightWorkspace-section' },
+        _.h3('AI conversation'),
+        () => {
+            const aiSummary = chatAiSummary();
+
+            return _.div({ class: aiSummary.missingApiKey ? 'at-correctionProvider has-warning' : 'at-correctionProvider' },
+                _.div({ class: 'at-correctionProvider-main' },
+                    _.span('Provider'),
+                    _.strong(`${aiSummary.providerName}${aiSummary.model ? ` · ${aiSummary.model}` : ''}`)
+                ),
+                aiSummary.missingApiKey ? _.button({
+                    type: 'button',
+                    class: 'at-correctionProvider-action',
+                    onclick: () => openToolAiSettingsDialog(keyBook, 'chat', 'AI Chat'),
+                }, 'Configure AI settings') : null
+            );
+        },
+        _.Textarea({
+            label: block ? 'Ask about selected block' : 'Ask about this book',
+            icon: 'forum',
+            rows: 4,
+            model: aiChatDraft,
+            placeholder: 'Ask a question for the editorial assistant',
+        }),
+        () => aiChatError.value ? _.div({ class: 'at-chatError' }, aiChatError.value) : null,
+        _.div({ class: 'at-rightWorkspace-actions is-top' },
+            _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-action is-primary',
+                disabled: () => {
+                    const aiSummary = chatAiSummary();
+                    const isAsking = aiChatStatus.value === 'asking';
+
+                    return !Boolean(aiChatDraft.value.trim()) || isAsking || aiSummary.missingApiKey;
+                },
+                onclick: () => askAiChat(block),
+            }, () => {
+                const aiSummary = chatAiSummary();
+
+                return aiChatStatus.value === 'asking'
+                    ? `Asking ${aiSummary.providerName}...`
+                    : 'Ask';
+            }),
+            _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-action',
+                disabled: () => aiChatStatus.value === 'asking',
+                onclick: () => {
+                    aiChatMessages.value = [];
+                    aiChatError.value = null;
+                },
+            }, 'Clear')
+        ),
+        () => aiChatMessages.value.length
+            ? _.div({ class: 'at-chatMessages' }, aiChatMessages.value.map((message) => _.div({ class: 'at-chatMessage' },
+                    _.div({ class: 'at-chatQuestion' },
+                        _.span('You'),
+                        _.p(message.question)
+                    ),
+                    _.div({ class: 'at-chatAnswer' },
+                        _.div({ class: 'at-chatAnswerHead' },
+                            _.strong(message.provider_name || 'AI'),
+                            _.span(message.model || '')
+                        ),
+                        _.p(message.answer)
+                    )
+                )))
+            : _.div({ class: 'at-rightWorkspace-emptyState' },
+                    _.strong('No AI messages yet'),
+                    _.p('Ask a question using the selected block or book as context.')
+                )
     );
 }
 
@@ -941,6 +1052,15 @@ function rightWorkspaceBody(tool, block, keyBook) {
         );
     }
 
+    if (tool.id === 'chat') {
+        runUntracked(() => loadAiProviders(keyBook, 'chat'));
+
+        return _.div({ class: 'at-rightWorkspace-body' },
+            blockContextSummary(block),
+            aiChatPanel(block, keyBook)
+        );
+    }
+
     if (tool.id === 'correct') {
         loadBlockReviews(block);
 
@@ -951,7 +1071,7 @@ function rightWorkspaceBody(tool, block, keyBook) {
     }
 
     if (tool.id === 'settings') {
-        loadAiProviders(keyBook, aiProviderSetting.value.service);
+        runUntracked(() => loadAiProviders(keyBook, aiProviderSetting.value.service));
 
         return _.div({ class: 'at-rightWorkspace-body' },
             blockContextSummary(block),
@@ -1594,6 +1714,48 @@ function editorText(keyBook) {
         }
     };
 
+    askAiChat = (block) => {
+        const question = aiChatDraft.value.trim();
+        if (!keyBook || !question || aiChatStatus.value === 'asking') return;
+
+        const chatSetting = chatAiSetting();
+        aiChatStatus.value = 'asking';
+        aiChatError.value = null;
+
+        _.http.postJSON(`/dashboard/api/books/${keyBook}/ai/chat`, {
+            scope: block?.block_uuid ? 'block' : 'book',
+            block_uuid: block?.block_uuid || null,
+            message: question,
+            provider_key: chatSetting.provider_key,
+            model: chatSetting.model,
+        })
+            .then((payload) => {
+                const data = normalizeDataPayload(payload);
+                const message = data.message;
+
+                if (!message) throw new Error('AI Chat returned an empty response.');
+
+                aiChatMessages.value = [
+                    {
+                        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                        question,
+                        answer: message.answer || '',
+                        provider_name: message.provider_name || message.provider_key || 'AI',
+                        model: message.model || '',
+                        metadata: message.metadata || {},
+                    },
+                    ...aiChatMessages.value,
+                ];
+                aiChatDraft.value = '';
+            })
+            .catch((error) => {
+                aiChatError.value = requestErrorMessage(error, 'Unable to ask AI Chat.');
+            })
+            .finally(() => {
+                aiChatStatus.value = 'idle';
+            });
+    };
+
     createBlockReview = (block, type = 'grammar') => {
         if (!keyBook || !block?.block_uuid || block.dirty || blockReviewActionStatus.value !== 'idle') return;
 
@@ -1888,6 +2050,10 @@ function editorText(keyBook) {
         blockReviewsContextKey.value = null;
         blockReviewsError.value = null;
         blockReviewActionStatus.value = 'idle';
+        aiChatMessages.value = [];
+        aiChatDraft.value = '';
+        aiChatStatus.value = 'idle';
+        aiChatError.value = null;
         aiProviders.value = [];
         aiProviderStatus.value = 'idle';
         aiProviderContextKey.value = null;
@@ -1902,6 +2068,7 @@ function editorText(keyBook) {
         createBlockReview = () => { };
         applyBlockReview = () => { };
         rejectBlockReview = () => { };
+        askAiChat = () => { };
         loadAiProviders = () => { };
         saveAiProviderSetting = () => { };
         openCustomProviderDialog = () => { };

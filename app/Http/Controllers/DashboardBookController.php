@@ -7,6 +7,7 @@ use App\Models\Book;
 use App\Models\BookBlock;
 use App\Models\BookBlockReview;
 use App\Models\BookCategory;
+use App\Services\Ai\EditorAiChatService;
 use App\Services\Ai\EditorAiCorrectionService;
 use App\Services\BookBlockService;
 use Illuminate\Http\JsonResponse;
@@ -227,6 +228,27 @@ class DashboardBookController extends Controller
                 'reviews' => $reviews
                     ->map(fn (BookBlockReview $review) => $this->serializeBlockReview($review, $block))
                     ->values(),
+            ],
+        ]);
+    }
+
+    public function aiChat(Request $request, string $keyBook, EditorAiChatService $chat): JsonResponse
+    {
+        $validated = $request->validate([
+            'scope' => ['nullable', 'string', 'in:block,book'],
+            'block_uuid' => ['nullable', 'string', 'max:64'],
+            'message' => ['required', 'string', 'max:5000'],
+            'provider_key' => ['nullable', 'string', 'max:80'],
+            'model' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        return response()->json([
+            'data' => [
+                'message' => $chat->ask($book, $validated),
             ],
         ]);
     }

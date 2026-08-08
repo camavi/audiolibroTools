@@ -480,6 +480,65 @@
     cursor: pointer;
 }
 
+.at-chatError {
+    margin-top: 8px;
+    padding: 8px;
+    border: 1px solid #fecaca;
+    border-radius: 4px;
+    background: #fef2f2;
+    color: #991b1b;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.at-chatMessages {
+    display: grid;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.at-chatMessage {
+    display: grid;
+    gap: 8px;
+    padding: 9px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.at-chatQuestion span,
+.at-chatAnswerHead span {
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.at-chatQuestion p,
+.at-chatAnswer p {
+    margin: 3px 0 0;
+    color: #334155;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
+.at-chatAnswerHead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.at-chatAnswerHead strong {
+    min-width: 0;
+    overflow: hidden;
+    color: #0f172a;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .at-versionList {
     display: grid;
     gap: 8px;
