@@ -9,7 +9,9 @@ use App\Models\Book;
 use App\Models\BookBlock;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
+use App\Models\BookBlockVoiceAssignment;
 use App\Models\BookCategory;
+use App\Models\BookVoiceProfile;
 use App\Services\Ai\EditorAiChatService;
 use App\Services\Ai\EditorAiCorrectionService;
 use App\Services\BookBlockService;
@@ -263,6 +265,83 @@ class DashboardBookController extends Controller
         ]);
     }
 
+    public function voiceProfiles(string $keyBook): JsonResponse
+    {
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        return response()->json([
+            'data' => [
+                'profiles' => $book->voiceProfiles()
+                    ->orderByRaw("case when role = 'narrator' then 0 else 1 end")
+                    ->orderBy('name')
+                    ->get()
+                    ->map(fn (BookVoiceProfile $profile) => $this->serializeVoiceProfile($profile))
+                    ->values(),
+            ],
+        ]);
+    }
+
+    public function storeVoiceProfile(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:160'],
+            'role' => ['nullable', 'string', 'in:narrator,character,ambient,system'],
+            'voice_provider' => ['nullable', 'string', 'max:80'],
+            'voice_id' => ['nullable', 'string', 'max:160'],
+            'language' => ['nullable', 'string', 'max:20'],
+            'notes' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $profile = BookVoiceProfile::query()->create([
+            'book_id' => $book->id,
+            'name' => trim($validated['name']),
+            'role' => $validated['role'] ?? 'character',
+            'voice_provider' => $validated['voice_provider'] ?? null,
+            'voice_id' => $validated['voice_id'] ?? null,
+            'language' => $validated['language'] ?? $book->lang,
+            'notes' => $validated['notes'] ?? null,
+            'created_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'data' => [
+                'profile' => $this->serializeVoiceProfile($profile),
+                'created' => true,
+            ],
+        ], 201);
+    }
+
+    public function blockVoiceAssignment(string $keyBook, string $blockUuid): JsonResponse
+    {
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->with('currentVersion')
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        $assignment = $block->voiceAssignments()
+            ->with(['voiceProfile', 'blockVersion:id,version_number'])
+            ->where('book_block_version_id', $block->current_version_id)
+            ->latest('id')
+            ->first();
+
+        return response()->json([
+            'data' => [
+                'block' => $this->serializeEditorBlock($block),
+                'assignment' => $assignment ? $this->serializeVoiceAssignment($assignment, $block) : null,
+            ],
+        ]);
+    }
+
     public function aiChatThread(Request $request, string $keyBook): JsonResponse
     {
         $validated = $request->validate([
@@ -408,6 +487,68 @@ class DashboardBookController extends Controller
         return response()->json([
             'data' => [
                 'comment' => $this->serializeBlockComment($comment->load('blockVersion:id,version_number'), $block),
+            ],
+        ]);
+    }
+
+    public function updateBlockVoiceAssignment(Request $request, string $keyBook, string $blockUuid): JsonResponse
+    {
+        $validated = $request->validate([
+            'voice_profile_id' => ['nullable', 'integer', 'exists:book_voice_profiles,id'],
+        ]);
+
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->with('currentVersion')
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        if (! $block->currentVersion) {
+            return response()->json([
+                'message' => 'The selected block has no saved version for voice assignment.',
+                'errors' => [
+                    'block' => ['Save the block before assigning a voice.'],
+                ],
+            ], 422);
+        }
+
+        $existingAssignment = $block->voiceAssignments()
+            ->where('book_block_version_id', $block->currentVersion->id)
+            ->first();
+
+        if (empty($validated['voice_profile_id'])) {
+            $existingAssignment?->delete();
+
+            return response()->json([
+                'data' => [
+                    'assignment' => null,
+                    'cleared' => true,
+                ],
+            ]);
+        }
+
+        $profile = $book->voiceProfiles()
+            ->whereKey($validated['voice_profile_id'])
+            ->firstOrFail();
+
+        $assignment = BookBlockVoiceAssignment::query()->updateOrCreate([
+            'book_block_id' => $block->id,
+            'book_block_version_id' => $block->currentVersion->id,
+        ], [
+            'book_id' => $book->id,
+            'book_voice_profile_id' => $profile->id,
+            'block_uuid' => $block->block_uuid,
+            'source' => 'manual',
+            'created_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'data' => [
+                'assignment' => $this->serializeVoiceAssignment($assignment->load(['voiceProfile', 'blockVersion:id,version_number']), $block),
+                'cleared' => false,
             ],
         ]);
     }
@@ -594,6 +735,41 @@ class DashboardBookController extends Controller
             'block_version_id' => $comment->book_block_version_id,
             'version_number' => $comment->blockVersion?->version_number,
             'is_current_version' => $block->current_version_id === $comment->book_block_version_id,
+        ];
+    }
+
+    private function serializeVoiceProfile(BookVoiceProfile $profile): array
+    {
+        return [
+            'id' => $profile->id,
+            'name' => $profile->name,
+            'role' => $profile->role,
+            'voice_provider' => $profile->voice_provider,
+            'voice_id' => $profile->voice_id,
+            'language' => $profile->language,
+            'notes' => $profile->notes,
+            'settings_json' => $profile->settings_json,
+            'created_at' => $profile->created_at?->toISOString(),
+            'updated_at' => $profile->updated_at?->toISOString(),
+        ];
+    }
+
+    private function serializeVoiceAssignment(BookBlockVoiceAssignment $assignment, BookBlock $block): array
+    {
+        return [
+            'id' => $assignment->id,
+            'block_uuid' => $assignment->block_uuid,
+            'block_version_id' => $assignment->book_block_version_id,
+            'version_number' => $assignment->blockVersion?->version_number,
+            'voice_profile_id' => $assignment->book_voice_profile_id,
+            'source' => $assignment->source,
+            'metadata_json' => $assignment->metadata_json,
+            'voice_profile' => $assignment->voiceProfile
+                ? $this->serializeVoiceProfile($assignment->voiceProfile)
+                : null,
+            'is_current_version' => $block->current_version_id === $assignment->book_block_version_id,
+            'created_at' => $assignment->created_at?->toISOString(),
+            'updated_at' => $assignment->updated_at?->toISOString(),
         ];
     }
 

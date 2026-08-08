@@ -8,6 +8,7 @@ use App\Models\Book;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
 use App\Models\BookCategory;
+use App\Models\BookVoiceProfile;
 use App\Services\BookBlockService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
@@ -865,6 +866,126 @@ class DashboardBookTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.comment.status', 'open')
             ->assertJsonPath('data.comment.resolved_at', null);
+    }
+
+    public function test_dashboard_can_create_and_return_book_voice_profiles(): void
+    {
+        $book = $this->createBook();
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/voices", [
+            'name' => 'Elara',
+            'role' => 'character',
+            'voice_provider' => 'local',
+            'voice_id' => 'voice-elara',
+            'language' => 'it',
+            'notes' => 'Young, curious and warm.',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.profile.name', 'Elara')
+            ->assertJsonPath('data.profile.role', 'character')
+            ->assertJsonPath('data.profile.voice_provider', 'local')
+            ->assertJsonPath('data.profile.voice_id', 'voice-elara')
+            ->assertJsonPath('data.profile.language', 'it')
+            ->assertJsonPath('data.profile.notes', 'Young, curious and warm.');
+
+        $this->assertDatabaseHas('book_voice_profiles', [
+            'book_id' => $book->id,
+            'name' => 'Elara',
+            'role' => 'character',
+            'voice_provider' => 'local',
+            'voice_id' => 'voice-elara',
+        ]);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/voices")
+            ->assertOk()
+            ->assertJsonPath('data.profiles.0.name', 'Elara')
+            ->assertJsonPath('data.profiles.0.role', 'character');
+    }
+
+    public function test_dashboard_can_assign_and_clear_voice_for_current_block_version(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $saved = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Paragraph to narrate.'),
+            'text_plain' => 'Paragraph to narrate.',
+        ]);
+
+        $profile = BookVoiceProfile::query()->create([
+            'book_id' => $book->id,
+            'name' => 'Narrator',
+            'role' => 'narrator',
+            'voice_provider' => 'local',
+            'voice_id' => 'narrator-main',
+        ]);
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/voice-assignment", [
+            'voice_profile_id' => $profile->id,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.assignment.voice_profile_id', $profile->id)
+            ->assertJsonPath('data.assignment.voice_profile.name', 'Narrator')
+            ->assertJsonPath('data.assignment.block_version_id', $saved['version']->id)
+            ->assertJsonPath('data.assignment.version_number', 1)
+            ->assertJsonPath('data.assignment.is_current_version', true);
+
+        $this->assertDatabaseHas('book_block_voice_assignments', [
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+            'book_voice_profile_id' => $profile->id,
+            'block_uuid' => $blockUuid,
+        ]);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/voice-assignment")
+            ->assertOk()
+            ->assertJsonPath('data.assignment.voice_profile.name', 'Narrator');
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/voice-assignment", [
+            'voice_profile_id' => null,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.assignment', null)
+            ->assertJsonPath('data.cleared', true);
+
+        $this->assertDatabaseMissing('book_block_voice_assignments', [
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+        ]);
+    }
+
+    public function test_dashboard_cannot_assign_voice_from_another_book(): void
+    {
+        $book = $this->createBook();
+        $otherBook = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Paragraph to narrate.'),
+            'text_plain' => 'Paragraph to narrate.',
+        ]);
+
+        $otherProfile = BookVoiceProfile::query()->create([
+            'book_id' => $otherBook->id,
+            'name' => 'Other narrator',
+            'role' => 'narrator',
+        ]);
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/voice-assignment", [
+            'voice_profile_id' => $otherProfile->id,
+        ])->assertNotFound();
+
+        $this->assertDatabaseCount('book_block_voice_assignments', 0);
     }
 
     private function createBook(): Book

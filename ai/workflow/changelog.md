@@ -57,3 +57,4 @@
 - Avviato tool AI Chat: endpoint non persistente per domande su blocco/libro, service backend con mock e OpenAI Responses API, uso del setting/prompt `chat` e pannello destro con textarea, Ask/Clear, errori e risposte in memoria.
 - Aggiunta persistenza AI Chat: thread per libro/blocco/versione, messaggi user/assistant con provider/model/metadata, endpoint GET per ricaricare la conversazione e UI Refresh collegata al contesto selezionato.
 - Avviato tool Comments: tabella e modello `book_block_comments`, endpoint per leggere/creare/risolvere commenti editoriali legati a blocco e versione corrente, pannello Right Workspace con form e lista open/resolved.
+- Avviato tool Voices: profili voce per libro, assegnazioni voce per blocco/versione corrente, API dedicate e pannello Right Workspace per creare personaggi/narratore e assegnare o rimuovere una voce.

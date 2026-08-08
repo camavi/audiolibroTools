@@ -27,6 +27,24 @@ const blockCommentsStatus = _.rod('idle');
 const blockCommentsContextKey = _.rod(null);
 const blockCommentsError = _.rod(null);
 const blockCommentActionStatus = _.rod('idle');
+const voiceProfiles = _.rod([]);
+const voiceProfilesStatus = _.rod('idle');
+const voiceProfilesContextKey = _.rod(null);
+const voiceProfilesError = _.rod(null);
+const voiceAssignment = _.rod(null);
+const voiceAssignmentStatus = _.rod('idle');
+const voiceAssignmentContextKey = _.rod(null);
+const voiceAssignmentError = _.rod(null);
+const voiceAssignmentActionStatus = _.rod('idle');
+const selectedVoiceProfileId = _.rod('');
+const voiceProfileName = _.rod('');
+const voiceProfileRole = _.rod('character');
+const voiceProfileProvider = _.rod('');
+const voiceProfileVoiceId = _.rod('');
+const voiceProfileLanguage = _.rod('');
+const voiceProfileNotes = _.rod('');
+const voiceProfileDialogStatus = _.rod(null);
+const savingVoiceProfile = _.rod(false);
 const aiChatMessages = _.rod([]);
 const aiChatDraft = _.rod('');
 const aiChatStatus = _.rod('idle');
@@ -60,6 +78,11 @@ let rejectBlockReview = () => { };
 let loadBlockComments = () => { };
 let createBlockComment = () => { };
 let updateBlockCommentStatus = () => { };
+let loadVoiceProfiles = () => { };
+let loadBlockVoiceAssignment = () => { };
+let saveBlockVoiceAssignment = () => { };
+let clearBlockVoiceAssignment = () => { };
+let openVoiceProfileDialog = () => { };
 let askAiChat = () => { };
 let loadAiChatMessages = () => { };
 let loadAiProviders = () => { };
@@ -89,6 +112,13 @@ const rightWorkspaceTools = [
     { id: 'translate', icon: 'translate', label: 'Translate' },
     { id: 'versions', icon: 'history', label: 'Versions' },
     { id: 'settings', icon: 'tune', label: 'Settings' },
+];
+
+const voiceRoleOptions = [
+    { label: 'Character', value: 'character' },
+    { label: 'Narrator', value: 'narrator' },
+    { label: 'Ambient', value: 'ambient' },
+    { label: 'System', value: 'system' },
 ];
 
 const toolAiServices = {
@@ -762,22 +792,22 @@ function aiChatPanel(block, keyBook) {
             : null,
         () => aiChatMessages.value.length
             ? _.div({ class: 'at-chatMessages' }, aiChatMessages.value.map((message) => _.div({ class: 'at-chatMessage' },
-                    _.div({ class: 'at-chatQuestion' },
-                        _.span('You'),
-                        _.p(message.question)
+                _.div({ class: 'at-chatQuestion' },
+                    _.span('You'),
+                    _.p(message.question)
+                ),
+                _.div({ class: 'at-chatAnswer' },
+                    _.div({ class: 'at-chatAnswerHead' },
+                        _.strong(message.provider_name || 'AI'),
+                        _.span(message.model || '')
                     ),
-                    _.div({ class: 'at-chatAnswer' },
-                        _.div({ class: 'at-chatAnswerHead' },
-                            _.strong(message.provider_name || 'AI'),
-                            _.span(message.model || '')
-                        ),
-                        _.p(message.answer)
-                    )
-                )))
-            : _.div({ class: 'at-rightWorkspace-emptyState' },
-                    _.strong('No AI messages yet'),
-                    _.p('Ask a question using the selected block or book as context.')
+                    _.p(message.answer)
                 )
+            )))
+            : _.div({ class: 'at-rightWorkspace-emptyState' },
+                _.strong('No AI messages yet'),
+                _.p('Ask a question using the selected block or book as context.')
+            )
     );
 }
 
@@ -855,6 +885,113 @@ function commentsPanel(block) {
             : _.div({ class: 'at-rightWorkspace-emptyState' },
                 _.strong('No comments yet'),
                 _.p('Add comments to track manual editorial notes on this block version.')
+            )
+    );
+}
+
+function voicesPanel(block, keyBook) {
+    const profiles = voiceProfiles.value;
+    const assignment = voiceAssignment.value;
+    const assignedProfile = assignment?.voice_profile
+        || profiles.find((profile) => String(profile.id) === String(selectedVoiceProfileId.value))
+        || null;
+    const profileOptions = [
+        { label: 'No voice assigned', value: '' },
+        ...profiles.map((profile) => ({
+            label: `${profile.name}${profile.role ? ` · ${profile.role}` : ''}`,
+            value: String(profile.id),
+        })),
+    ];
+
+    if (voiceProfilesStatus.value === 'loading') {
+        return _.div({ class: 'at-rightWorkspace-section' },
+            _.h3('Characters and voices'),
+            _.p('Loading voice profiles...')
+        );
+    }
+
+    if (voiceProfilesStatus.value === 'error') {
+        return _.div({ class: 'at-rightWorkspace-section' },
+            _.h3('Characters and voices'),
+            _.p(voiceProfilesError.value || 'Unable to load voice profiles.'),
+            _.div({ class: 'at-rightWorkspace-actions is-inline' },
+                _.button({
+                    type: 'button',
+                    class: 'at-rightWorkspace-action is-primary',
+                    onclick: () => loadVoiceProfiles(keyBook, { force: true }),
+                }, 'Retry')
+            )
+        );
+    }
+
+    return _.div({ class: 'at-rightWorkspace-section' },
+        _.h3('Characters and voices'),
+        !block ? _.div({ class: 'at-rightWorkspace-note warning' }, 'Select a block to assign a voice.') : null,
+        block?.dirty ? _.div({ class: 'at-rightWorkspace-note warning' }, 'Save the selected block before assigning a voice.') : null,
+        block && !block.current_version_id ? _.div({ class: 'at-rightWorkspace-note warning' }, 'This block needs a saved version before voice assignment can be tracked.') : null,
+        _.div({ class: 'at-voiceCurrent' },
+            _.span('Current voice'),
+            assignedProfile
+                ? _.strong(`${assignedProfile.name}${assignedProfile.voice_id ? ` · ${assignedProfile.voice_id}` : ''}`)
+                : _.strong('Not assigned'),
+            assignedProfile?.voice_provider ? _.small(assignedProfile.voice_provider) : null
+        ),
+        _.Select({
+            label: 'Assign to selected block',
+            icon: 'record_voice_over',
+            model: selectedVoiceProfileId,
+            options: () => profileOptions,
+            onChange: (value) => {
+                selectedVoiceProfileId.value = selectChangeValue(value, selectedVoiceProfileId.value);
+            },
+        }),
+        () => voiceAssignmentError.value ? _.div({ class: 'at-chatError' }, voiceAssignmentError.value) : null,
+        _.div({ class: 'at-rightWorkspace-actions is-top' },
+            _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-action is-primary',
+                disabled: () => !block
+                    || block.dirty
+                    || !block.current_version_id
+                    || !selectedVoiceProfileId.value
+                    || voiceAssignmentActionStatus.value !== 'idle',
+                onclick: () => saveBlockVoiceAssignment(block),
+            }, voiceAssignmentActionStatus.value === 'saving' ? 'Assigning...' : 'Assign voice'),
+            _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-action',
+                disabled: () => !block
+                    || !assignment
+                    || voiceAssignmentActionStatus.value !== 'idle',
+                onclick: () => clearBlockVoiceAssignment(block),
+            }, voiceAssignmentActionStatus.value === 'clearing' ? 'Clearing...' : 'Clear'),
+            _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-action',
+                onclick: () => openVoiceProfileDialog(keyBook),
+            }, 'Create character')
+        ),
+        voiceAssignmentStatus.value === 'loading'
+            ? _.div({ class: 'at-chatNotice' }, 'Loading block voice...')
+            : null,
+        profiles.length
+            ? _.div({ class: 'at-voiceList' }, profiles.map((profile) => _.div({
+                class: assignedProfile?.id === profile.id ? 'at-voiceItem is-active' : 'at-voiceItem',
+            },
+                _.div({ class: 'at-voiceItem-head' },
+                    _.strong(profile.name),
+                    _.span(profile.role || 'character')
+                ),
+                _.div({ class: 'at-voiceItem-meta' },
+                    profile.voice_provider || 'No provider',
+                    profile.voice_id ? ` · ${profile.voice_id}` : '',
+                    profile.language ? ` · ${profile.language}` : ''
+                ),
+                profile.notes ? _.p(profile.notes) : null
+            )))
+            : _.div({ class: 'at-rightWorkspace-emptyState' },
+                _.strong('No voices yet'),
+                _.p('Create a narrator or character voice profile before assigning it to blocks.')
             )
     );
 }
@@ -1157,6 +1294,16 @@ function rightWorkspaceBody(tool, block, keyBook) {
         return _.div({ class: 'at-rightWorkspace-body' },
             blockContextSummary(block),
             commentsPanel(block)
+        );
+    }
+
+    if (tool.id === 'voices') {
+        runUntracked(() => loadVoiceProfiles(keyBook));
+        runUntracked(() => loadBlockVoiceAssignment(block));
+
+        return _.div({ class: 'at-rightWorkspace-body' },
+            blockContextSummary(block),
+            voicesPanel(block, keyBook)
         );
     }
 
@@ -1918,6 +2065,262 @@ function editorText(keyBook) {
             });
     };
 
+    loadVoiceProfiles = (bookKey = keyBook, { force = false } = {}) => {
+        if (!bookKey) {
+            voiceProfiles.value = [];
+            voiceProfilesStatus.value = 'idle';
+            voiceProfilesContextKey.value = null;
+            voiceProfilesError.value = null;
+            return;
+        }
+
+        if (!force && voiceProfilesContextKey.value === bookKey && voiceProfilesStatus.value !== 'error') return;
+
+        voiceProfilesContextKey.value = bookKey;
+        voiceProfilesStatus.value = 'loading';
+        voiceProfilesError.value = null;
+
+        _.http.getJSON(`/dashboard/api/books/${bookKey}/voices`)
+            .then((payload) => {
+                if (voiceProfilesContextKey.value !== bookKey) return;
+
+                const data = normalizeDataPayload(payload);
+                voiceProfiles.value = data.profiles || [];
+                voiceProfilesStatus.value = 'ready';
+            })
+            .catch((error) => {
+                if (voiceProfilesContextKey.value !== bookKey) return;
+
+                voiceProfiles.value = [];
+                voiceProfilesError.value = requestErrorMessage(error, 'Unable to load voice profiles.');
+                voiceProfilesStatus.value = 'error';
+            });
+    };
+
+    loadBlockVoiceAssignment = (block, { force = false } = {}) => {
+        if (!keyBook || !block?.block_uuid) {
+            voiceAssignment.value = null;
+            voiceAssignmentStatus.value = 'idle';
+            voiceAssignmentContextKey.value = null;
+            voiceAssignmentError.value = null;
+            selectedVoiceProfileId.value = '';
+            return;
+        }
+
+        const contextKey = `${keyBook}:${block.block_uuid}:${block.current_version_id || 'new'}`;
+        if (!force && voiceAssignmentContextKey.value === contextKey && voiceAssignmentStatus.value !== 'error') return;
+
+        voiceAssignmentContextKey.value = contextKey;
+        voiceAssignment.value = null;
+        selectedVoiceProfileId.value = '';
+        voiceAssignmentStatus.value = 'loading';
+        voiceAssignmentError.value = null;
+
+        _.http.getJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/voice-assignment`)
+            .then((payload) => {
+                if (voiceAssignmentContextKey.value !== contextKey) return;
+
+                const data = normalizeDataPayload(payload);
+                voiceAssignment.value = data.assignment || null;
+                selectedVoiceProfileId.value = data.assignment?.voice_profile_id
+                    ? String(data.assignment.voice_profile_id)
+                    : '';
+                voiceAssignmentStatus.value = 'ready';
+            })
+            .catch((error) => {
+                if (voiceAssignmentContextKey.value !== contextKey) return;
+
+                voiceAssignment.value = null;
+                selectedVoiceProfileId.value = '';
+                voiceAssignmentError.value = requestErrorMessage(error, 'Unable to load voice assignment.');
+                voiceAssignmentStatus.value = 'error';
+            });
+    };
+
+    saveBlockVoiceAssignment = (block) => {
+        if (!keyBook || !block?.block_uuid || !selectedVoiceProfileId.value || block.dirty || !block.current_version_id || voiceAssignmentActionStatus.value !== 'idle') return;
+
+        voiceAssignmentActionStatus.value = 'saving';
+        voiceAssignmentError.value = null;
+
+        _.http.patchJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/voice-assignment`, {
+            voice_profile_id: Number(selectedVoiceProfileId.value),
+        })
+            .then((payload) => {
+                const data = normalizeDataPayload(payload);
+
+                voiceAssignment.value = data.assignment || null;
+                selectedVoiceProfileId.value = data.assignment?.voice_profile_id
+                    ? String(data.assignment.voice_profile_id)
+                    : '';
+                voiceAssignmentStatus.value = 'ready';
+            })
+            .catch((error) => {
+                voiceAssignmentError.value = requestErrorMessage(error, 'Unable to assign voice.');
+                voiceAssignmentStatus.value = 'error';
+            })
+            .finally(() => {
+                voiceAssignmentActionStatus.value = 'idle';
+            });
+    };
+
+    clearBlockVoiceAssignment = (block) => {
+        if (!keyBook || !block?.block_uuid || voiceAssignmentActionStatus.value !== 'idle') return;
+
+        voiceAssignmentActionStatus.value = 'clearing';
+        voiceAssignmentError.value = null;
+
+        _.http.patchJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/voice-assignment`, {
+            voice_profile_id: null,
+        })
+            .then(() => {
+                voiceAssignment.value = null;
+                selectedVoiceProfileId.value = '';
+                voiceAssignmentStatus.value = 'ready';
+            })
+            .catch((error) => {
+                voiceAssignmentError.value = requestErrorMessage(error, 'Unable to clear voice assignment.');
+                voiceAssignmentStatus.value = 'error';
+            })
+            .finally(() => {
+                voiceAssignmentActionStatus.value = 'idle';
+            });
+    };
+
+    const voiceProfileForm = (bookKey, close) => _.form({
+        action: '#',
+        method: 'post',
+        onSubmit: async (event) => {
+            event.preventDefault();
+
+            if (!voiceProfileName.value.trim()) {
+                voiceProfileDialogStatus.value = {
+                    type: 'warning',
+                    title: 'Missing voice name',
+                    message: 'Add a narrator or character name.',
+                };
+                return;
+            }
+
+            savingVoiceProfile.value = true;
+            voiceProfileDialogStatus.value = null;
+
+            try {
+                const payload = await _.http.postJSON(`/dashboard/api/books/${bookKey}/voices`, {
+                    name: voiceProfileName.value.trim(),
+                    role: voiceProfileRole.value || 'character',
+                    voice_provider: voiceProfileProvider.value.trim() || null,
+                    voice_id: voiceProfileVoiceId.value.trim() || null,
+                    language: voiceProfileLanguage.value.trim() || null,
+                    notes: voiceProfileNotes.value.trim() || null,
+                });
+                const data = normalizeDataPayload(payload);
+
+                if (data.profile) {
+                    voiceProfiles.value = [
+                        data.profile,
+                        ...voiceProfiles.value.filter((profile) => profile.id !== data.profile.id),
+                    ].sort((a, b) => {
+                        if ((a.role === 'narrator') !== (b.role === 'narrator')) return a.role === 'narrator' ? -1 : 1;
+                        return (a.name || '').localeCompare(b.name || '');
+                    });
+                    selectedVoiceProfileId.value = String(data.profile.id);
+                    voiceProfilesStatus.value = 'ready';
+                } else {
+                    await loadVoiceProfiles(bookKey, { force: true });
+                }
+
+                close();
+            } catch (error) {
+                voiceProfileDialogStatus.value = {
+                    type: 'danger',
+                    title: 'Voice not saved',
+                    message: requestErrorMessage(error, 'Unable to save voice profile.'),
+                };
+            } finally {
+                savingVoiceProfile.value = false;
+            }
+        },
+    },
+        _.Row({ gap: 'md' },
+            _.Input({
+                class: 'cms-col-24',
+                label: 'Name',
+                icon: 'badge',
+                model: voiceProfileName,
+                placeholder: 'Narrator or character name',
+            }),
+            _.Select({
+                class: 'cms-col-24',
+                label: 'Role',
+                icon: 'record_voice_over',
+                model: voiceProfileRole,
+                options: voiceRoleOptions,
+                onChange: (value) => {
+                    voiceProfileRole.value = selectChangeValue(value, voiceProfileRole.value);
+                },
+            }),
+            _.Input({
+                class: 'cms-col-24',
+                label: 'Voice provider',
+                icon: 'hub',
+                model: voiceProfileProvider,
+                placeholder: 'OpenAI, ElevenLabs, local, ...',
+            }),
+            _.Input({
+                class: 'cms-col-24',
+                label: 'Voice ID',
+                icon: 'fingerprint',
+                model: voiceProfileVoiceId,
+                placeholder: 'Provider voice identifier',
+            }),
+            _.Input({
+                class: 'cms-col-24',
+                label: 'Language',
+                icon: 'translate',
+                model: voiceProfileLanguage,
+                placeholder: 'it, en, es...',
+            }),
+            _.Textarea({
+                class: 'cms-col-24',
+                label: 'Notes',
+                icon: 'notes',
+                rows: 4,
+                model: voiceProfileNotes,
+                placeholder: 'Tone, age, accent, performance notes',
+            }),
+            _.div({ class: 'cms-col-24' }, () => voiceProfileDialogStatus.value
+                ? _.Alert(voiceProfileDialogStatus.value)
+                : null),
+            _.div({ class: 'cms-col-24', align: 'right' },
+                _.Btn({ type: 'button', class: 'cms-m-r-sm', color: 'secondary', onClick: close }, 'Close'),
+                _.Btn({ type: 'submit', color: 'primary', loading: savingVoiceProfile }, 'Create voice')
+            )
+        )
+    );
+
+    openVoiceProfileDialog = (bookKey = keyBook) => {
+        voiceProfileName.value = '';
+        voiceProfileRole.value = 'character';
+        voiceProfileProvider.value = '';
+        voiceProfileVoiceId.value = '';
+        voiceProfileLanguage.value = '';
+        voiceProfileNotes.value = '';
+        voiceProfileDialogStatus.value = null;
+
+        _.Dialog({
+            size: 'lg',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3('Create voice profile'),
+                    _.span({ class: 'text-muted' }, 'Define a narrator or character voice for this book.'),
+                ),
+                content: ({ close }) => voiceProfileForm(bookKey, close),
+            },
+        }).open();
+    };
+
     loadAiChatMessages = (block, { force = false } = {}) => {
         if (!keyBook) {
             aiChatMessages.value = [];
@@ -2300,6 +2703,18 @@ function editorText(keyBook) {
         blockCommentsContextKey.value = null;
         blockCommentsError.value = null;
         blockCommentActionStatus.value = 'idle';
+        voiceProfiles.value = [];
+        voiceProfilesStatus.value = 'idle';
+        voiceProfilesContextKey.value = null;
+        voiceProfilesError.value = null;
+        voiceAssignment.value = null;
+        voiceAssignmentStatus.value = 'idle';
+        voiceAssignmentContextKey.value = null;
+        voiceAssignmentError.value = null;
+        voiceAssignmentActionStatus.value = 'idle';
+        selectedVoiceProfileId.value = '';
+        voiceProfileDialogStatus.value = null;
+        savingVoiceProfile.value = false;
         aiChatMessages.value = [];
         aiChatDraft.value = '';
         aiChatStatus.value = 'idle';
@@ -2322,6 +2737,11 @@ function editorText(keyBook) {
         loadBlockComments = () => { };
         createBlockComment = () => { };
         updateBlockCommentStatus = () => { };
+        loadVoiceProfiles = () => { };
+        loadBlockVoiceAssignment = () => { };
+        saveBlockVoiceAssignment = () => { };
+        clearBlockVoiceAssignment = () => { };
+        openVoiceProfileDialog = () => { };
         askAiChat = () => { };
         loadAiChatMessages = () => { };
         loadAiProviders = () => { };
