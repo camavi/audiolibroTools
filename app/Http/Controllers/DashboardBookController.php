@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\BookBlockVersionConflictException;
+use App\Models\AiChatMessage;
+use App\Models\AiChatThread;
 use App\Models\Book;
 use App\Models\BookBlock;
 use App\Models\BookBlockReview;
@@ -232,6 +234,28 @@ class DashboardBookController extends Controller
         ]);
     }
 
+    public function aiChatThread(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate([
+            'scope' => ['nullable', 'string', 'in:block,book'],
+            'block_uuid' => ['nullable', 'string', 'max:64'],
+        ]);
+
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $this->chatBlock($book, $validated['scope'] ?? 'block', $validated['block_uuid'] ?? null);
+        $thread = $this->findChatThread($book, $validated['scope'] ?? 'block', $block);
+
+        return response()->json([
+            'data' => [
+                'thread' => $thread ? $this->serializeChatThread($thread) : null,
+                'messages' => $thread ? $this->serializeChatMessages($thread) : [],
+            ],
+        ]);
+    }
+
     public function aiChat(Request $request, string $keyBook, EditorAiChatService $chat): JsonResponse
     {
         $validated = $request->validate([
@@ -245,10 +269,38 @@ class DashboardBookController extends Controller
         $book = Book::query()
             ->where('key_book', $keyBook)
             ->firstOrFail();
+        $scope = $validated['scope'] ?? 'block';
+        $block = $this->chatBlock($book, $scope, $validated['block_uuid'] ?? null);
+        $thread = $this->firstOrCreateChatThread($book, $scope, $block, $validated['message']);
+
+        AiChatMessage::query()->create([
+            'ai_chat_thread_id' => $thread->id,
+            'role' => 'user',
+            'content' => trim($validated['message']),
+            'created_by' => auth()->id(),
+        ]);
+
+        $message = $chat->ask($book, [
+            ...$validated,
+            'block_uuid' => $block?->block_uuid,
+        ]);
+
+        AiChatMessage::query()->create([
+            'ai_chat_thread_id' => $thread->id,
+            'role' => 'assistant',
+            'content' => $message['answer'],
+            'source' => $message['source'],
+            'provider_key' => $message['provider_key'],
+            'model' => $message['model'],
+            'metadata_json' => $message['metadata'],
+            'created_by' => auth()->id(),
+        ]);
 
         return response()->json([
             'data' => [
-                'message' => $chat->ask($book, $validated),
+                'thread' => $this->serializeChatThread($thread->refresh()),
+                'message' => $message,
+                'messages' => $this->serializeChatMessages($thread),
             ],
         ]);
     }
@@ -420,5 +472,78 @@ class DashboardBookController extends Controller
             'version_number' => $review->blockVersion?->version_number,
             'is_current_version' => $block->current_version_id === $review->book_block_version_id,
         ];
+    }
+
+    private function chatBlock(Book $book, string $scope, ?string $blockUuid): ?BookBlock
+    {
+        if ($scope !== 'block' || ! $blockUuid) {
+            return null;
+        }
+
+        return $book->blocks()
+            ->with('currentVersion')
+            ->where('block_uuid', $blockUuid)
+            ->first();
+    }
+
+    private function findChatThread(Book $book, string $scope, ?BookBlock $block): ?AiChatThread
+    {
+        return AiChatThread::query()
+            ->where('book_id', $book->id)
+            ->where('scope', $scope)
+            ->where('book_block_id', $block?->id)
+            ->where('book_block_version_id', $block?->current_version_id)
+            ->latest('id')
+            ->first();
+    }
+
+    private function firstOrCreateChatThread(Book $book, string $scope, ?BookBlock $block, string $message): AiChatThread
+    {
+        return $this->findChatThread($book, $scope, $block) ?: AiChatThread::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $block?->id,
+            'book_block_version_id' => $block?->current_version_id,
+            'scope' => $scope,
+            'block_uuid' => $block?->block_uuid,
+            'title' => mb_substr(trim($message), 0, 180),
+            'created_by' => auth()->id(),
+        ]);
+    }
+
+    private function serializeChatThread(AiChatThread $thread): array
+    {
+        return [
+            'id' => $thread->id,
+            'book_id' => $thread->book_id,
+            'scope' => $thread->scope,
+            'block_uuid' => $thread->block_uuid,
+            'book_block_version_id' => $thread->book_block_version_id,
+            'title' => $thread->title,
+            'created_at' => $thread->created_at?->toISOString(),
+            'updated_at' => $thread->updated_at?->toISOString(),
+        ];
+    }
+
+    private function serializeChatMessages(AiChatThread $thread): array
+    {
+        return $thread->messages()
+            ->where('role', 'assistant')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (AiChatMessage $message) => [
+                'id' => $message->id,
+                'question' => $message->metadata_json['message'] ?? '',
+                'answer' => $message->content,
+                'role' => $message->role,
+                'source' => $message->source,
+                'provider_key' => $message->provider_key,
+                'provider_name' => $message->metadata_json['provider_name'] ?? $message->provider_key,
+                'model' => $message->model,
+                'metadata' => $message->metadata_json ?? [],
+                'created_at' => $message->created_at?->toISOString(),
+            ])
+            ->values()
+            ->all();
     }
 }

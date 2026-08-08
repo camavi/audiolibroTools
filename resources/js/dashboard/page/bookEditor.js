@@ -25,6 +25,7 @@ const aiChatMessages = _.rod([]);
 const aiChatDraft = _.rod('');
 const aiChatStatus = _.rod('idle');
 const aiChatError = _.rod(null);
+const aiChatContextKey = _.rod(null);
 const aiProviders = _.rod([]);
 const aiProviderSetting = _.rod({ service: 'correction', provider_key: 'mock', model: 'mock-correction-v1' });
 const aiServiceSettings = _.rod({});
@@ -51,6 +52,7 @@ let createBlockReview = () => { };
 let applyBlockReview = () => { };
 let rejectBlockReview = () => { };
 let askAiChat = () => { };
+let loadAiChatMessages = () => { };
 let loadAiProviders = () => { };
 let saveAiProviderSetting = () => { };
 let openCustomProviderDialog = () => { };
@@ -743,12 +745,12 @@ function aiChatPanel(block, keyBook) {
                 type: 'button',
                 class: 'at-rightWorkspace-action',
                 disabled: () => aiChatStatus.value === 'asking',
-                onclick: () => {
-                    aiChatMessages.value = [];
-                    aiChatError.value = null;
-                },
-            }, 'Clear')
+                onclick: () => loadAiChatMessages(block, { force: true }),
+            }, 'Refresh')
         ),
+        () => aiChatStatus.value === 'loading'
+            ? _.div({ class: 'at-chatNotice' }, 'Loading conversation...')
+            : null,
         () => aiChatMessages.value.length
             ? _.div({ class: 'at-chatMessages' }, aiChatMessages.value.map((message) => _.div({ class: 'at-chatMessage' },
                     _.div({ class: 'at-chatQuestion' },
@@ -1054,6 +1056,7 @@ function rightWorkspaceBody(tool, block, keyBook) {
 
     if (tool.id === 'chat') {
         runUntracked(() => loadAiProviders(keyBook, 'chat'));
+        runUntracked(() => loadAiChatMessages(block));
 
         return _.div({ class: 'at-rightWorkspace-body' },
             blockContextSummary(block),
@@ -1714,6 +1717,46 @@ function editorText(keyBook) {
         }
     };
 
+    loadAiChatMessages = (block, { force = false } = {}) => {
+        if (!keyBook) {
+            aiChatMessages.value = [];
+            aiChatContextKey.value = null;
+            aiChatStatus.value = 'idle';
+            aiChatError.value = null;
+            return;
+        }
+
+        const scope = block?.block_uuid ? 'block' : 'book';
+        const blockUuid = block?.block_uuid || '';
+        const versionId = block?.current_version_id || 'book';
+        const contextKey = `${keyBook}:${scope}:${blockUuid || 'book'}:${versionId}`;
+
+        if (!force && aiChatContextKey.value === contextKey && aiChatStatus.value !== 'error') return;
+
+        aiChatContextKey.value = contextKey;
+        aiChatStatus.value = 'loading';
+        aiChatError.value = null;
+
+        const params = new URLSearchParams({ scope });
+        if (blockUuid) params.set('block_uuid', blockUuid);
+
+        _.http.getJSON(`/dashboard/api/books/${keyBook}/ai/chat?${params.toString()}`)
+            .then((payload) => {
+                if (aiChatContextKey.value !== contextKey) return;
+
+                const data = normalizeDataPayload(payload);
+                aiChatMessages.value = data.messages || [];
+                aiChatStatus.value = 'idle';
+            })
+            .catch((error) => {
+                if (aiChatContextKey.value !== contextKey) return;
+
+                aiChatMessages.value = [];
+                aiChatError.value = requestErrorMessage(error, 'Unable to load AI Chat messages.');
+                aiChatStatus.value = 'error';
+            });
+    };
+
     askAiChat = (block) => {
         const question = aiChatDraft.value.trim();
         if (!keyBook || !question || aiChatStatus.value === 'asking') return;
@@ -1735,7 +1778,7 @@ function editorText(keyBook) {
 
                 if (!message) throw new Error('AI Chat returned an empty response.');
 
-                aiChatMessages.value = [
+                aiChatMessages.value = data.messages || [
                     {
                         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
                         question,
@@ -2054,6 +2097,7 @@ function editorText(keyBook) {
         aiChatDraft.value = '';
         aiChatStatus.value = 'idle';
         aiChatError.value = null;
+        aiChatContextKey.value = null;
         aiProviders.value = [];
         aiProviderStatus.value = 'idle';
         aiProviderContextKey.value = null;
@@ -2069,6 +2113,7 @@ function editorText(keyBook) {
         applyBlockReview = () => { };
         rejectBlockReview = () => { };
         askAiChat = () => { };
+        loadAiChatMessages = () => { };
         loadAiProviders = () => { };
         saveAiProviderSetting = () => { };
         openCustomProviderDialog = () => { };

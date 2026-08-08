@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\AiChatMessage;
+use App\Models\AiChatThread;
 use App\Models\Book;
 use App\Models\BookBlockReview;
 use App\Models\BookCategory;
@@ -374,7 +376,24 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.message.provider_key', 'mock')
             ->assertJsonPath('data.message.model', 'mock-correction-v1')
             ->assertJsonPath('data.message.metadata.message', 'What is the mood?')
-            ->assertJsonPath('data.message.metadata.context_preview', 'A quiet forest paragraph for chat.');
+            ->assertJsonPath('data.message.metadata.context_preview', 'A quiet forest paragraph for chat.')
+            ->assertJsonPath('data.messages.0.question', 'What is the mood?');
+
+        $this->assertDatabaseCount('ai_chat_threads', 1);
+        $this->assertDatabaseCount('ai_chat_messages', 2);
+
+        $thread = AiChatThread::query()->firstOrFail();
+        $this->assertSame($book->id, $thread->book_id);
+        $this->assertSame('block', $thread->scope);
+        $this->assertSame($blockUuid, $thread->block_uuid);
+
+        $this->assertSame(['user', 'assistant'], AiChatMessage::query()->orderBy('id')->pluck('role')->all());
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/ai/chat?scope=block&block_uuid={$blockUuid}")
+            ->assertOk()
+            ->assertJsonPath('data.thread.id', $thread->id)
+            ->assertJsonPath('data.messages.0.question', 'What is the mood?')
+            ->assertJsonPath('data.messages.0.provider_key', 'mock');
     }
 
     public function test_dashboard_can_ask_openai_ai_chat_about_selected_block(): void
@@ -419,7 +438,8 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.message.answer', 'The paragraph has a quiet, reflective mood.')
             ->assertJsonPath('data.message.provider_key', 'openai')
             ->assertJsonPath('data.message.model', 'gpt-5-mini')
-            ->assertJsonPath('data.message.metadata.response_id', 'resp_chat_123');
+            ->assertJsonPath('data.message.metadata.response_id', 'resp_chat_123')
+            ->assertJsonPath('data.messages.0.answer', 'The paragraph has a quiet, reflective mood.');
 
         Http::assertSent(fn ($request) => $request->url() === 'https://api.openai.com/v1/responses'
             && $request->hasHeader('Authorization', 'Bearer sk-chat-openai')

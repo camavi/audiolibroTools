@@ -55,3 +55,4 @@
 - Migliorato pannello Correct: mostra provider/model attivo, stato `Checking with ...`, accesso diretto al dialog AI settings quando manca la key e badge provider/model nelle review.
 - Aggiunto system prompt per tool AI: bottone nel dialog AI settings, editor dedicato con `_.Textarea`, salvataggio in `ai_service_settings.options_json` e uso del prompt custom nelle chiamate OpenAI di Correct.
 - Avviato tool AI Chat: endpoint non persistente per domande su blocco/libro, service backend con mock e OpenAI Responses API, uso del setting/prompt `chat` e pannello destro con textarea, Ask/Clear, errori e risposte in memoria.
+- Aggiunta persistenza AI Chat: thread per libro/blocco/versione, messaggi user/assistant con provider/model/metadata, endpoint GET per ricaricare la conversazione e UI Refresh collegata al contesto selezionato.

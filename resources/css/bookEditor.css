@@ -491,6 +491,12 @@
     line-height: 1.4;
 }
 
+.at-chatNotice {
+    margin-top: 8px;
+    color: #64748b;
+    font-size: 12px;
+}
+
 .at-chatMessages {
     display: grid;
     gap: 10px;
