@@ -8,6 +8,7 @@ use App\Models\BookCategory;
 use App\Services\BookBlockService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -269,6 +270,7 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.setting.service', 'correction')
             ->assertJsonPath('data.setting.provider_key', 'mock')
             ->assertJsonPath('data.setting.model', 'mock-correction-v1')
+            ->assertJsonPath('data.setting.system_prompt', 'You are a professional book editor. Return only the corrected text, with no explanation.')
             ->assertJsonPath('data.providers.0.provider_key', 'mock')
             ->assertJsonPath('data.services.2.key', 'correction')
             ->assertJsonPath('data.services.7.key', 'versions');
@@ -297,11 +299,13 @@ class DashboardBookTest extends TestCase
             'provider_key' => $providerKey,
             'model' => 'local-fast',
             'api_key' => 'local-secret-key-updated',
+            'system_prompt' => 'Correct this novel with a dry, concise style.',
         ])
             ->assertOk()
             ->assertJsonPath('data.setting.service', 'correction')
             ->assertJsonPath('data.setting.provider_key', $providerKey)
-            ->assertJsonPath('data.setting.model', 'local-fast');
+            ->assertJsonPath('data.setting.model', 'local-fast')
+            ->assertJsonPath('data.setting.system_prompt', 'Correct this novel with a dry, concise style.');
 
         $providersPayload = $this->getJson("/dashboard/api/ai/providers?service=correction&key_book={$book->key_book}")
             ->assertOk()
@@ -324,6 +328,16 @@ class DashboardBookTest extends TestCase
             'provider_key' => $providerKey,
             'model' => 'local-fast',
         ]);
+        $optionsJson = $this->getConnection()
+            ->table('ai_service_settings')
+            ->where('book_id', $book->id)
+            ->where('service', 'correction')
+            ->value('options_json');
+
+        $this->assertSame(
+            'Correct this novel with a dry, concise style.',
+            json_decode($optionsJson, true)['system_prompt'] ?? null
+        );
 
         $encryptedKey = $this->getConnection()
             ->table('ai_provider_credentials')
@@ -444,8 +458,8 @@ class DashboardBookTest extends TestCase
 
         $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/reviews", [
             'type' => 'grammar',
-            'provider_key' => 'openai',
-            'model' => 'gpt-5-mini',
+            'provider_key' => 'mock',
+            'model' => 'mock-correction-v1',
         ])
             ->assertCreated()
             ->assertJsonPath('data.review.type', 'grammar')
@@ -454,8 +468,8 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.review.block_version_id', $saved['version']->id)
             ->assertJsonPath('data.review.version_number', 1)
             ->assertJsonPath('data.review.is_current_version', true)
-            ->assertJsonPath('data.review.notes_json.provider_key', 'openai')
-            ->assertJsonPath('data.review.notes_json.model', 'gpt-5-mini')
+            ->assertJsonPath('data.review.notes_json.provider_key', 'mock')
+            ->assertJsonPath('data.review.notes_json.model', 'mock-correction-v1')
             ->assertJsonPath('data.review.original_text', 'Original phrase , with spacing. Next sentence.')
             ->assertJsonPath('data.review.suggested_text', 'Original phrase, with spacing. Next sentence.');
 
@@ -466,6 +480,82 @@ class DashboardBookTest extends TestCase
             'source' => 'mock-ai',
             'status' => 'draft',
         ]);
+    }
+
+    public function test_dashboard_can_create_openai_editor_block_review(): void
+    {
+        Http::fake([
+            'https://api.openai.com/v1/responses' => Http::response([
+                'id' => 'resp_test_123',
+                'output_text' => 'Corrected paragraph from provider.',
+            ]),
+        ]);
+
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $saved = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Original provider paragraph.'),
+            'text_plain' => 'Original provider paragraph.',
+        ]);
+
+        $this->patchJson('/dashboard/api/ai/settings', [
+            'service' => 'correction',
+            'key_book' => $book->key_book,
+            'provider_key' => 'openai',
+            'model' => 'gpt-5-mini',
+            'api_key' => 'sk-test-openai',
+            'system_prompt' => 'Correct like a careful Italian book editor.',
+        ])->assertOk();
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/reviews", [
+            'type' => 'grammar',
+            'provider_key' => 'openai',
+            'model' => 'gpt-5-mini',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.review.source', 'ai')
+            ->assertJsonPath('data.review.block_version_id', $saved['version']->id)
+            ->assertJsonPath('data.review.original_text', 'Original provider paragraph.')
+            ->assertJsonPath('data.review.suggested_text', 'Corrected paragraph from provider.')
+            ->assertJsonPath('data.review.notes_json.provider_key', 'openai')
+            ->assertJsonPath('data.review.notes_json.model', 'gpt-5-mini')
+            ->assertJsonPath('data.review.notes_json.response_id', 'resp_test_123');
+
+        Http::assertSent(fn ($request) => $request->url() === 'https://api.openai.com/v1/responses'
+            && $request->hasHeader('Authorization', 'Bearer sk-test-openai')
+            && $request['model'] === 'gpt-5-mini'
+            && $request['store'] === false
+            && $request['input'][0]['content'][0]['text'] === 'Correct like a careful Italian book editor.');
+    }
+
+    public function test_dashboard_requires_api_key_for_openai_editor_block_review(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Original provider paragraph.'),
+            'text_plain' => 'Original provider paragraph.',
+        ]);
+
+        $response = $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/reviews", [
+            'type' => 'grammar',
+            'provider_key' => 'openai',
+            'model' => 'gpt-5-mini',
+        ]);
+
+        $this->assertSame(422, $response->getStatusCode(), $response->getContent());
+        $payload = json_decode($response->getContent(), true);
+        $this->assertSame('Save an API key before using OpenAI corrections.', $payload['errors']['api_key'][0] ?? null);
     }
 
     public function test_dashboard_reuses_existing_mock_draft_review_for_same_block_version(): void

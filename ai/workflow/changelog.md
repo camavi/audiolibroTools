@@ -51,3 +51,6 @@
 - Avviato layer provider AI: provider predefiniti, provider custom con hosting/modelli, impostazioni per servizio AI e pannello Settings con dialog per aggiungere provider custom.
 - Aggiunta gestione API key per provider AI: credential separate e criptate, campo key nel pannello Settings e nel dialog provider custom, risposta API limitata a `has_api_key`.
 - Aggiunte impostazioni AI per singolo tool del Right Workspace: ogni box apre il proprio dialog provider/model/key e il backend mantiene setting separati per chat, comments, correction, voices, audio, translate e versions.
+- Avviata integrazione provider reale per Correct: nuovo service backend con mock locale, chiamata OpenAI Responses API per provider `openai`, salvataggio metadata provider/model/prompt/response e messaggi JSON 422 per key mancante o provider non implementati.
+- Migliorato pannello Correct: mostra provider/model attivo, stato `Checking with ...`, accesso diretto al dialog AI settings quando manca la key e badge provider/model nelle review.
+- Aggiunto system prompt per tool AI: bottone nel dialog AI settings, editor dedicato con `_.Textarea`, salvataggio in `ai_service_settings.options_json` e uso del prompt custom nelle chiamate OpenAI di Correct.

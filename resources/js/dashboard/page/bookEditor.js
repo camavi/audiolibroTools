@@ -19,6 +19,7 @@ const blockVersionsContextKey = _.rod(null);
 const blockReviews = _.rod([]);
 const blockReviewsStatus = _.rod('idle');
 const blockReviewsContextKey = _.rod(null);
+const blockReviewsError = _.rod(null);
 const blockReviewActionStatus = _.rod('idle');
 const aiProviders = _.rod([]);
 const aiProviderSetting = _.rod({ service: 'correction', provider_key: 'mock', model: 'mock-correction-v1' });
@@ -30,6 +31,7 @@ const aiServiceModel = _.rod('correction');
 const aiProviderModel = _.rod('mock');
 const aiModelModel = _.rod('mock-correction-v1');
 const aiProviderApiKey = _.rod('');
+const aiProviderSystemPrompt = _.rod('');
 const customProviderName = _.rod('');
 const customProviderBaseUrl = _.rod('');
 const customProviderModels = _.rod('');
@@ -48,6 +50,7 @@ let loadAiProviders = () => { };
 let saveAiProviderSetting = () => { };
 let openCustomProviderDialog = () => { };
 let openToolAiSettingsDialog = () => { };
+let openSystemPromptDialog = () => { };
 
 const AUTOSAVE_DELAY = 1200;
 
@@ -325,6 +328,39 @@ function selectedAiModelOptions() {
     return selectedAiProvider()?.models || [];
 }
 
+function providerByKey(providerKey) {
+    return aiProviders.value.find((provider) => provider.provider_key === providerKey) || null;
+}
+
+function providerNeedsApiKey(providerKey) {
+    return providerKey && !['mock', 'ollama'].includes(providerKey);
+}
+
+function correctionAiSetting() {
+    if (aiServiceSettings.value.correction) return aiServiceSettings.value.correction;
+    if (aiProviderSetting.value.service === 'correction') return aiProviderSetting.value;
+
+    return {
+        service: 'correction',
+        provider_key: 'mock',
+        model: 'mock-correction-v1',
+    };
+}
+
+function correctionAiSummary() {
+    const setting = correctionAiSetting();
+    const provider = providerByKey(setting.provider_key);
+
+    return {
+        setting,
+        provider,
+        providerName: provider?.name || setting.provider_key || 'AI provider',
+        model: setting.model || provider?.default_model || '',
+        hasApiKey: Boolean(provider?.has_api_key),
+        missingApiKey: providerNeedsApiKey(setting.provider_key) && !provider?.has_api_key,
+    };
+}
+
 function syncAiSettingModels(setting) {
     const service = setting.service || 'correction';
     const providerKey = setting.provider_key || 'mock';
@@ -340,6 +376,7 @@ function setAiProviderSetting(nextSetting) {
         service: nextSetting.service || 'correction',
         provider_key: nextSetting.provider_key || 'mock',
         model: nextSetting.model || 'mock-correction-v1',
+        system_prompt: nextSetting.system_prompt || '',
     };
 
     const current = aiProviderSetting.value;
@@ -347,10 +384,12 @@ function setAiProviderSetting(nextSetting) {
         current.service !== normalized.service
         || current.provider_key !== normalized.provider_key
         || current.model !== normalized.model
+        || current.system_prompt !== normalized.system_prompt
     ) {
         aiProviderSetting.value = normalized;
     }
 
+    if (aiProviderSystemPrompt.value !== normalized.system_prompt) aiProviderSystemPrompt.value = normalized.system_prompt;
     syncAiSettingModels(normalized);
 }
 
@@ -360,6 +399,16 @@ function selectChangeValue(value, fallback = '') {
     }
 
     return value ?? fallback;
+}
+
+function requestErrorMessage(error, fallback) {
+    const payload = error?.data || error?.response || error || {};
+    const errors = payload.errors || null;
+    const firstError = errors
+        ? Object.values(errors).flat().find(Boolean)
+        : null;
+
+    return firstError || payload.message || error?.message || fallback;
 }
 
 function extractEditorBlocks(doc, blockMeta) {
@@ -610,7 +659,7 @@ function versionsPanel(block) {
     );
 }
 
-function correctionPanel(block) {
+function correctionPanel(block, keyBook) {
     if (!block) {
         return _.div({ class: 'at-rightWorkspace-section' },
             _.h3('AI correction'),
@@ -630,23 +679,35 @@ function correctionPanel(block) {
     if (status === 'error') {
         return _.div({ class: 'at-rightWorkspace-section' },
             _.h3('AI correction'),
-            _.p('Unable to load corrections for this block.')
+            _.p(blockReviewsError.value || 'Unable to load corrections for this block.')
         );
     }
 
     const reviews = blockReviews.value;
     const isChecking = blockReviewActionStatus.value === 'checking';
     const reviewActionBusy = blockReviewActionStatus.value !== 'idle';
+    const aiSummary = correctionAiSummary();
 
     return _.div({ class: 'at-rightWorkspace-section' },
         _.h3('AI correction'),
+        _.div({ class: aiSummary.missingApiKey ? 'at-correctionProvider has-warning' : 'at-correctionProvider' },
+            _.div({ class: 'at-correctionProvider-main' },
+                _.span('Provider'),
+                _.strong(`${aiSummary.providerName}${aiSummary.model ? ` · ${aiSummary.model}` : ''}`)
+            ),
+            aiSummary.missingApiKey ? _.button({
+                type: 'button',
+                class: 'at-correctionProvider-action',
+                onclick: () => openToolAiSettingsDialog(keyBook, 'correction', 'Correct'),
+            }, 'Configure AI settings') : null
+        ),
         _.div({ class: 'at-rightWorkspace-actions is-top' },
             _.button({
                 type: 'button',
                 class: 'at-rightWorkspace-action is-primary',
                 disabled: !block || block.dirty || reviewActionBusy,
                 onclick: () => createBlockReview(block, 'grammar'),
-            }, isChecking ? 'Checking...' : 'Check selected block'),
+            }, isChecking ? `Checking with ${aiSummary.providerName}...` : 'Check selected block'),
             _.button({
                 type: 'button',
                 class: 'at-rightWorkspace-action',
@@ -660,13 +721,15 @@ function correctionPanel(block) {
                 const isApplying = blockReviewActionStatus.value === `applying:${review.id}`;
                 const isRejecting = blockReviewActionStatus.value === `rejecting:${review.id}`;
                 const isBusy = blockReviewActionStatus.value !== 'idle';
+                const reviewProvider = review.notes_json?.provider_name || review.notes_json?.provider_key || review.source || 'AI';
+                const reviewModel = review.notes_json?.model || '';
 
                 return _.div({
                     class: review.is_current_version ? 'at-reviewItem' : 'at-reviewItem is-stale',
                 },
                     _.div({ class: 'at-reviewItem-head' },
                         _.strong(review.type || 'review'),
-                        _.span(review.source || 'manual'),
+                        _.span({ class: 'at-reviewItem-provider' }, reviewModel ? `${reviewProvider} · ${reviewModel}` : reviewProvider),
                         _.span({ class: `at-reviewStatus status-${review.status}` }, review.status || 'draft')
                     ),
                     _.div({ class: 'at-reviewItem-version' }, review.version_number
@@ -725,7 +788,15 @@ function aiSettingsPanel(keyBook, options = {}) {
     }
 
     return _.div({ class: 'at-rightWorkspace-section' },
-        _.h3('AI providers'),
+        _.div({ class: 'at-aiSettings-head' },
+            _.h3('AI providers'),
+            _.button({
+                type: 'button',
+                class: 'at-aiSettings-promptBtn',
+                title: 'System prompt',
+                onclick: () => openSystemPromptDialog(keyBook, aiProviderSetting.value.service),
+            }, _.Icon ? _.Icon({ name: 'terminal', class: 'at-aiSettings-promptIcon' }) : 'Prompt')
+        ),
         _.div({ class: 'at-aiSettings' },
             serviceLocked ? _.div({ class: 'at-aiSettings-providerCard' },
                 _.span('Service'),
@@ -875,7 +946,7 @@ function rightWorkspaceBody(tool, block, keyBook) {
 
         return _.div({ class: 'at-rightWorkspace-body' },
             blockContextSummary(block),
-            correctionPanel(block)
+            correctionPanel(block, keyBook)
         );
     }
 
@@ -1204,6 +1275,7 @@ function editorText(keyBook) {
             service,
             provider_key: data.setting?.provider_key || 'mock',
             model: data.setting?.model || 'mock-correction-v1',
+            system_prompt: data.setting?.system_prompt || '',
         });
         aiServiceSettings.value = {
             ...aiServiceSettings.value,
@@ -1246,6 +1318,7 @@ function editorText(keyBook) {
                 provider_key: aiProviderSetting.value.provider_key,
                 model: aiProviderSetting.value.model,
                 api_key: aiProviderApiKey.value.trim() || null,
+                system_prompt: aiProviderSystemPrompt.value.trim(),
             });
             const data = normalizeDataPayload(payload);
 
@@ -1376,6 +1449,41 @@ function editorText(keyBook) {
         }).open();
     };
 
+    openSystemPromptDialog = (bookKey = keyBook, service = 'correction') => {
+        loadAiProviders(bookKey, service);
+
+        _.Dialog({
+            size: 'lg',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3('System prompt'),
+                    _.span({ class: 'text-muted' }, 'Instruction used by this AI tool before the selected book content.'),
+                ),
+                content: ({ close }) => _.div({ class: 'at-systemPromptDialog' },
+                    _.Textarea({
+                        label: 'Prompt',
+                        icon: 'terminal',
+                        rows: 10,
+                        model: aiProviderSystemPrompt,
+                    }),
+                    _.div({ class: 'at-systemPromptActions' },
+                        _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Close'),
+                        _.Btn({
+                            type: 'button',
+                            color: 'primary',
+                            loading: savingAiSetting,
+                            onClick: async () => {
+                                await saveAiProviderSetting(bookKey);
+                                close();
+                            },
+                        }, 'Save prompt')
+                    )
+                ),
+            },
+        }).open();
+    };
+
     openToolAiSettingsDialog = (bookKey = keyBook, service = 'correction', label = 'Tool') => {
         aiProviderApiKey.value = '';
         loadAiProviders(bookKey, service, { force: true });
@@ -1434,6 +1542,7 @@ function editorText(keyBook) {
             blockReviews.value = [];
             blockReviewsStatus.value = 'idle';
             blockReviewsContextKey.value = null;
+            blockReviewsError.value = null;
             return;
         }
 
@@ -1443,6 +1552,7 @@ function editorText(keyBook) {
         blockReviewsContextKey.value = contextKey;
         blockReviews.value = [];
         blockReviewsStatus.value = 'loading';
+        blockReviewsError.value = null;
 
         _.http.getJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/reviews`)
             .then((payload) => {
@@ -1450,12 +1560,14 @@ function editorText(keyBook) {
 
                 const data = normalizeDataPayload(payload);
                 blockReviews.value = data.reviews || [];
+                blockReviewsError.value = null;
                 blockReviewsStatus.value = 'ready';
             })
-            .catch(() => {
+            .catch((error) => {
                 if (blockReviewsContextKey.value !== contextKey) return;
 
                 blockReviews.value = [];
+                blockReviewsError.value = requestErrorMessage(error, 'Unable to load corrections for this block.');
                 blockReviewsStatus.value = 'error';
             });
     };
@@ -1467,6 +1579,7 @@ function editorText(keyBook) {
             review,
             ...blockReviews.value.filter((item) => item.id !== review.id),
         ];
+        blockReviewsError.value = null;
         blockReviewsStatus.value = 'ready';
     };
 
@@ -1485,7 +1598,7 @@ function editorText(keyBook) {
         if (!keyBook || !block?.block_uuid || block.dirty || blockReviewActionStatus.value !== 'idle') return;
 
         const contextKey = `${keyBook}:${block.block_uuid}:${block.current_version_id || 'new'}`;
-        const correctionSetting = aiServiceSettings.value.correction || aiProviderSetting.value;
+        const correctionSetting = correctionAiSetting();
         blockReviewActionStatus.value = 'checking';
 
         _.http.postJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/reviews`, {
@@ -1505,7 +1618,8 @@ function editorText(keyBook) {
                     loadBlockReviews(block);
                 }
             })
-            .catch(() => {
+            .catch((error) => {
+                blockReviewsError.value = requestErrorMessage(error, 'Unable to create AI correction.');
                 blockReviewsStatus.value = 'error';
             })
             .finally(() => {
@@ -1772,6 +1886,7 @@ function editorText(keyBook) {
         blockReviews.value = [];
         blockReviewsStatus.value = 'idle';
         blockReviewsContextKey.value = null;
+        blockReviewsError.value = null;
         blockReviewActionStatus.value = 'idle';
         aiProviders.value = [];
         aiProviderStatus.value = 'idle';
@@ -1779,6 +1894,7 @@ function editorText(keyBook) {
         setAiProviderSetting({ service: 'correction', provider_key: 'mock', model: 'mock-correction-v1' });
         aiServiceSettings.value = {};
         aiProviderApiKey.value = '';
+        aiProviderSystemPrompt.value = '';
         customProviderApiKey.value = '';
         focusEditorBlock = () => { };
         loadBlockVersions = () => { };
@@ -1790,6 +1906,7 @@ function editorText(keyBook) {
         saveAiProviderSetting = () => { };
         openCustomProviderDialog = () => { };
         openToolAiSettingsDialog = () => { };
+        openSystemPromptDialog = () => { };
         editor?.destroy();
         editor = null;
     };

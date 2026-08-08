@@ -7,6 +7,7 @@ use App\Models\Book;
 use App\Models\BookBlock;
 use App\Models\BookBlockReview;
 use App\Models\BookCategory;
+use App\Services\Ai\EditorAiCorrectionService;
 use App\Services\BookBlockService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -230,8 +231,12 @@ class DashboardBookController extends Controller
         ]);
     }
 
-    public function storeBlockReview(Request $request, string $keyBook, string $blockUuid): JsonResponse
-    {
+    public function storeBlockReview(
+        Request $request,
+        string $keyBook,
+        string $blockUuid,
+        EditorAiCorrectionService $corrections,
+    ): JsonResponse {
         $validated = $request->validate([
             'type' => ['nullable', 'string', 'in:grammar,style,continuity,rewrite'],
             'provider_key' => ['nullable', 'string', 'max:80'],
@@ -264,7 +269,6 @@ class DashboardBookController extends Controller
             ->where('book_block_version_id', $block->currentVersion->id)
             ->where('type', $reviewType)
             ->where('status', 'draft')
-            ->where('source', 'mock-ai')
             ->where('notes_json->provider_key', $providerKey)
             ->where('notes_json->model', $model)
             ->latest('id')
@@ -279,8 +283,7 @@ class DashboardBookController extends Controller
             ]);
         }
 
-        $originalText = $block->currentVersion->text_plain ?? $block->text_plain ?? '';
-        $suggestedText = $this->mockSuggestedText($originalText);
+        $correction = $corrections->generate($book, $block, $reviewType, $providerKey, $model);
 
         $review = BookBlockReview::query()->create([
             'book_id' => $book->id,
@@ -288,16 +291,10 @@ class DashboardBookController extends Controller
             'book_block_version_id' => $block->currentVersion->id,
             'type' => $reviewType,
             'status' => 'draft',
-            'source' => 'mock-ai',
-            'original_text' => $originalText,
-            'suggested_text' => $suggestedText,
-            'notes_json' => [
-                'mode' => 'local-mock',
-                'provider_key' => $providerKey,
-                'model' => $model,
-                'changes_detected' => $originalText !== $suggestedText,
-                'message' => 'Local placeholder correction. AI provider integration comes next.',
-            ],
+            'source' => $correction['source'],
+            'original_text' => $correction['original_text'],
+            'suggested_text' => $correction['suggested_text'],
+            'notes_json' => $correction['notes_json'],
             'created_by' => auth()->id(),
         ]);
 
@@ -401,14 +398,5 @@ class DashboardBookController extends Controller
             'version_number' => $review->blockVersion?->version_number,
             'is_current_version' => $block->current_version_id === $review->book_block_version_id,
         ];
-    }
-
-    private function mockSuggestedText(string $text): string
-    {
-        $suggested = trim(preg_replace('/[ \t]+/u', ' ', $text) ?? $text);
-        $suggested = preg_replace('/\s+([,.;:!?])/u', '$1', $suggested) ?? $suggested;
-        $suggested = preg_replace('/([.!?])([^\s"”’])/u', '$1 $2', $suggested) ?? $suggested;
-
-        return $suggested;
     }
 }

@@ -79,6 +79,7 @@ class DashboardAiController extends Controller
             'provider_key' => ['required', 'string', 'max:80'],
             'model' => ['required', 'string', 'max:120'],
             'api_key' => ['nullable', 'string', 'max:5000'],
+            'system_prompt' => ['nullable', 'string', 'max:12000'],
         ]);
 
         $accountId = auth()->id();
@@ -88,6 +89,15 @@ class DashboardAiController extends Controller
 
         abort_unless($provider, 422);
         abort_unless(in_array($validated['model'], $provider['models'], true), 422);
+
+        $existingSetting = AiServiceSetting::query()
+            ->where('account_id', $accountId)
+            ->where('book_id', $book?->id)
+            ->where('service', $validated['service'])
+            ->first();
+        $systemPrompt = array_key_exists('system_prompt', $validated)
+            ? trim((string) ($validated['system_prompt'] ?? ''))
+            : ($existingSetting?->options_json['system_prompt'] ?? $this->defaultSystemPrompt($validated['service']));
 
         $setting = AiServiceSetting::query()->updateOrCreate([
             'account_id' => $accountId,
@@ -100,6 +110,7 @@ class DashboardAiController extends Controller
             'options_json' => [
                 'provider_name' => $provider['name'],
                 'base_url' => $provider['base_url'],
+                'system_prompt' => $systemPrompt,
             ],
         ]);
 
@@ -171,6 +182,7 @@ class DashboardAiController extends Controller
             'service' => $service,
             'provider_key' => $defaultProvider['provider_key'] ?? 'mock',
             'model' => $defaultProvider['default_model'] ?? 'mock-correction-v1',
+            'system_prompt' => $this->defaultSystemPrompt($service),
         ];
     }
 
@@ -194,7 +206,22 @@ class DashboardAiController extends Controller
             'service' => $setting->service,
             'provider_key' => $setting->provider_key,
             'model' => $setting->model,
+            'system_prompt' => $setting->options_json['system_prompt'] ?? $this->defaultSystemPrompt($setting->service),
         ];
+    }
+
+    private function defaultSystemPrompt(string $service): string
+    {
+        return match ($service) {
+            'correction', 'rewrite' => 'You are a professional book editor. Return only the corrected text, with no explanation.',
+            'translate' => 'You are a literary translator. Preserve meaning, voice, rhythm and paragraph structure.',
+            'chat' => 'You are an editorial assistant for this book. Use the selected context and answer clearly.',
+            'comments' => 'You are an editorial reviewer. Write concise comments tied to the selected block.',
+            'voices' => 'You are a voice casting assistant for an audiobook. Recommend voices based on characters and tone.',
+            'audio' => 'You are an audiobook production assistant. Focus on narration, pacing and audio direction.',
+            'versions' => 'You are an editorial history assistant. Compare versions and explain changes clearly.',
+            default => 'You are an expert assistant for this book project.',
+        };
     }
 
     private function services(): array
