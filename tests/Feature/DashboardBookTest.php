@@ -1049,6 +1049,57 @@ class DashboardBookTest extends TestCase
         ]);
     }
 
+    public function test_dashboard_can_update_block_comment_anchor_metadata(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $saved = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Paragraph with updated anchor text.'),
+            'text_plain' => 'Paragraph with updated anchor text.',
+        ]);
+
+        $comment = BookBlockComment::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+            'block_uuid' => $blockUuid,
+            'status' => 'open',
+            'body' => 'Move this anchor.',
+            'metadata_json' => [
+                'anchor' => [
+                    'type' => 'text-selection',
+                    'block_uuid' => $blockUuid,
+                    'offset_start' => 0,
+                    'offset_end' => 9,
+                    'text' => 'Paragraph',
+                ],
+            ],
+        ]);
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/comments/{$comment->id}", [
+            'book_block_version_id' => $saved['version']->id,
+            'metadata_json' => [
+                'anchor' => [
+                    'type' => 'text-selection',
+                    'block_uuid' => $blockUuid,
+                    'offset_start' => 15,
+                    'offset_end' => 34,
+                    'text' => 'updated anchor text',
+                ],
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.comment.status', 'open')
+            ->assertJsonPath('data.comment.block_version_id', $saved['version']->id)
+            ->assertJsonPath('data.comment.metadata_json.anchor.text', 'updated anchor text')
+            ->assertJsonPath('data.comment.metadata_json.anchor.offset_start', 15);
+    }
+
     public function test_dashboard_can_resolve_and_reopen_block_comment(): void
     {
         $book = $this->createBook();

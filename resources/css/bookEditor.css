@@ -786,6 +786,11 @@
     background: #ffffff;
 }
 
+.at-commentItem.is-active {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 1px #bfdbfe;
+}
+
 .at-commentItem.is-stale {
     background: #f8fafc;
 }
@@ -854,6 +859,22 @@
     line-height: 1.35;
 }
 
+.at-commentAnchor em {
+    color: #0369a1;
+    font-size: 11px;
+    font-style: normal;
+}
+
+.at-commentAnchor.is-reanchored {
+    border-left-color: #0284c7;
+    background: #f0f9ff;
+}
+
+.at-commentAnchor.is-stale {
+    border-left-color: #d97706;
+    background: #fffbeb;
+}
+
 .at-commentBody {
     margin-top: 8px !important;
     color: #334155 !important;
@@ -864,7 +885,7 @@
 
 .at-commentItem-actions {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
     gap: 6px;
     margin-top: 9px;
 }
@@ -2052,6 +2073,7 @@
     border-radius: 2px;
     background: #fef3c7;
     box-shadow: 0 0 0 1px #f59e0b33;
+    cursor: pointer;
 }
 
 .at-commentAnchorHighlight.is-resolved {

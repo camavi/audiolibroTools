@@ -728,7 +728,9 @@ class DashboardBookController extends Controller
         BookBlockComment $comment,
     ): JsonResponse {
         $validated = $request->validate([
-            'status' => ['required', 'string', 'in:open,resolved'],
+            'status' => ['nullable', 'string', 'in:open,resolved'],
+            'book_block_version_id' => ['nullable', 'integer'],
+            'metadata_json' => ['nullable', 'array'],
         ]);
 
         $book = Book::query()
@@ -744,11 +746,30 @@ class DashboardBookController extends Controller
             404
         );
 
-        $comment->forceFill([
-            'status' => $validated['status'],
-            'resolved_at' => $validated['status'] === 'resolved' ? now() : null,
-            'resolved_by' => $validated['status'] === 'resolved' ? auth()->id() : null,
-        ])->save();
+        $updates = [];
+
+        if (array_key_exists('status', $validated) && $validated['status']) {
+            $updates = [
+                ...$updates,
+                'status' => $validated['status'],
+                'resolved_at' => $validated['status'] === 'resolved' ? now() : null,
+                'resolved_by' => $validated['status'] === 'resolved' ? auth()->id() : null,
+            ];
+        }
+
+        if (array_key_exists('metadata_json', $validated)) {
+            $updates['metadata_json'] = $validated['metadata_json'];
+        }
+
+        if (array_key_exists('book_block_version_id', $validated) && $validated['book_block_version_id']) {
+            $commentVersion = $block->versions()->whereKey($validated['book_block_version_id'])->firstOrFail();
+
+            $updates['book_block_version_id'] = $commentVersion->id;
+        }
+
+        abort_if($updates === [], 422, 'No comment changes were provided.');
+
+        $comment->forceFill($updates)->save();
 
         return response()->json([
             'data' => [

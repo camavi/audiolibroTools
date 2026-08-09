@@ -35,6 +35,8 @@ const blockReviewActionStatus = _.rod('idle');
 const blockComments = _.rod([]);
 const blockCommentSummaries = _.rod({});
 const blockCommentSelectionAnchor = _.rod(null);
+const blockCommentAnchorResolutions = _.rod({});
+const activeBlockCommentId = _.rod(null);
 const blockCommentDraft = _.rod('');
 const blockCommentFilter = _.rod('open');
 const blockCommentsStatus = _.rod('idle');
@@ -106,6 +108,7 @@ let loadBlockComments = () => { };
 let createBlockComment = () => { };
 let createBlockCommentFromSource = () => { };
 let updateBlockCommentStatus = () => { };
+let updateBlockCommentAnchor = () => { };
 let refreshInlineCommentMarkers = () => { };
 let loadVoiceProfiles = () => { };
 let loadBlockVoiceAssignment = () => { };
@@ -847,7 +850,19 @@ function commentAnchorStateLabel(comment) {
     if (!anchor) return null;
     if (comment.is_current_version) return 'Anchored';
 
-    return anchor.reanchored ? 'Reanchored' : 'Stale anchor';
+    const resolution = blockCommentAnchorResolutions.value[comment.id];
+
+    return resolution?.state === 'reanchored' ? 'Reanchored' : 'Stale anchor';
+}
+
+function commentAnchorStateClass(comment) {
+    const anchor = commentAnchor(comment);
+    if (!anchor) return '';
+    if (comment.is_current_version) return 'is-current';
+
+    const resolution = blockCommentAnchorResolutions.value[comment.id];
+
+    return resolution?.state === 'reanchored' ? 'is-reanchored' : 'is-stale';
 }
 
 function blockCommentContextBlockUuid() {
@@ -1707,10 +1722,18 @@ function commentsPanel(block) {
                 ? _.div({ class: 'at-commentList' }, visibleComments.map((comment) => {
                 const isOpen = (comment.status || 'open') === 'open';
                 const isBusy = actionStatus === `updating:${comment.id}`;
+                const isUpdatingAnchor = actionStatus === `anchoring:${comment.id}`;
                 const anchor = commentAnchor(comment);
+                const anchorResolution = blockCommentAnchorResolutions.value[comment.id] || null;
+                const isActiveComment = activeBlockCommentId.value === comment.id;
 
                 return _.div({
-                    class: comment.is_current_version ? 'at-commentItem' : 'at-commentItem is-stale',
+                    class: [
+                        'at-commentItem',
+                        comment.is_current_version ? '' : 'is-stale',
+                        isActiveComment ? 'is-active' : '',
+                    ].filter(Boolean).join(' '),
+                    'data-comment-item-id': String(comment.id),
                 },
                     _.div({ class: 'at-commentItem-head' },
                         _.strong(isOpen ? 'Open comment' : 'Resolved comment'),
@@ -1721,9 +1744,12 @@ function commentsPanel(block) {
                         : ''
                     ),
                     anchorSnippet(anchor)
-                        ? _.div({ class: 'at-commentAnchor' },
+                        ? _.div({ class: `at-commentAnchor ${commentAnchorStateClass(comment)}` },
                             _.span(commentAnchorStateLabel(comment) || 'Anchor'),
-                            _.strong(anchorSnippet(anchor))
+                            _.strong(anchorSnippet(anchor)),
+                            anchorResolution?.state === 'reanchored'
+                                ? _.em('Matched in current text')
+                                : null
                         )
                         : null,
                     _.p({ class: 'at-commentBody' }, comment.body || ''),
@@ -1733,6 +1759,14 @@ function commentsPanel(block) {
                             class: 'at-commentItem-action',
                             onclick: () => focusEditorBlock(comment.block_uuid || block.block_uuid),
                         }, 'Focus block'),
+                        anchorResolution?.state === 'reanchored'
+                            ? _.button({
+                                type: 'button',
+                                class: 'at-commentItem-action is-apply',
+                                disabled: isUpdatingAnchor || actionStatus !== 'idle' || !block.current_version_id,
+                                onclick: () => updateBlockCommentAnchor(block, comment, anchorResolution),
+                            }, isUpdatingAnchor ? 'Saving...' : 'Update anchor')
+                            : null,
                         _.button({
                             type: 'button',
                             class: isOpen ? 'at-commentItem-action' : 'at-commentItem-action is-apply',
@@ -2522,6 +2556,30 @@ function editorText(keyBook) {
     };
 
     const handleInlineCommentMarkerClick = (event) => {
+        const anchorElement = event.target?.closest?.('[data-comment-anchor-id]');
+        if (anchorElement && editorMount.contains(anchorElement)) {
+            const commentId = Number(anchorElement.dataset.commentAnchorId || 0);
+            const comment = blockComments.value.find((item) => Number(item.id) === commentId);
+            if (!comment) return;
+
+            const blockUuid = comment.block_uuid || commentAnchor(comment)?.block_uuid;
+            const block = blockMeta.get(blockUuid) || currentEditorBlocks.find((item) => item.block_uuid === blockUuid);
+            if (!block) return;
+
+            event.preventDefault();
+            activeBlockCommentId.value = comment.id;
+            setRightWorkspaceTool('comments');
+            focusEditorBlock(blockUuid);
+            loadBlockComments(block);
+
+            requestAnimationFrame(() => {
+                document
+                    .querySelector(`[data-comment-item-id="${cssSelectorEscape(comment.id)}"]`)
+                    ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            });
+            return;
+        }
+
         const markerElement = event.target?.closest?.('[data-comment-marker="1"]');
         if (!markerElement || !editorMount.contains(markerElement)) return;
 
@@ -2779,13 +2837,20 @@ function editorText(keyBook) {
         const to = textOffsetToDocPosition(node, blockPos, offsetEnd);
         if (from === null || to === null || to <= from) return null;
 
-        return { from, to, reanchored };
+        return {
+            from,
+            to,
+            reanchored,
+            offset_start: offsetStart,
+            offset_end: offsetEnd,
+        };
     };
 
     const buildCommentAnchorDecorations = () => {
         if (!editor) return DecorationSet.empty;
 
         const decorations = [];
+        const resolutions = {};
         const comments = blockComments.value || [];
         const doc = editor.state.doc;
 
@@ -2799,12 +2864,21 @@ function editorText(keyBook) {
                     const range = resolveCommentAnchorRange(comment, node, pos);
                     if (!range) return;
 
+                    resolutions[comment.id] = {
+                        state: range.reanchored ? 'reanchored' : 'current',
+                        block_uuid: node.attrs.blockId,
+                        offset_start: range.offset_start,
+                        offset_end: range.offset_end,
+                        text: doc.textBetween(range.from, range.to, ' ').replace(/\s+/g, ' ').trim() || anchor.text,
+                    };
+
                     const classes = ['at-commentAnchorHighlight'];
                     if ((comment.status || 'open') !== 'open') classes.push('is-resolved');
                     if (!comment.is_current_version) classes.push('is-reanchored');
 
                     decorations.push(Decoration.inline(range.from, range.to, {
                         class: classes.join(' '),
+                        'data-comment-anchor-id': String(comment.id),
                         title: range.reanchored
                             ? `Reanchored: ${anchorSnippet(anchor)}`
                             : anchorSnippet(anchor),
@@ -2814,13 +2888,18 @@ function editorText(keyBook) {
             return true;
         });
 
-        return DecorationSet.create(doc, decorations);
+        return {
+            decorations: DecorationSet.create(doc, decorations),
+            resolutions,
+        };
     };
 
     const refreshCommentAnchorDecorations = () => {
         if (!editor) return;
 
-        editor.view.dispatch(editor.state.tr.setMeta(commentAnchorPluginKey, buildCommentAnchorDecorations()));
+        const { decorations, resolutions } = buildCommentAnchorDecorations();
+        blockCommentAnchorResolutions.value = resolutions;
+        editor.view.dispatch(editor.state.tr.setMeta(commentAnchorPluginKey, decorations));
     };
 
     const textContent = (text) => text
@@ -3306,8 +3385,14 @@ function editorText(keyBook) {
 
         blockReviewsContextKey.value = contextKey;
         blockReviews.value = [];
-        blockReviewsStatus.value = 'loading';
         blockReviewsError.value = null;
+
+        if (!block.current_version_id) {
+            blockReviewsStatus.value = 'ready';
+            return;
+        }
+
+        blockReviewsStatus.value = 'loading';
 
         _.http.getJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/reviews`)
             .then((payload) => {
@@ -3320,6 +3405,14 @@ function editorText(keyBook) {
             })
             .catch((error) => {
                 if (blockReviewsContextKey.value !== contextKey) return;
+
+                const statusCode = error?.response?.status || error?.status;
+                if (statusCode === 404) {
+                    blockReviews.value = [];
+                    blockReviewsError.value = null;
+                    blockReviewsStatus.value = 'ready';
+                    return;
+                }
 
                 blockReviews.value = [];
                 blockReviewsError.value = requestErrorMessage(error, 'Unable to load corrections for this block.');
@@ -3407,6 +3500,8 @@ function editorText(keyBook) {
             blockCommentsError.value = null;
             blockCommentSummaries.value = {};
             blockCommentSelectionAnchor.value = null;
+            blockCommentAnchorResolutions.value = {};
+            activeBlockCommentId.value = null;
             refreshCommentAnchorDecorations();
             scheduleInlineCommentMarkerRefresh();
             return;
@@ -3418,6 +3513,8 @@ function editorText(keyBook) {
             blockCommentsContextKey.value = null;
             blockCommentsError.value = null;
             blockCommentSelectionAnchor.value = null;
+            blockCommentAnchorResolutions.value = {};
+            activeBlockCommentId.value = null;
             refreshCommentAnchorDecorations();
             scheduleInlineCommentMarkerRefresh();
             return;
@@ -3446,6 +3543,9 @@ function editorText(keyBook) {
 
                 const data = normalizeDataPayload(payload);
                 blockComments.value = data.comments || [];
+                if (activeBlockCommentId.value && !blockComments.value.some((comment) => comment.id === activeBlockCommentId.value)) {
+                    activeBlockCommentId.value = null;
+                }
                 blockCommentsStatus.value = 'ready';
                 setBlockCommentSummaryFromComments(block.block_uuid, blockComments.value);
                 refreshCommentAnchorDecorations();
@@ -3558,6 +3658,48 @@ function editorText(keyBook) {
             })
             .catch((error) => {
                 blockCommentsError.value = requestErrorMessage(error, 'Unable to update comment.');
+                blockCommentsStatus.value = 'error';
+            })
+            .finally(() => {
+                blockCommentActionStatus.value = 'idle';
+            });
+    };
+
+    updateBlockCommentAnchor = (block, comment, resolution) => {
+        if (!keyBook || !block?.block_uuid || !comment?.id || !resolution || blockCommentActionStatus.value !== 'idle') return;
+
+        const metadata = {
+            ...(comment.metadata_json || {}),
+            anchor: {
+                type: 'text-selection',
+                block_uuid: block.block_uuid,
+                offset_start: resolution.offset_start,
+                offset_end: resolution.offset_end,
+                text: resolution.text || commentAnchor(comment)?.text || '',
+            },
+        };
+
+        blockCommentActionStatus.value = `anchoring:${comment.id}`;
+        blockCommentsError.value = null;
+
+        _.http.patchJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/comments/${comment.id}`, {
+            book_block_version_id: block.current_version_id,
+            metadata_json: metadata,
+        })
+            .then((payload) => {
+                const data = normalizeDataPayload(payload);
+
+                if (data.comment) {
+                    activeBlockCommentId.value = data.comment.id;
+                    upsertCommentInList(data.comment);
+                    loadBlockCommentSummaries();
+                    refreshCommentAnchorDecorations();
+                } else {
+                    loadBlockComments(block, { force: true });
+                }
+            })
+            .catch((error) => {
+                blockCommentsError.value = requestErrorMessage(error, 'Unable to update comment anchor.');
                 blockCommentsStatus.value = 'error';
             })
             .finally(() => {
@@ -4395,6 +4537,8 @@ function editorText(keyBook) {
         blockComments.value = [];
         blockCommentSummaries.value = {};
         blockCommentSelectionAnchor.value = null;
+        blockCommentAnchorResolutions.value = {};
+        activeBlockCommentId.value = null;
         blockCommentDraft.value = '';
         blockCommentsStatus.value = 'idle';
         blockCommentsContextKey.value = null;
@@ -4446,6 +4590,7 @@ function editorText(keyBook) {
         createBlockComment = () => { };
         createBlockCommentFromSource = () => { };
         updateBlockCommentStatus = () => { };
+        updateBlockCommentAnchor = () => { };
         refreshInlineCommentMarkers = () => { };
         loadVoiceProfiles = () => { };
         loadBlockVoiceAssignment = () => { };
