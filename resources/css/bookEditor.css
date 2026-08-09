@@ -1127,6 +1127,120 @@
     -webkit-line-clamp: 3;
 }
 
+.at-versionItem-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px;
+    margin-top: 9px;
+}
+
+.at-versionDiffHeader h2,
+.at-versionDiffHeader p {
+    margin: 0 !important;
+}
+
+.at-versionDiffHeader p {
+    margin-top: 4px !important;
+    color: #475569 !important;
+    font-size: 13px !important;
+}
+
+.at-versionDiffDialog {
+    display: grid;
+    gap: 12px;
+}
+
+.at-versionDiffContent {
+    display: grid;
+    gap: 12px;
+}
+
+.at-versionDiffSummary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.at-versionDiffSummary div {
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    background: #f8fafc;
+}
+
+.at-versionDiffSummary span {
+    display: block;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.at-versionDiffSummary strong {
+    display: block;
+    margin-top: 3px;
+    overflow: hidden;
+    color: #0f172a;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.at-versionDiffBody {
+    max-height: 420px;
+    overflow: auto;
+    padding: 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #1e293b;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 15px;
+    line-height: 1.75;
+    white-space: pre-wrap;
+}
+
+.at-versionDiff-token.is-added {
+    border-radius: 2px;
+    background: #dcfce7;
+    color: #166534;
+}
+
+.at-versionDiff-token.is-removed {
+    border-radius: 2px;
+    background: #fee2e2;
+    color: #991b1b;
+    text-decoration: line-through;
+}
+
+.at-versionDiff-token.is-same {
+    color: #334155;
+}
+
+.at-versionDiffEmpty {
+    padding: 14px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 4px;
+    background: #f8fafc;
+}
+
+.at-versionDiffEmpty strong,
+.at-versionDiffEmpty p {
+    margin: 0 !important;
+}
+
+.at-versionDiffEmpty p {
+    margin-top: 4px !important;
+    color: #475569 !important;
+    font-size: 13px !important;
+}
+
+.at-versionDiffActions {
+    display: flex;
+    justify-content: flex-end;
+}
+
 .at-reviewList {
     display: grid;
     gap: 9px;

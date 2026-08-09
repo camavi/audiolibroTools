@@ -62,3 +62,4 @@
 - Avviato tool Translate: traduzioni draft per blocco/versione sorgente, target locale, provider/model, API read/create/approve-reject e pannello Right Workspace con lingua target e lista traduzioni.
 - Aggiunta Bottom Bar operativa e persistenza locale preferenze editor: pannelli laterali, tool destro, formato pagina e lingua target vengono ripristinati da `localStorage`.
 - Migliorato pannello Versions: ogni versione mostra activity count per correzioni, commenti, voci, audio, traduzioni e chat AI, con evidenza delle versioni vecchie che hanno link stale.
+- Aggiunta diff visuale nel pannello Versions: riuso dell'algoritmo storico `diff_match_patch` come modulo ES, pulsante `View changes` per ogni versione e dialog con parole aggiunte/rimosse.

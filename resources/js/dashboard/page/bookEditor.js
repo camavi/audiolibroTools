@@ -1,6 +1,7 @@
 import { Editor, Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
+import { buildVersionTextDiff, summarizeVersionTextDiff } from '../editorDiff';
 
 
 const EDITOR_PREFERENCES_KEY = 'audiobookTools.editor.preferences';
@@ -923,6 +924,92 @@ function versionActivityBadges(version) {
         }, `${label} ${activity[key]}`));
 }
 
+function openVersionDiffDialog(version, versions) {
+    const comparison = resolveVersionComparison(version, versions);
+
+    _.Dialog({
+        size: 'lg',
+        stickyActions: true,
+        slots: {
+            header: _.div({ class: 'at-versionDiffHeader' },
+                _.h2('Version changes'),
+                _.p(comparison
+                    ? `${comparison.fromLabel} -> ${comparison.toLabel}`
+                    : `v${version.version_number}`
+                )
+            ),
+            content: ({ close }) => _.div({ class: 'at-versionDiffDialog' },
+                comparison
+                    ? versionDiffContent(comparison)
+                    : _.div({ class: 'at-versionDiffEmpty' },
+                        _.strong('No comparison available'),
+                        _.p('This block has only one saved version.')
+                    ),
+                _.div({ class: 'at-versionDiffActions' },
+                    _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Close')
+                )
+            ),
+        },
+    }).open();
+}
+
+function resolveVersionComparison(version, versions) {
+    const ordered = [...versions].sort((a, b) => Number(a.version_number || 0) - Number(b.version_number || 0));
+    const current = ordered.find((item) => item.is_current) || ordered[ordered.length - 1];
+
+    if (!current) return null;
+
+    if (!version.is_current) {
+        return {
+            from: version,
+            to: current,
+            fromLabel: `v${version.version_number}`,
+            toLabel: `current v${current.version_number}`,
+        };
+    }
+
+    const currentIndex = ordered.findIndex((item) => item.id === version.id);
+    const previous = ordered[currentIndex - 1];
+
+    if (!previous) return null;
+
+    return {
+        from: previous,
+        to: version,
+        fromLabel: `v${previous.version_number}`,
+        toLabel: `current v${version.version_number}`,
+    };
+}
+
+function versionDiffContent(comparison) {
+    const parts = buildVersionTextDiff(comparison.from.text_plain, comparison.to.text_plain);
+    const summary = summarizeVersionTextDiff(parts);
+
+    return _.div({ class: 'at-versionDiffContent' },
+        _.div({ class: 'at-versionDiffSummary' },
+            _.div(
+                _.span('Added'),
+                _.strong(`${summary.added} words`)
+            ),
+            _.div(
+                _.span('Removed'),
+                _.strong(`${summary.removed} words`)
+            ),
+            _.div(
+                _.span('Source'),
+                _.strong(`${comparison.from.source || 'manual'} -> ${comparison.to.source || 'manual'}`)
+            )
+        ),
+        _.div({ class: 'at-versionDiffBody' },
+            parts.length
+                ? parts.map((part) => _.span({
+                    class: `at-versionDiff-token is-${part.type}`,
+                }, part.text))
+                : _.span({ class: 'at-versionDiff-token is-same' }, 'No text changes.')
+        )
+    );
+}
+
 function versionsPanel(block) {
     if (!block) {
         return _.div({ class: 'at-rightWorkspace-section' },
@@ -976,22 +1063,22 @@ function versionsPanel(block) {
                         : ''
                     ),
                     activityBadges.length ? _.div({ class: 'at-versionActivity' }, activityBadges) : null,
-                    _.div({ class: 'at-versionItem-preview' }, version.text_plain || 'Empty block')
+                    _.div({ class: 'at-versionItem-preview' }, version.text_plain || 'Empty block'),
+                    _.div({ class: 'at-versionItem-actions' },
+                        _.button({
+                            type: 'button',
+                            class: 'at-rightWorkspace-action',
+                            onclick: () => openVersionDiffDialog(version, versions),
+                        }, 'View changes'),
+                        _.button({
+                            type: 'button',
+                            class: 'at-rightWorkspace-action',
+                            disabled: true,
+                        }, 'Restore')
+                    )
                 );
             }))
-            : _.p('No versions saved for this block yet.'),
-        _.div({ class: 'at-rightWorkspace-actions' },
-            _.button({
-                type: 'button',
-                class: 'at-rightWorkspace-action',
-                disabled: true,
-            }, 'View changes'),
-            _.button({
-                type: 'button',
-                class: 'at-rightWorkspace-action',
-                disabled: true,
-            }, 'Restore version')
-        )
+            : _.p('No versions saved for this block yet.')
     );
 }
 
