@@ -3,6 +3,8 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 
 
+const EDITOR_PREFERENCES_KEY = 'audiobookTools.editor.preferences';
+
 const indexView = _.rod(true);
 const commandView = _.rod(true);
 const editorReady = _.rod(false);
@@ -156,6 +158,40 @@ const translationLocaleOptions = [
     { label: 'Hungarian', value: 'hu' },
     { label: 'Korean', value: 'ko' },
 ];
+
+function readEditorPreferences() {
+    try {
+        return JSON.parse(globalThis.localStorage?.getItem(EDITOR_PREFERENCES_KEY) || '{}');
+    } catch {
+        return {};
+    }
+}
+
+function writeEditorPreference(key, value) {
+    try {
+        globalThis.localStorage?.setItem(EDITOR_PREFERENCES_KEY, JSON.stringify({
+            ...readEditorPreferences(),
+            [key]: value,
+        }));
+    } catch {
+        // Local preferences are optional; private browsing or storage limits should not block the editor.
+    }
+}
+
+function restoreEditorPreferences() {
+    const preferences = readEditorPreferences();
+    const pageFormats = new Set(pageFormatOptions.map((option) => option.value));
+    const tools = new Set(rightWorkspaceTools.map((tool) => tool.id));
+    const locales = new Set(translationLocaleOptions.map((option) => option.value));
+
+    if (typeof preferences.indexView === 'boolean') indexView.value = preferences.indexView;
+    if (typeof preferences.commandView === 'boolean') commandView.value = preferences.commandView;
+    if (pageFormats.has(preferences.pageFormat)) editorPageFormat.value = preferences.pageFormat;
+    if (tools.has(preferences.rightWorkspaceTool)) rightWorkspaceTool.value = preferences.rightWorkspaceTool;
+    if (locales.has(preferences.translationTargetLocale)) translationTargetLocale.value = preferences.translationTargetLocale;
+}
+
+restoreEditorPreferences();
 
 const toolAiServices = {
     chat: 'chat',
@@ -622,6 +658,31 @@ function outlineKindLabel(item) {
 
 function activeOutlineItem() {
     return editorOutline.value.find((item) => item.block_uuid === activeEditorBlockId.value) || null;
+}
+
+function setIndexView(visible) {
+    indexView.value = visible;
+    writeEditorPreference('indexView', visible);
+}
+
+function setCommandView(visible) {
+    commandView.value = visible;
+    writeEditorPreference('commandView', visible);
+}
+
+function setRightWorkspaceTool(toolId) {
+    rightWorkspaceTool.value = toolId;
+    writeEditorPreference('rightWorkspaceTool', toolId);
+}
+
+function setEditorPageFormat(format) {
+    editorPageFormat.value = format;
+    writeEditorPreference('pageFormat', format);
+}
+
+function setTranslationTargetLocale(locale) {
+    translationTargetLocale.value = locale;
+    writeEditorPreference('translationTargetLocale', locale);
 }
 
 function saveStatusLabel(status) {
@@ -1276,7 +1337,7 @@ function translatePanel(block, keyBook) {
             model: translationTargetLocale,
             options: translationLocaleOptions,
             onChange: (value) => {
-                translationTargetLocale.value = selectChangeValue(value, translationTargetLocale.value);
+                setTranslationTargetLocale(selectChangeValue(value, translationTargetLocale.value));
             },
         }),
         () => blockTranslationsError.value ? _.div({ class: 'at-chatError' }, blockTranslationsError.value) : null,
@@ -1726,7 +1787,7 @@ function rightWorkspace(keyBook) {
                     class: () => rightWorkspaceTool.value === tool.id
                         ? 'at-rightWorkspace-railBtn is-active'
                         : 'at-rightWorkspace-railBtn',
-                    onclick: () => rightWorkspaceTool.value = tool.id,
+                    onclick: () => setRightWorkspaceTool(tool.id),
                     title: tool.label,
                 }))
             ),
@@ -1794,7 +1855,7 @@ function editorText(keyBook) {
         _.select({
             value: editorPageFormat.value,
             title: 'Page preview',
-            onchange: (event) => editorPageFormat.value = event.target.value,
+            onchange: (event) => setEditorPageFormat(event.target.value),
         },
             pageFormatOptions.map((option) => _.option({
                 value: option.value,
@@ -3370,9 +3431,9 @@ function editorText(keyBook) {
 function content(keyBook) {
     return _.div({ class: 'at-content', area: 'content' },
         _.div({ class: 'at-topBar' },
-            _.Button({ onclick: () => indexView.value = !indexView.value, icon: 'menu' }),
+            _.Button({ onclick: () => setIndexView(!indexView.value), icon: 'menu' }),
             _.div({ class: 'at-topBar-title' }, 'Content'),
-            _.Button({ onclick: () => commandView.value = !commandView.value, icon: 'auto_awesome' })
+            _.Button({ onclick: () => setCommandView(!commandView.value), icon: 'auto_awesome' })
         ),
         editorText(keyBook)
     );
@@ -3422,6 +3483,7 @@ function bottomBar() {
 }
 export default function bookEditor(ctx = null) {
     const keyBook = readRouteBookKey(ctx);
+    restoreEditorPreferences();
 
     return _.div({
         class: 'at-page-bookEditor',
