@@ -32,6 +32,7 @@ const blockReviewsContextKey = _.rod(null);
 const blockReviewsError = _.rod(null);
 const blockReviewActionStatus = _.rod('idle');
 const blockComments = _.rod([]);
+const blockCommentSummaries = _.rod({});
 const blockCommentDraft = _.rod('');
 const blockCommentFilter = _.rod('open');
 const blockCommentsStatus = _.rod('idle');
@@ -778,13 +779,26 @@ function cssSelectorEscape(value) {
 }
 
 function activeBlockCommentCounts() {
-    const comments = blockComments.value;
+    return summarizeBlockComments(blockComments.value);
+}
+
+function summarizeBlockComments(comments) {
+    const commentList = comments || [];
 
     return {
-        all: comments.length,
-        open: comments.filter((comment) => (comment.status || 'open') === 'open' && comment.is_current_version).length,
-        resolved: comments.filter((comment) => comment.status === 'resolved').length,
-        stale: comments.filter((comment) => !comment.is_current_version).length,
+        all: commentList.length,
+        open: commentList.filter((comment) => (comment.status || 'open') === 'open' && comment.is_current_version).length,
+        resolved: commentList.filter((comment) => comment.status === 'resolved').length,
+        stale: commentList.filter((comment) => !comment.is_current_version).length,
+    };
+}
+
+function normalizeBlockCommentSummary(summary) {
+    return {
+        all: Number(summary?.all || 0),
+        open: Number(summary?.open || 0),
+        resolved: Number(summary?.resolved || 0),
+        stale: Number(summary?.stale || 0),
     };
 }
 
@@ -795,11 +809,11 @@ function blockCommentContextBlockUuid() {
 }
 
 function commentMarkerStateForBlock(blockUuid) {
-    if (!blockUuid || blockCommentsStatus.value === 'idle') return null;
-    if (blockCommentContextBlockUuid() !== blockUuid) return null;
+    if (!blockUuid) return null;
 
-    const counts = activeBlockCommentCounts();
-    if (!counts.all) return null;
+    const counts = blockCommentSummaries.value[blockUuid]
+        || (blockCommentContextBlockUuid() === blockUuid ? activeBlockCommentCounts() : null);
+    if (!counts?.all) return null;
 
     const state = counts.open ? 'open' : (counts.stale ? 'stale' : 'resolved');
 
@@ -821,11 +835,9 @@ function visibleBlockComments(comments) {
 }
 
 function blockCommentBadge(item) {
-    if (item.block_uuid !== activeEditorBlockId.value || blockCommentsStatus.value === 'idle') return null;
-    if (!blockCommentsContextKey.value?.includes(`:${item.block_uuid}:`)) return null;
-
-    const counts = activeBlockCommentCounts();
-    if (!counts.all) return null;
+    const counts = blockCommentSummaries.value[item.block_uuid]
+        || (blockCommentContextBlockUuid() === item.block_uuid ? activeBlockCommentCounts() : null);
+    if (!counts?.all) return null;
 
     const label = counts.open ? `${counts.open}` : `${counts.all}`;
 
@@ -2413,17 +2425,25 @@ function editorText(keyBook) {
     const refreshCurrentInlineCommentMarkers = () => {
         clearInlineCommentMarkers();
 
-        const blockUuid = blockCommentContextBlockUuid();
-        const marker = commentMarkerStateForBlock(blockUuid);
-        if (!editor?.view?.dom || !marker) return;
+        if (!editor?.view?.dom) return;
 
-        const blockElement = editor.view.dom.querySelector(`[data-block-id="${cssSelectorEscape(blockUuid)}"]`);
-        if (!blockElement) return;
+        const markerBlockUuids = new Set([
+            ...Object.keys(blockCommentSummaries.value),
+            blockCommentContextBlockUuid(),
+        ].filter(Boolean));
 
-        blockElement.classList.add('has-editor-comments', `comment-state-${marker.state}`);
-        blockElement.dataset.commentMarker = '1';
-        blockElement.dataset.commentCount = String(marker.count);
-        blockElement.title = marker.title;
+        markerBlockUuids.forEach((blockUuid) => {
+            const marker = commentMarkerStateForBlock(blockUuid);
+            if (!marker) return;
+
+            const blockElement = editor.view.dom.querySelector(`[data-block-id="${cssSelectorEscape(blockUuid)}"]`);
+            if (!blockElement) return;
+
+            blockElement.classList.add('has-editor-comments', `comment-state-${marker.state}`);
+            blockElement.dataset.commentMarker = '1';
+            blockElement.dataset.commentCount = String(marker.count);
+            blockElement.title = marker.title;
+        });
     };
 
     refreshInlineCommentMarkers = refreshCurrentInlineCommentMarkers;
@@ -3120,8 +3140,68 @@ function editorText(keyBook) {
         }
     };
 
+    const setBlockCommentSummary = (blockUuid, summary) => {
+        if (!blockUuid) return;
+
+        const normalizedSummary = normalizeBlockCommentSummary(summary);
+        const nextSummaries = { ...blockCommentSummaries.value };
+
+        if (normalizedSummary.all) {
+            nextSummaries[blockUuid] = normalizedSummary;
+        } else {
+            delete nextSummaries[blockUuid];
+        }
+
+        blockCommentSummaries.value = nextSummaries;
+        scheduleInlineCommentMarkerRefresh();
+    };
+
+    const setBlockCommentSummaryFromComments = (blockUuid, comments) => {
+        setBlockCommentSummary(blockUuid, summarizeBlockComments(comments));
+    };
+
+    const loadBlockCommentSummaries = () => {
+        if (!keyBook) {
+            blockCommentSummaries.value = {};
+            scheduleInlineCommentMarkerRefresh();
+            return;
+        }
+
+        _.http.getJSON(`/dashboard/api/books/${keyBook}/comments/summary`)
+            .then((payload) => {
+                const data = normalizeDataPayload(payload);
+                const summaries = {};
+
+                (data.summaries || []).forEach((summary) => {
+                    if (!summary.block_uuid) return;
+
+                    const normalizedSummary = normalizeBlockCommentSummary(summary);
+                    if (normalizedSummary.all) {
+                        summaries[summary.block_uuid] = normalizedSummary;
+                    }
+                });
+
+                blockCommentSummaries.value = summaries;
+                scheduleInlineCommentMarkerRefresh();
+            })
+            .catch(() => {
+                blockCommentSummaries.value = {};
+                scheduleInlineCommentMarkerRefresh();
+            });
+    };
+
     loadBlockComments = (block, { force = false } = {}) => {
-        if (!keyBook || !block?.block_uuid) {
+        if (!keyBook) {
+            blockComments.value = [];
+            blockCommentsStatus.value = 'idle';
+            blockCommentsContextKey.value = null;
+            blockCommentsError.value = null;
+            blockCommentSummaries.value = {};
+            scheduleInlineCommentMarkerRefresh();
+            return;
+        }
+
+        if (!block?.block_uuid) {
             blockComments.value = [];
             blockCommentsStatus.value = 'idle';
             blockCommentsContextKey.value = null;
@@ -3139,6 +3219,7 @@ function editorText(keyBook) {
 
         if (!block.current_version_id) {
             blockCommentsStatus.value = 'ready';
+            setBlockCommentSummary(block.block_uuid, { all: 0, open: 0, resolved: 0, stale: 0 });
             scheduleInlineCommentMarkerRefresh();
             return;
         }
@@ -3152,6 +3233,7 @@ function editorText(keyBook) {
                 const data = normalizeDataPayload(payload);
                 blockComments.value = data.comments || [];
                 blockCommentsStatus.value = 'ready';
+                setBlockCommentSummaryFromComments(block.block_uuid, blockComments.value);
                 scheduleInlineCommentMarkerRefresh();
             })
             .catch((error) => {
@@ -3162,6 +3244,7 @@ function editorText(keyBook) {
                     blockComments.value = [];
                     blockCommentsError.value = null;
                     blockCommentsStatus.value = 'ready';
+                    setBlockCommentSummary(block.block_uuid, { all: 0, open: 0, resolved: 0, stale: 0 });
                     scheduleInlineCommentMarkerRefresh();
                     return;
                 }
@@ -3185,6 +3268,7 @@ function editorText(keyBook) {
         });
         blockCommentsError.value = null;
         blockCommentsStatus.value = 'ready';
+        setBlockCommentSummaryFromComments(comment.block_uuid, blockComments.value);
         scheduleInlineCommentMarkerRefresh();
     };
 
@@ -3205,6 +3289,7 @@ function editorText(keyBook) {
             if (data.comment) {
                 blockCommentsContextKey.value = `${keyBook}:${block.block_uuid}:${block.current_version_id || 'new'}`;
                 upsertCommentInList(data.comment);
+                loadBlockCommentSummaries();
                 setRightWorkspaceTool('comments');
             } else {
                 loadBlockComments(block, { force: true });
@@ -3241,6 +3326,7 @@ function editorText(keyBook) {
 
                 if (data.comment) {
                     upsertCommentInList(data.comment);
+                    loadBlockCommentSummaries();
                 } else {
                     loadBlockComments(block, { force: true });
                 }
@@ -3922,6 +4008,7 @@ function editorText(keyBook) {
                 });
             });
             syncEditorBlocks();
+            loadBlockCommentSummaries();
             setSaveStatus('saved');
             return true;
         } catch (error) {
@@ -4047,6 +4134,7 @@ function editorText(keyBook) {
         syncEditorBlocks();
         updateActiveBlock();
         editorReady.value = true;
+        loadBlockCommentSummaries();
         scheduleInlineCommentMarkerRefresh();
         refreshEditorUi();
     };
@@ -4079,6 +4167,7 @@ function editorText(keyBook) {
         blockReviewsError.value = null;
         blockReviewActionStatus.value = 'idle';
         blockComments.value = [];
+        blockCommentSummaries.value = {};
         blockCommentDraft.value = '';
         blockCommentsStatus.value = 'idle';
         blockCommentsContextKey.value = null;

@@ -426,6 +426,42 @@ class DashboardBookController extends Controller
         ]);
     }
 
+    public function blockCommentSummary(string $keyBook): JsonResponse
+    {
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $summaries = BookBlockComment::query()
+            ->join('book_blocks', 'book_block_comments.book_block_id', '=', 'book_blocks.id')
+            ->where('book_block_comments.book_id', $book->id)
+            ->where('book_blocks.status', '!=', 'deleted')
+            ->groupBy('book_block_comments.block_uuid', 'book_blocks.current_version_id')
+            ->orderBy('block_sort_order')
+            ->get([
+                'book_block_comments.block_uuid',
+                DB::raw('min(book_blocks.sort_order) as block_sort_order'),
+                DB::raw('count(*) as all_count'),
+                DB::raw("sum(case when book_block_comments.status = 'open' and book_block_comments.book_block_version_id = book_blocks.current_version_id then 1 else 0 end) as open_count"),
+                DB::raw("sum(case when book_block_comments.status = 'resolved' then 1 else 0 end) as resolved_count"),
+                DB::raw('sum(case when book_block_comments.book_block_version_id <> book_blocks.current_version_id then 1 else 0 end) as stale_count'),
+            ])
+            ->map(fn ($summary) => [
+                'block_uuid' => $summary->block_uuid,
+                'all' => (int) $summary->all_count,
+                'open' => (int) $summary->open_count,
+                'resolved' => (int) $summary->resolved_count,
+                'stale' => (int) $summary->stale_count,
+            ])
+            ->values();
+
+        return response()->json([
+            'data' => [
+                'summaries' => $summaries,
+            ],
+        ]);
+    }
+
     public function voiceProfiles(string $keyBook): JsonResponse
     {
         $book = Book::query()

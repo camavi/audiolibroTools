@@ -1054,6 +1054,77 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.comment.resolved_at', null);
     }
 
+    public function test_dashboard_can_return_comment_summary_for_book_blocks(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $firstBlockUuid = (string) Str::uuid();
+        $secondBlockUuid = (string) Str::uuid();
+
+        $firstVersion = $service->saveBlock($book, [
+            'block_uuid' => $firstBlockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('First block.'),
+            'text_plain' => 'First block.',
+        ]);
+
+        $secondVersion = $service->saveBlock($book, [
+            'block_uuid' => $firstBlockUuid,
+            'base_version_id' => $firstVersion['version']->id,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('First block updated.'),
+            'text_plain' => 'First block updated.',
+        ]);
+
+        $otherBlock = $service->saveBlock($book, [
+            'block_uuid' => $secondBlockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 2000,
+            'content_json' => $this->paragraphJson('Second block.'),
+            'text_plain' => 'Second block.',
+        ]);
+
+        BookBlockComment::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $secondVersion['block']->id,
+            'book_block_version_id' => $secondVersion['version']->id,
+            'block_uuid' => $firstBlockUuid,
+            'status' => 'open',
+            'body' => 'Current open note.',
+        ]);
+        BookBlockComment::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $secondVersion['block']->id,
+            'book_block_version_id' => $firstVersion['version']->id,
+            'block_uuid' => $firstBlockUuid,
+            'status' => 'open',
+            'body' => 'Old version note.',
+        ]);
+        BookBlockComment::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $otherBlock['block']->id,
+            'book_block_version_id' => $otherBlock['version']->id,
+            'block_uuid' => $secondBlockUuid,
+            'status' => 'resolved',
+            'body' => 'Resolved note.',
+        ]);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/comments/summary")
+            ->assertOk()
+            ->assertJsonPath('data.summaries.0.block_uuid', $firstBlockUuid)
+            ->assertJsonPath('data.summaries.0.all', 2)
+            ->assertJsonPath('data.summaries.0.open', 1)
+            ->assertJsonPath('data.summaries.0.resolved', 0)
+            ->assertJsonPath('data.summaries.0.stale', 1)
+            ->assertJsonPath('data.summaries.1.block_uuid', $secondBlockUuid)
+            ->assertJsonPath('data.summaries.1.all', 1)
+            ->assertJsonPath('data.summaries.1.open', 0)
+            ->assertJsonPath('data.summaries.1.resolved', 1)
+            ->assertJsonPath('data.summaries.1.stale', 0);
+    }
+
     public function test_dashboard_can_create_and_return_book_voice_profiles(): void
     {
         $book = $this->createBook();
