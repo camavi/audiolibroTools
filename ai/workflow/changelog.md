@@ -59,3 +59,4 @@
 - Avviato tool Comments: tabella e modello `book_block_comments`, endpoint per leggere/creare/risolvere commenti editoriali legati a blocco e versione corrente, pannello Right Workspace con form e lista open/resolved.
 - Avviato tool Voices: profili voce per libro, assegnazioni voce per blocco/versione corrente, API dedicate e pannello Right Workspace per creare personaggi/narratore e assegnare o rimuovere una voce.
 - Avviato tool Audio: job e segmenti audio per blocco/versione/voce, generazione mock TTS, API di lista/generate e pannello Right Workspace con provider audio, voce assegnata e lista segmenti.
+- Avviato tool Translate: traduzioni draft per blocco/versione sorgente, target locale, provider/model, API read/create/approve-reject e pannello Right Workspace con lingua target e lista traduzioni.

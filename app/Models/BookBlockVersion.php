@@ -61,4 +61,14 @@ class BookBlockVersion extends Model
     {
         return $this->hasMany(BookAudioSegment::class, 'book_block_version_id');
     }
+
+    public function sourceTranslations(): HasMany
+    {
+        return $this->hasMany(BookBlockTranslation::class, 'source_book_block_version_id');
+    }
+
+    public function appliedTranslations(): HasMany
+    {
+        return $this->hasMany(BookBlockTranslation::class, 'applied_book_block_version_id');
+    }
 }

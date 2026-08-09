@@ -11,6 +11,7 @@ use App\Models\BookAudioSegment;
 use App\Models\BookBlock;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
+use App\Models\BookBlockTranslation;
 use App\Models\BookBlockVoiceAssignment;
 use App\Models\BookCategory;
 use App\Models\BookVoiceProfile;
@@ -378,6 +379,34 @@ class DashboardBookController extends Controller
         ]);
     }
 
+    public function blockTranslations(string $keyBook, string $blockUuid): JsonResponse
+    {
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->with('currentVersion')
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        $translations = $block->translations()
+            ->with('sourceBlockVersion:id,version_number')
+            ->orderByRaw("case when status = 'draft' then 0 else 1 end")
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get();
+
+        return response()->json([
+            'data' => [
+                'block' => $this->serializeEditorBlock($block),
+                'translations' => $translations
+                    ->map(fn (BookBlockTranslation $translation) => $this->serializeBlockTranslation($translation, $block))
+                    ->values(),
+            ],
+        ]);
+    }
+
     public function aiChatThread(Request $request, string $keyBook): JsonResponse
     {
         $validated = $request->validate([
@@ -690,6 +719,120 @@ class DashboardBookController extends Controller
         ], 201);
     }
 
+    public function storeBlockTranslation(Request $request, string $keyBook, string $blockUuid): JsonResponse
+    {
+        $validated = $request->validate([
+            'target_locale' => ['required', 'string', 'max:20'],
+            'provider_key' => ['nullable', 'string', 'max:80'],
+            'model' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->with('currentVersion')
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        if (! $block->currentVersion) {
+            return response()->json([
+                'message' => 'The selected block has no saved version to translate.',
+                'errors' => [
+                    'block' => ['Save the block before creating a translation.'],
+                ],
+            ], 422);
+        }
+
+        $targetLocale = strtolower(trim($validated['target_locale']));
+        $providerKey = $validated['provider_key'] ?? 'mock';
+        $model = $validated['model'] ?? 'mock-translation-v1';
+        $existingTranslation = $block->translations()
+            ->with('sourceBlockVersion:id,version_number')
+            ->where('source_book_block_version_id', $block->currentVersion->id)
+            ->where('target_locale', $targetLocale)
+            ->where('status', 'draft')
+            ->where('provider_key', $providerKey)
+            ->where('model', $model)
+            ->latest('id')
+            ->first();
+
+        if ($existingTranslation) {
+            return response()->json([
+                'data' => [
+                    'translation' => $this->serializeBlockTranslation($existingTranslation, $block),
+                    'created' => false,
+                ],
+            ]);
+        }
+
+        $sourceText = $block->currentVersion->text_plain ?: $block->text_plain ?: '';
+        $translation = BookBlockTranslation::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $block->id,
+            'source_book_block_version_id' => $block->currentVersion->id,
+            'block_uuid' => $block->block_uuid,
+            'target_locale' => $targetLocale,
+            'status' => 'draft',
+            'provider_key' => $providerKey,
+            'model' => $model,
+            'source' => 'mock',
+            'source_text' => $sourceText,
+            'translated_text' => "[{$targetLocale}] {$sourceText}",
+            'notes_json' => [
+                'mock' => true,
+                'source_locale' => $book->lang,
+                'target_locale' => $targetLocale,
+            ],
+            'created_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'data' => [
+                'translation' => $this->serializeBlockTranslation($translation->load('sourceBlockVersion:id,version_number'), $block),
+                'created' => true,
+            ],
+        ], 201);
+    }
+
+    public function updateBlockTranslation(
+        Request $request,
+        string $keyBook,
+        string $blockUuid,
+        BookBlockTranslation $translation,
+    ): JsonResponse {
+        $validated = $request->validate([
+            'status' => ['required', 'string', 'in:approved,rejected'],
+        ]);
+
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        abort_unless(
+            $translation->book_id === $book->id && $translation->book_block_id === $block->id,
+            404
+        );
+
+        $translation->forceFill([
+            'status' => $validated['status'],
+            'approved_at' => $validated['status'] === 'approved' ? now() : null,
+            'resolved_at' => now(),
+            'resolved_by' => auth()->id(),
+        ])->save();
+
+        return response()->json([
+            'data' => [
+                'translation' => $this->serializeBlockTranslation($translation->load('sourceBlockVersion:id,version_number'), $block),
+            ],
+        ]);
+    }
+
     public function storeBlockReview(
         Request $request,
         string $keyBook,
@@ -959,6 +1102,30 @@ class DashboardBookController extends Controller
             'is_current_version' => $block->current_version_id === $segment->book_block_version_id,
             'created_at' => $segment->created_at?->toISOString(),
             'updated_at' => $segment->updated_at?->toISOString(),
+        ];
+    }
+
+    private function serializeBlockTranslation(BookBlockTranslation $translation, BookBlock $block): array
+    {
+        return [
+            'id' => $translation->id,
+            'target_locale' => $translation->target_locale,
+            'status' => $translation->status,
+            'provider_key' => $translation->provider_key,
+            'model' => $translation->model,
+            'source' => $translation->source,
+            'source_text' => $translation->source_text,
+            'translated_text' => $translation->translated_text,
+            'notes_json' => $translation->notes_json,
+            'block_uuid' => $translation->block_uuid,
+            'source_block_version_id' => $translation->source_book_block_version_id,
+            'applied_block_version_id' => $translation->applied_book_block_version_id,
+            'version_number' => $translation->sourceBlockVersion?->version_number,
+            'is_current_version' => $block->current_version_id === $translation->source_book_block_version_id,
+            'approved_at' => $translation->approved_at?->toISOString(),
+            'resolved_at' => $translation->resolved_at?->toISOString(),
+            'created_at' => $translation->created_at?->toISOString(),
+            'updated_at' => $translation->updated_at?->toISOString(),
         ];
     }
 

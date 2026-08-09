@@ -68,6 +68,11 @@ class BookBlock extends Model
         return $this->hasMany(BookAudioSegment::class);
     }
 
+    public function translations(): HasMany
+    {
+        return $this->hasMany(BookBlockTranslation::class);
+    }
+
     public function currentVersion(): BelongsTo
     {
         return $this->belongsTo(BookBlockVersion::class, 'current_version_id');

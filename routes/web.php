@@ -52,6 +52,9 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::patch('/books/{keyBook}/blocks/{blockUuid}/voice-assignment', [DashboardBookController::class, 'updateBlockVoiceAssignment'])->name('books.blocks.voice-assignment.update');
     Route::get('/books/{keyBook}/blocks/{blockUuid}/audio', [DashboardBookController::class, 'blockAudio'])->name('books.blocks.audio');
     Route::post('/books/{keyBook}/blocks/{blockUuid}/audio/generate', [DashboardBookController::class, 'generateBlockAudio'])->name('books.blocks.audio.generate');
+    Route::get('/books/{keyBook}/blocks/{blockUuid}/translations', [DashboardBookController::class, 'blockTranslations'])->name('books.blocks.translations');
+    Route::post('/books/{keyBook}/blocks/{blockUuid}/translations', [DashboardBookController::class, 'storeBlockTranslation'])->name('books.blocks.translations.store');
+    Route::patch('/books/{keyBook}/blocks/{blockUuid}/translations/{translation}', [DashboardBookController::class, 'updateBlockTranslation'])->name('books.blocks.translations.update');
     Route::get('/books/{keyBook}/blocks/{blockUuid}/comments', [DashboardBookController::class, 'blockComments'])->name('books.blocks.comments');
     Route::post('/books/{keyBook}/blocks/{blockUuid}/comments', [DashboardBookController::class, 'storeBlockComment'])->name('books.blocks.comments.store');
     Route::patch('/books/{keyBook}/blocks/{blockUuid}/comments/{comment}', [DashboardBookController::class, 'updateBlockComment'])->name('books.blocks.comments.update');

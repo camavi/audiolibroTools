@@ -50,6 +50,12 @@ const audioStatus = _.rod('idle');
 const audioContextKey = _.rod(null);
 const audioError = _.rod(null);
 const audioActionStatus = _.rod('idle');
+const blockTranslations = _.rod([]);
+const blockTranslationsStatus = _.rod('idle');
+const blockTranslationsContextKey = _.rod(null);
+const blockTranslationsError = _.rod(null);
+const blockTranslationActionStatus = _.rod('idle');
+const translationTargetLocale = _.rod('en');
 const aiChatMessages = _.rod([]);
 const aiChatDraft = _.rod('');
 const aiChatStatus = _.rod('idle');
@@ -90,6 +96,9 @@ let clearBlockVoiceAssignment = () => { };
 let openVoiceProfileDialog = () => { };
 let loadBlockAudio = () => { };
 let generateBlockAudio = () => { };
+let loadBlockTranslations = () => { };
+let createBlockTranslation = () => { };
+let updateBlockTranslationStatus = () => { };
 let askAiChat = () => { };
 let loadAiChatMessages = () => { };
 let loadAiProviders = () => { };
@@ -126,6 +135,25 @@ const voiceRoleOptions = [
     { label: 'Narrator', value: 'narrator' },
     { label: 'Ambient', value: 'ambient' },
     { label: 'System', value: 'system' },
+];
+
+const translationLocaleOptions = [
+    { label: 'English', value: 'en' },
+    { label: 'Italian', value: 'it' },
+    { label: 'Spanish', value: 'es' },
+    { label: 'French', value: 'fr' },
+    { label: 'German', value: 'de' },
+    { label: 'Portuguese', value: 'pt' },
+    { label: 'Polish', value: 'pl' },
+    { label: 'Turkish', value: 'tr' },
+    { label: 'Russian', value: 'ru' },
+    { label: 'Dutch', value: 'nl' },
+    { label: 'Czech', value: 'cs' },
+    { label: 'Arabic', value: 'ar' },
+    { label: 'Chinese', value: 'zh' },
+    { label: 'Japanese', value: 'ja' },
+    { label: 'Hungarian', value: 'hu' },
+    { label: 'Korean', value: 'ko' },
 ];
 
 const toolAiServices = {
@@ -458,6 +486,31 @@ function audioAiSummary() {
         setting,
         provider,
         providerName: provider?.name || setting.provider_key || 'Audio provider',
+        model: setting.model || provider?.default_model || '',
+        hasApiKey: Boolean(provider?.has_api_key),
+        missingApiKey: providerNeedsApiKey(setting.provider_key) && !provider?.has_api_key,
+    };
+}
+
+function translateAiSetting() {
+    if (aiServiceSettings.value.translate) return aiServiceSettings.value.translate;
+    if (aiProviderSetting.value.service === 'translate') return aiProviderSetting.value;
+
+    return {
+        service: 'translate',
+        provider_key: 'mock',
+        model: 'mock-translation-v1',
+    };
+}
+
+function translateAiSummary() {
+    const setting = translateAiSetting();
+    const provider = providerByKey(setting.provider_key);
+
+    return {
+        setting,
+        provider,
+        providerName: provider?.name || setting.provider_key || 'Translation provider',
         model: setting.model || provider?.default_model || '',
         hasApiKey: Boolean(provider?.has_api_key),
         missingApiKey: providerNeedsApiKey(setting.provider_key) && !provider?.has_api_key,
@@ -1122,6 +1175,114 @@ function audioPanel(block, keyBook) {
     );
 }
 
+function translatePanel(block, keyBook) {
+    const translations = blockTranslations.value;
+    const aiSummary = translateAiSummary();
+    const isTranslating = blockTranslationActionStatus.value === 'translating';
+
+    if (!block) {
+        return _.div({ class: 'at-rightWorkspace-section' },
+            _.h3('Translation'),
+            _.p('Select a block to translate and review localized drafts.')
+        );
+    }
+
+    return _.div({ class: 'at-rightWorkspace-section' },
+        _.h3('Translation'),
+        block.dirty ? _.div({ class: 'at-rightWorkspace-note warning' }, 'Save the selected block before translating.') : null,
+        !block.current_version_id ? _.div({ class: 'at-rightWorkspace-note warning' }, 'This block needs a saved version before translation can be tracked.') : null,
+        _.div({ class: aiSummary.missingApiKey ? 'at-correctionProvider has-warning' : 'at-correctionProvider' },
+            _.div({ class: 'at-correctionProvider-main' },
+                _.span('Provider'),
+                _.strong(`${aiSummary.providerName}${aiSummary.model ? ` · ${aiSummary.model}` : ''}`)
+            ),
+            aiSummary.missingApiKey ? _.button({
+                type: 'button',
+                class: 'at-correctionProvider-action',
+                onclick: () => openToolAiSettingsDialog(keyBook, 'translate', 'Translate'),
+            }, 'Configure AI settings') : null
+        ),
+        _.Select({
+            label: 'Target language',
+            icon: 'translate',
+            model: translationTargetLocale,
+            options: translationLocaleOptions,
+            onChange: (value) => {
+                translationTargetLocale.value = selectChangeValue(value, translationTargetLocale.value);
+            },
+        }),
+        () => blockTranslationsError.value ? _.div({ class: 'at-chatError' }, blockTranslationsError.value) : null,
+        _.div({ class: 'at-rightWorkspace-actions is-top' },
+            _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-action is-primary',
+                disabled: () => !block
+                    || block.dirty
+                    || !block.current_version_id
+                    || !translationTargetLocale.value
+                    || translateAiSummary().missingApiKey
+                    || blockTranslationActionStatus.value !== 'idle',
+                onclick: () => createBlockTranslation(block),
+            }, isTranslating ? `Translating with ${aiSummary.providerName}...` : 'Translate block'),
+            _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-action',
+                disabled: () => blockTranslationActionStatus.value !== 'idle',
+                onclick: () => loadBlockTranslations(block, { force: true }),
+            }, 'Refresh')
+        ),
+        blockTranslationsStatus.value === 'loading'
+            ? _.div({ class: 'at-chatNotice' }, 'Loading translations...')
+            : null,
+        translations.length
+            ? _.div({ class: 'at-translationList' }, translations.map((translation) => {
+                const isDraft = (translation.status || 'draft') === 'draft';
+                const isBusy = blockTranslationActionStatus.value === `updating:${translation.id}`;
+                const canResolve = isDraft && translation.is_current_version && !block.dirty;
+
+                return _.div({
+                    class: translation.is_current_version ? 'at-translationItem' : 'at-translationItem is-stale',
+                },
+                    _.div({ class: 'at-translationItem-head' },
+                        _.strong(translation.target_locale || 'translation'),
+                        _.span({ class: `at-translationStatus status-${translation.status}` }, translation.status || 'draft')
+                    ),
+                    _.div({ class: 'at-translationItem-meta' },
+                        translation.version_number ? `v${translation.version_number}${translation.is_current_version ? ' current' : ' stale'}` : '',
+                        translation.provider_key ? ` · ${translation.provider_key}` : '',
+                        translation.model ? ` · ${translation.model}` : ''
+                    ),
+                    _.div({ class: 'at-translationText' },
+                        _.span('Source'),
+                        _.p(translation.source_text || '')
+                    ),
+                    _.div({ class: 'at-translationText' },
+                        _.span('Translated'),
+                        _.p(translation.translated_text || '')
+                    ),
+                    isDraft ? _.div({ class: 'at-reviewItem-actions' },
+                        _.button({
+                            type: 'button',
+                            class: 'at-reviewItem-action is-apply',
+                            disabled: !canResolve || blockTranslationActionStatus.value !== 'idle',
+                            onclick: () => updateBlockTranslationStatus(block, translation, 'approved'),
+                        }, isBusy ? 'Saving...' : 'Approve'),
+                        _.button({
+                            type: 'button',
+                            class: 'at-reviewItem-action',
+                            disabled: !canResolve || blockTranslationActionStatus.value !== 'idle',
+                            onclick: () => updateBlockTranslationStatus(block, translation, 'rejected'),
+                        }, isBusy ? 'Saving...' : 'Reject')
+                    ) : null
+                );
+            }))
+            : _.div({ class: 'at-rightWorkspace-emptyState' },
+                _.strong('No translations yet'),
+                _.p('Create a translation draft for the selected block version.')
+            )
+    );
+}
+
 function correctionPanel(block, keyBook) {
     if (!block) {
         return _.div({ class: 'at-rightWorkspace-section' },
@@ -1441,6 +1602,16 @@ function rightWorkspaceBody(tool, block, keyBook) {
         return _.div({ class: 'at-rightWorkspace-body' },
             blockContextSummary(block),
             audioPanel(block, keyBook)
+        );
+    }
+
+    if (tool.id === 'translate') {
+        runUntracked(() => loadAiProviders(keyBook, 'translate'));
+        runUntracked(() => loadBlockTranslations(block));
+
+        return _.div({ class: 'at-rightWorkspace-body' },
+            blockContextSummary(block),
+            translatePanel(block, keyBook)
         );
     }
 
@@ -2400,6 +2571,111 @@ function editorText(keyBook) {
             });
     };
 
+    loadBlockTranslations = (block, { force = false } = {}) => {
+        if (!keyBook || !block?.block_uuid) {
+            blockTranslations.value = [];
+            blockTranslationsStatus.value = 'idle';
+            blockTranslationsContextKey.value = null;
+            blockTranslationsError.value = null;
+            return;
+        }
+
+        const contextKey = `${keyBook}:${block.block_uuid}:${block.current_version_id || 'new'}`;
+        if (!force && blockTranslationsContextKey.value === contextKey && blockTranslationsStatus.value !== 'error') return;
+
+        blockTranslationsContextKey.value = contextKey;
+        blockTranslations.value = [];
+        blockTranslationsStatus.value = 'loading';
+        blockTranslationsError.value = null;
+
+        _.http.getJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/translations`)
+            .then((payload) => {
+                if (blockTranslationsContextKey.value !== contextKey) return;
+
+                const data = normalizeDataPayload(payload);
+                blockTranslations.value = data.translations || [];
+                blockTranslationsStatus.value = 'ready';
+            })
+            .catch((error) => {
+                if (blockTranslationsContextKey.value !== contextKey) return;
+
+                blockTranslations.value = [];
+                blockTranslationsError.value = requestErrorMessage(error, 'Unable to load translations.');
+                blockTranslationsStatus.value = 'error';
+            });
+    };
+
+    const upsertTranslationInList = (translation) => {
+        if (!translation) return;
+
+        blockTranslations.value = [
+            translation,
+            ...blockTranslations.value.filter((item) => item.id !== translation.id),
+        ].sort((a, b) => {
+            if ((a.status === 'draft') !== (b.status === 'draft')) return a.status === 'draft' ? -1 : 1;
+            return (b.id || 0) - (a.id || 0);
+        });
+        blockTranslationsError.value = null;
+        blockTranslationsStatus.value = 'ready';
+    };
+
+    createBlockTranslation = (block) => {
+        if (!keyBook || !block?.block_uuid || block.dirty || !block.current_version_id || blockTranslationActionStatus.value !== 'idle') return;
+
+        const translateSetting = translateAiSetting();
+        blockTranslationActionStatus.value = 'translating';
+        blockTranslationsError.value = null;
+
+        _.http.postJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/translations`, {
+            target_locale: translationTargetLocale.value,
+            provider_key: translateSetting.provider_key,
+            model: translateSetting.model,
+        })
+            .then((payload) => {
+                const data = normalizeDataPayload(payload);
+
+                if (data.translation) {
+                    upsertTranslationInList(data.translation);
+                } else {
+                    loadBlockTranslations(block, { force: true });
+                }
+            })
+            .catch((error) => {
+                blockTranslationsError.value = requestErrorMessage(error, 'Unable to create translation.');
+                blockTranslationsStatus.value = 'error';
+            })
+            .finally(() => {
+                blockTranslationActionStatus.value = 'idle';
+            });
+    };
+
+    updateBlockTranslationStatus = (block, translation, status) => {
+        if (!keyBook || !block?.block_uuid || !translation?.id || blockTranslationActionStatus.value !== 'idle') return;
+
+        blockTranslationActionStatus.value = `updating:${translation.id}`;
+        blockTranslationsError.value = null;
+
+        _.http.patchJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/translations/${translation.id}`, {
+            status,
+        })
+            .then((payload) => {
+                const data = normalizeDataPayload(payload);
+
+                if (data.translation) {
+                    upsertTranslationInList(data.translation);
+                } else {
+                    loadBlockTranslations(block, { force: true });
+                }
+            })
+            .catch((error) => {
+                blockTranslationsError.value = requestErrorMessage(error, 'Unable to update translation.');
+                blockTranslationsStatus.value = 'error';
+            })
+            .finally(() => {
+                blockTranslationActionStatus.value = 'idle';
+            });
+    };
+
     const voiceProfileForm = (bookKey, close) => _.form({
         action: '#',
         method: 'post',
@@ -2933,6 +3209,12 @@ function editorText(keyBook) {
         audioContextKey.value = null;
         audioError.value = null;
         audioActionStatus.value = 'idle';
+        blockTranslations.value = [];
+        blockTranslationsStatus.value = 'idle';
+        blockTranslationsContextKey.value = null;
+        blockTranslationsError.value = null;
+        blockTranslationActionStatus.value = 'idle';
+        translationTargetLocale.value = 'en';
         aiChatMessages.value = [];
         aiChatDraft.value = '';
         aiChatStatus.value = 'idle';
@@ -2962,6 +3244,9 @@ function editorText(keyBook) {
         openVoiceProfileDialog = () => { };
         loadBlockAudio = () => { };
         generateBlockAudio = () => { };
+        loadBlockTranslations = () => { };
+        createBlockTranslation = () => { };
+        updateBlockTranslationStatus = () => { };
         askAiChat = () => { };
         loadAiChatMessages = () => { };
         loadAiProviders = () => { };

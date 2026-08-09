@@ -7,6 +7,7 @@ use App\Models\AiChatThread;
 use App\Models\Book;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
+use App\Models\BookBlockTranslation;
 use App\Models\BookCategory;
 use App\Models\BookVoiceProfile;
 use App\Services\BookBlockService;
@@ -1077,6 +1078,111 @@ class DashboardBookTest extends TestCase
         ])
             ->assertStatus(422)
             ->assertJsonPath('errors.voice.0', 'Assign a voice before generating audio.');
+    }
+
+    public function test_dashboard_can_create_and_return_block_translation(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $saved = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Paragraph to translate.'),
+            'text_plain' => 'Paragraph to translate.',
+        ]);
+
+        $translationId = $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/translations", [
+            'target_locale' => 'fr',
+            'provider_key' => 'mock',
+            'model' => 'mock-translation-v1',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.translation.status', 'draft')
+            ->assertJsonPath('data.translation.target_locale', 'fr')
+            ->assertJsonPath('data.translation.provider_key', 'mock')
+            ->assertJsonPath('data.translation.model', 'mock-translation-v1')
+            ->assertJsonPath('data.translation.source_text', 'Paragraph to translate.')
+            ->assertJsonPath('data.translation.translated_text', '[fr] Paragraph to translate.')
+            ->assertJsonPath('data.translation.source_block_version_id', $saved['version']->id)
+            ->assertJsonPath('data.translation.version_number', 1)
+            ->assertJsonPath('data.translation.is_current_version', true)
+            ->json('data.translation.id');
+
+        $this->assertDatabaseHas('book_block_translations', [
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'source_book_block_version_id' => $saved['version']->id,
+            'target_locale' => 'fr',
+            'status' => 'draft',
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/translations", [
+            'target_locale' => 'fr',
+            'provider_key' => 'mock',
+            'model' => 'mock-translation-v1',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.created', false)
+            ->assertJsonPath('data.translation.id', $translationId);
+
+        $this->assertDatabaseCount('book_block_translations', 1);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/translations")
+            ->assertOk()
+            ->assertJsonPath('data.block.block_uuid', $blockUuid)
+            ->assertJsonPath('data.translations.0.id', $translationId)
+            ->assertJsonPath('data.translations.0.target_locale', 'fr');
+    }
+
+    public function test_dashboard_can_approve_and_reject_block_translation(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $saved = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Paragraph to approve.'),
+            'text_plain' => 'Paragraph to approve.',
+        ]);
+
+        $translation = BookBlockTranslation::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'source_book_block_version_id' => $saved['version']->id,
+            'block_uuid' => $blockUuid,
+            'target_locale' => 'es',
+            'status' => 'draft',
+            'provider_key' => 'mock',
+            'model' => 'mock-translation-v1',
+            'source' => 'mock',
+            'source_text' => 'Paragraph to approve.',
+            'translated_text' => '[es] Paragraph to approve.',
+        ]);
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/translations/{$translation->id}", [
+            'status' => 'approved',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.translation.status', 'approved');
+
+        $this->assertDatabaseHas('book_block_translations', [
+            'id' => $translation->id,
+            'status' => 'approved',
+        ]);
+        $this->assertNotNull($translation->refresh()->approved_at);
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/translations/{$translation->id}", [
+            'status' => 'rejected',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.translation.status', 'rejected')
+            ->assertJsonPath('data.translation.approved_at', null);
     }
 
     private function createBook(): Book
