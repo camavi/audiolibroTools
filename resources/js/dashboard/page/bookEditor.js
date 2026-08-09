@@ -10,6 +10,7 @@ const editorUiTick = _.rod(0);
 const editorPageFormat = _.rod('book');
 const editorStatus = _.rod(null);
 const saveStatus = _.rod('idle');
+const editorBook = _.rod(null);
 const editorOutline = _.rod([]);
 const activeEditorBlockId = _.rod(null);
 const rightWorkspaceTool = _.rod('chat');
@@ -621,6 +622,73 @@ function outlineKindLabel(item) {
 
 function activeOutlineItem() {
     return editorOutline.value.find((item) => item.block_uuid === activeEditorBlockId.value) || null;
+}
+
+function saveStatusLabel(status) {
+    const labels = {
+        idle: 'Idle',
+        dirty: 'Unsaved changes',
+        saving: 'Saving...',
+        saved: 'Saved',
+        error: 'Save failed',
+        conflict: 'Conflict detected',
+    };
+
+    return labels[status] || 'Idle';
+}
+
+function activeToolLabel() {
+    return rightWorkspaceTools.find((tool) => tool.id === rightWorkspaceTool.value)?.label || 'AI Chat';
+}
+
+function activeServerEvents() {
+    const events = [];
+
+    if (saveStatus.value === 'saving') events.push('Saving document');
+    if (aiProviderStatus.value === 'loading') events.push('Loading AI settings');
+    if (blockVersionsStatus.value === 'loading') events.push('Loading versions');
+    if (blockReviewsStatus.value === 'loading') events.push('Loading corrections');
+    if (blockReviewActionStatus.value === 'checking') events.push('Checking block');
+    if (blockCommentsStatus.value === 'loading') events.push('Loading comments');
+    if (blockCommentActionStatus.value === 'creating') events.push('Adding comment');
+    if (voiceProfilesStatus.value === 'loading') events.push('Loading voices');
+    if (voiceAssignmentStatus.value === 'loading') events.push('Loading voice assignment');
+    if (voiceAssignmentActionStatus.value === 'saving') events.push('Assigning voice');
+    if (voiceAssignmentActionStatus.value === 'clearing') events.push('Clearing voice');
+    if (audioStatus.value === 'loading') events.push('Loading audio');
+    if (audioActionStatus.value === 'generating') events.push('Generating audio');
+    if (blockTranslationsStatus.value === 'loading') events.push('Loading translations');
+    if (blockTranslationActionStatus.value === 'translating') events.push('Translating block');
+    if (aiChatStatus.value === 'loading') events.push('Loading chat');
+    if (aiChatStatus.value === 'asking') events.push('Asking AI');
+    if (savingAiProvider.value) events.push('Saving provider');
+    if (savingAiSetting.value) events.push('Saving AI setting');
+
+    return events;
+}
+
+function serverHealthStatus() {
+    const hasError = [
+        blockReviewsStatus.value,
+        blockCommentsStatus.value,
+        voiceProfilesStatus.value,
+        voiceAssignmentStatus.value,
+        audioStatus.value,
+        blockTranslationsStatus.value,
+        aiChatStatus.value,
+        aiProviderStatus.value,
+    ].includes('error') || ['error', 'conflict'].includes(saveStatus.value);
+
+    if (hasError) return 'error';
+    if (activeServerEvents().length) return 'busy';
+
+    return 'ready';
+}
+
+function estimateTokens(text) {
+    if (!text) return 0;
+
+    return Math.max(1, Math.ceil(text.trim().length / 4));
 }
 
 function buildEditorOutline(blocks, blockMeta) {
@@ -3118,6 +3186,7 @@ function editorText(keyBook) {
                 ? withBlockIds(data.document)
                 : documentFromBlocks(data.blocks);
 
+            editorBook.value = data.book || null;
             blockMeta.clear();
             (data.blocks || []).forEach((block) => {
                 blockMeta.set(block.block_uuid, {
@@ -3173,6 +3242,7 @@ function editorText(keyBook) {
         editorUiTick.value += 1;
         editorStatus.value = null;
         saveStatus.value = 'idle';
+        editorBook.value = null;
         clearTimeout(autosaveTimer);
         blockMeta.clear();
         currentEditorBlocks = [];
@@ -3284,19 +3354,7 @@ function editorText(keyBook) {
     const editorWrapper = _.div({ class: 'at-editorText', area: 'editorText' },
         _.div({ class: 'at-editorText-inner' },
             _.div({ class: 'at-editorToolbar' },
-                writerToolbar(),
-                _.span({ class: () => `at-saveStatus ${saveStatus.value}` }, () => {
-                    const labels = {
-                        idle: '',
-                        dirty: 'Unsaved changes',
-                        saving: 'Saving...',
-                        saved: 'Saved',
-                        error: 'Save failed',
-                        conflict: 'Conflict detected',
-                    };
-
-                    return labels[saveStatus.value] || '';
-                })
+                writerToolbar()
             ),
             () => editorStatus.value
                 ? _.div({ class: `at-editorStatus ${editorStatus.value.type}` }, editorStatus.value.message)
@@ -3320,7 +3378,47 @@ function content(keyBook) {
     );
 }
 function bottomBar() {
-    return _.div({ class: 'at-bottomBar', area: 'bottomBar' }, 'Bottom Bar');
+    return _.div({ class: 'at-bottomBar', area: 'bottomBar' },
+        _.div({ class: 'at-bottomBar-left' },
+            _.span({ class: 'at-bottomBar-item is-strong' }, () => editorBook.value?.name || 'No book loaded'),
+            _.span({ class: 'at-bottomBar-item' }, () => {
+                const outline = editorOutline.value;
+                const chapterCount = outline.filter((item) => item.isChapter).length;
+
+                return chapterCount
+                    ? `${chapterCount} ch / ${outline.length} blocks`
+                    : `${outline.length} blocks`;
+            }),
+            _.span({ class: 'at-bottomBar-item' }, () => {
+                const block = activeOutlineItem();
+
+                return block
+                    ? `${outlineKindLabel(block)} · ${block.label}`
+                    : 'No block selected';
+            })
+        ),
+        _.div({ class: 'at-bottomBar-center' },
+            _.span({ class: () => `at-bottomBar-server is-${serverHealthStatus()}` },
+                _.span({ class: 'at-bottomBar-dot' }),
+                _.span(() => {
+                    const events = activeServerEvents();
+
+                    return events.length ? events.slice(0, 2).join(' · ') : 'Server ready';
+                })
+            ),
+            _.span({ class: 'at-bottomBar-item' }, () => `Tool: ${activeToolLabel()}`),
+            _.span({ class: 'at-bottomBar-item' }, () => {
+                const block = activeOutlineItem();
+                const text = block?.label || '';
+                const tokens = estimateTokens(text);
+
+                return tokens ? `~${tokens} tokens selected` : '0 tokens selected';
+            })
+        ),
+        _.div({ class: 'at-bottomBar-right' },
+            _.span({ class: () => `at-saveStatus ${saveStatus.value}` }, () => saveStatusLabel(saveStatus.value))
+        )
+    );
 }
 export default function bookEditor(ctx = null) {
     const keyBook = readRouteBookKey(ctx);
