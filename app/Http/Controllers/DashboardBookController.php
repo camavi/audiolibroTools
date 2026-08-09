@@ -6,6 +6,8 @@ use App\Exceptions\BookBlockVersionConflictException;
 use App\Models\AiChatMessage;
 use App\Models\AiChatThread;
 use App\Models\Book;
+use App\Models\BookAudioJob;
+use App\Models\BookAudioSegment;
 use App\Models\BookBlock;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
@@ -342,6 +344,40 @@ class DashboardBookController extends Controller
         ]);
     }
 
+    public function blockAudio(string $keyBook, string $blockUuid): JsonResponse
+    {
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->with('currentVersion')
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        $assignment = $block->voiceAssignments()
+            ->with(['voiceProfile', 'blockVersion:id,version_number'])
+            ->where('book_block_version_id', $block->current_version_id)
+            ->latest('id')
+            ->first();
+
+        $segments = $block->audioSegments()
+            ->with(['voiceProfile', 'blockVersion:id,version_number', 'audioJob:id,status'])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get();
+
+        return response()->json([
+            'data' => [
+                'block' => $this->serializeEditorBlock($block),
+                'assignment' => $assignment ? $this->serializeVoiceAssignment($assignment, $block) : null,
+                'segments' => $segments
+                    ->map(fn (BookAudioSegment $segment) => $this->serializeAudioSegment($segment, $block))
+                    ->values(),
+            ],
+        ]);
+    }
+
     public function aiChatThread(Request $request, string $keyBook): JsonResponse
     {
         $validated = $request->validate([
@@ -551,6 +587,107 @@ class DashboardBookController extends Controller
                 'cleared' => false,
             ],
         ]);
+    }
+
+    public function generateBlockAudio(Request $request, string $keyBook, string $blockUuid): JsonResponse
+    {
+        $validated = $request->validate([
+            'provider_key' => ['nullable', 'string', 'max:80'],
+            'model' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->with('currentVersion')
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        if (! $block->currentVersion) {
+            return response()->json([
+                'message' => 'The selected block has no saved version for audio generation.',
+                'errors' => [
+                    'block' => ['Save the block before generating audio.'],
+                ],
+            ], 422);
+        }
+
+        $assignment = $block->voiceAssignments()
+            ->with('voiceProfile')
+            ->where('book_block_version_id', $block->currentVersion->id)
+            ->latest('id')
+            ->first();
+
+        if (! $assignment || ! $assignment->voiceProfile) {
+            return response()->json([
+                'message' => 'The selected block has no voice assigned.',
+                'errors' => [
+                    'voice' => ['Assign a voice before generating audio.'],
+                ],
+            ], 422);
+        }
+
+        $providerKey = $validated['provider_key'] ?? 'mock';
+        $model = $validated['model'] ?? 'mock-tts-v1';
+        $text = $block->currentVersion->text_plain ?: $block->text_plain ?: '';
+        $durationMs = max(700, mb_strlen($text) * 45);
+
+        $job = BookAudioJob::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $block->id,
+            'book_block_version_id' => $block->currentVersion->id,
+            'book_voice_profile_id' => $assignment->book_voice_profile_id,
+            'block_uuid' => $block->block_uuid,
+            'status' => 'completed',
+            'provider_key' => $providerKey,
+            'model' => $model,
+            'source' => 'mock',
+            'request_json' => [
+                'text_plain' => $text,
+                'voice_profile_id' => $assignment->book_voice_profile_id,
+                'voice_id' => $assignment->voiceProfile->voice_id,
+            ],
+            'result_json' => [
+                'mock' => true,
+                'duration_ms' => $durationMs,
+            ],
+            'started_at' => now(),
+            'completed_at' => now(),
+            'created_by' => auth()->id(),
+        ]);
+
+        $segment = BookAudioSegment::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $block->id,
+            'book_block_version_id' => $block->currentVersion->id,
+            'book_voice_profile_id' => $assignment->book_voice_profile_id,
+            'book_audio_job_id' => $job->id,
+            'block_uuid' => $block->block_uuid,
+            'status' => 'completed',
+            'provider_key' => $providerKey,
+            'model' => $model,
+            'voice_id' => $assignment->voiceProfile->voice_id,
+            'audio_path' => "mock://books/{$book->key_book}/blocks/{$block->block_uuid}/audio/{$job->id}",
+            'duration_ms' => $durationMs,
+            'text_plain' => $text,
+            'content_hash' => $block->currentVersion->content_hash,
+            'metadata_json' => [
+                'source' => 'mock',
+                'voice_profile_name' => $assignment->voiceProfile->name,
+                'voice_provider' => $assignment->voiceProfile->voice_provider,
+            ],
+            'created_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'data' => [
+                'job' => $this->serializeAudioJob($job->load('voiceProfile'), $block),
+                'segment' => $this->serializeAudioSegment($segment->load(['voiceProfile', 'blockVersion:id,version_number', 'audioJob:id,status']), $block),
+                'created' => true,
+            ],
+        ], 201);
     }
 
     public function storeBlockReview(
@@ -770,6 +907,58 @@ class DashboardBookController extends Controller
             'is_current_version' => $block->current_version_id === $assignment->book_block_version_id,
             'created_at' => $assignment->created_at?->toISOString(),
             'updated_at' => $assignment->updated_at?->toISOString(),
+        ];
+    }
+
+    private function serializeAudioJob(BookAudioJob $job, BookBlock $block): array
+    {
+        return [
+            'id' => $job->id,
+            'status' => $job->status,
+            'provider_key' => $job->provider_key,
+            'model' => $job->model,
+            'source' => $job->source,
+            'block_uuid' => $job->block_uuid,
+            'block_version_id' => $job->book_block_version_id,
+            'voice_profile_id' => $job->book_voice_profile_id,
+            'voice_profile' => $job->voiceProfile
+                ? $this->serializeVoiceProfile($job->voiceProfile)
+                : null,
+            'request_json' => $job->request_json,
+            'result_json' => $job->result_json,
+            'error_message' => $job->error_message,
+            'started_at' => $job->started_at?->toISOString(),
+            'completed_at' => $job->completed_at?->toISOString(),
+            'created_at' => $job->created_at?->toISOString(),
+            'is_current_version' => $block->current_version_id === $job->book_block_version_id,
+        ];
+    }
+
+    private function serializeAudioSegment(BookAudioSegment $segment, BookBlock $block): array
+    {
+        return [
+            'id' => $segment->id,
+            'status' => $segment->status,
+            'provider_key' => $segment->provider_key,
+            'model' => $segment->model,
+            'voice_id' => $segment->voice_id,
+            'audio_path' => $segment->audio_path,
+            'duration_ms' => $segment->duration_ms,
+            'text_plain' => $segment->text_plain,
+            'content_hash' => $segment->content_hash,
+            'metadata_json' => $segment->metadata_json,
+            'block_uuid' => $segment->block_uuid,
+            'block_version_id' => $segment->book_block_version_id,
+            'version_number' => $segment->blockVersion?->version_number,
+            'voice_profile_id' => $segment->book_voice_profile_id,
+            'voice_profile' => $segment->voiceProfile
+                ? $this->serializeVoiceProfile($segment->voiceProfile)
+                : null,
+            'audio_job_id' => $segment->book_audio_job_id,
+            'audio_job_status' => $segment->audioJob?->status,
+            'is_current_version' => $block->current_version_id === $segment->book_block_version_id,
+            'created_at' => $segment->created_at?->toISOString(),
+            'updated_at' => $segment->updated_at?->toISOString(),
         ];
     }
 

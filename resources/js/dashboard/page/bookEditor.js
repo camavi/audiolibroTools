@@ -45,6 +45,11 @@ const voiceProfileLanguage = _.rod('');
 const voiceProfileNotes = _.rod('');
 const voiceProfileDialogStatus = _.rod(null);
 const savingVoiceProfile = _.rod(false);
+const audioSegments = _.rod([]);
+const audioStatus = _.rod('idle');
+const audioContextKey = _.rod(null);
+const audioError = _.rod(null);
+const audioActionStatus = _.rod('idle');
 const aiChatMessages = _.rod([]);
 const aiChatDraft = _.rod('');
 const aiChatStatus = _.rod('idle');
@@ -83,6 +88,8 @@ let loadBlockVoiceAssignment = () => { };
 let saveBlockVoiceAssignment = () => { };
 let clearBlockVoiceAssignment = () => { };
 let openVoiceProfileDialog = () => { };
+let loadBlockAudio = () => { };
+let generateBlockAudio = () => { };
 let askAiChat = () => { };
 let loadAiChatMessages = () => { };
 let loadAiProviders = () => { };
@@ -426,6 +433,31 @@ function chatAiSummary() {
         setting,
         provider,
         providerName: provider?.name || setting.provider_key || 'AI provider',
+        model: setting.model || provider?.default_model || '',
+        hasApiKey: Boolean(provider?.has_api_key),
+        missingApiKey: providerNeedsApiKey(setting.provider_key) && !provider?.has_api_key,
+    };
+}
+
+function audioAiSetting() {
+    if (aiServiceSettings.value.audio) return aiServiceSettings.value.audio;
+    if (aiProviderSetting.value.service === 'audio') return aiProviderSetting.value;
+
+    return {
+        service: 'audio',
+        provider_key: 'mock',
+        model: 'mock-tts-v1',
+    };
+}
+
+function audioAiSummary() {
+    const setting = audioAiSetting();
+    const provider = providerByKey(setting.provider_key);
+
+    return {
+        setting,
+        provider,
+        providerName: provider?.name || setting.provider_key || 'Audio provider',
         model: setting.model || provider?.default_model || '',
         hasApiKey: Boolean(provider?.has_api_key),
         missingApiKey: providerNeedsApiKey(setting.provider_key) && !provider?.has_api_key,
@@ -996,6 +1028,100 @@ function voicesPanel(block, keyBook) {
     );
 }
 
+function formatAudioDuration(ms) {
+    if (!ms) return 'Duration pending';
+
+    const seconds = Math.round(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const rest = seconds % 60;
+
+    return minutes ? `${minutes}:${String(rest).padStart(2, '0')}` : `${rest}s`;
+}
+
+function audioPanel(block, keyBook) {
+    const segments = audioSegments.value;
+    const assignment = voiceAssignment.value;
+    const assignedProfile = assignment?.voice_profile || null;
+    const aiSummary = audioAiSummary();
+    const isGenerating = audioActionStatus.value === 'generating';
+
+    if (!block) {
+        return _.div({ class: 'at-rightWorkspace-section' },
+            _.h3('Audio production'),
+            _.p('Select a block to generate and inspect audio segments.')
+        );
+    }
+
+    return _.div({ class: 'at-rightWorkspace-section' },
+        _.h3('Audio production'),
+        block.dirty ? _.div({ class: 'at-rightWorkspace-note warning' }, 'Save the selected block before generating audio.') : null,
+        !block.current_version_id ? _.div({ class: 'at-rightWorkspace-note warning' }, 'This block needs a saved version before audio can be generated.') : null,
+        !assignedProfile ? _.div({ class: 'at-rightWorkspace-note warning' }, 'Assign a voice before generating audio.') : null,
+        _.div({ class: aiSummary.missingApiKey ? 'at-correctionProvider has-warning' : 'at-correctionProvider' },
+            _.div({ class: 'at-correctionProvider-main' },
+                _.span('Provider'),
+                _.strong(`${aiSummary.providerName}${aiSummary.model ? ` · ${aiSummary.model}` : ''}`)
+            ),
+            aiSummary.missingApiKey ? _.button({
+                type: 'button',
+                class: 'at-correctionProvider-action',
+                onclick: () => openToolAiSettingsDialog(keyBook, 'audio', 'Audio'),
+            }, 'Configure AI settings') : null
+        ),
+        _.div({ class: 'at-voiceCurrent' },
+            _.span('Assigned voice'),
+            assignedProfile
+                ? _.strong(`${assignedProfile.name}${assignedProfile.voice_id ? ` · ${assignedProfile.voice_id}` : ''}`)
+                : _.strong('Not assigned'),
+            assignedProfile?.voice_provider ? _.small(assignedProfile.voice_provider) : null
+        ),
+        () => audioError.value ? _.div({ class: 'at-chatError' }, audioError.value) : null,
+        _.div({ class: 'at-rightWorkspace-actions is-top' },
+            _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-action is-primary',
+                disabled: () => !block
+                    || block.dirty
+                    || !block.current_version_id
+                    || !voiceAssignment.value
+                    || audioAiSummary().missingApiKey
+                    || audioActionStatus.value !== 'idle',
+                onclick: () => generateBlockAudio(block),
+            }, isGenerating ? `Generating with ${aiSummary.providerName}...` : 'Generate block audio'),
+            _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-action',
+                disabled: () => audioActionStatus.value !== 'idle',
+                onclick: () => loadBlockAudio(block, { force: true }),
+            }, 'Refresh')
+        ),
+        audioStatus.value === 'loading'
+            ? _.div({ class: 'at-chatNotice' }, 'Loading audio segments...')
+            : null,
+        segments.length
+            ? _.div({ class: 'at-audioList' }, segments.map((segment) => _.div({
+                class: segment.is_current_version ? 'at-audioItem' : 'at-audioItem is-stale',
+            },
+                _.div({ class: 'at-audioItem-head' },
+                    _.strong(segment.voice_profile?.name || 'Audio segment'),
+                    _.span(segment.status || 'completed')
+                ),
+                _.div({ class: 'at-audioItem-meta' },
+                    formatAudioDuration(segment.duration_ms),
+                    segment.version_number ? ` · v${segment.version_number}${segment.is_current_version ? ' current' : ' stale'}` : '',
+                    segment.provider_key ? ` · ${segment.provider_key}` : '',
+                    segment.model ? ` · ${segment.model}` : ''
+                ),
+                _.div({ class: 'at-audioPath' }, segment.audio_path || 'No audio file path yet'),
+                _.p(segment.text_plain || '')
+            )))
+            : _.div({ class: 'at-rightWorkspace-emptyState' },
+                _.strong('No audio segments yet'),
+                _.p('Generate audio after assigning a voice to the selected block.')
+            )
+    );
+}
+
 function correctionPanel(block, keyBook) {
     if (!block) {
         return _.div({ class: 'at-rightWorkspace-section' },
@@ -1304,6 +1430,17 @@ function rightWorkspaceBody(tool, block, keyBook) {
         return _.div({ class: 'at-rightWorkspace-body' },
             blockContextSummary(block),
             voicesPanel(block, keyBook)
+        );
+    }
+
+    if (tool.id === 'audio') {
+        runUntracked(() => loadAiProviders(keyBook, 'audio'));
+        runUntracked(() => loadBlockVoiceAssignment(block));
+        runUntracked(() => loadBlockAudio(block));
+
+        return _.div({ class: 'at-rightWorkspace-body' },
+            blockContextSummary(block),
+            audioPanel(block, keyBook)
         );
     }
 
@@ -2187,6 +2324,82 @@ function editorText(keyBook) {
             });
     };
 
+    loadBlockAudio = (block, { force = false } = {}) => {
+        if (!keyBook || !block?.block_uuid) {
+            audioSegments.value = [];
+            audioStatus.value = 'idle';
+            audioContextKey.value = null;
+            audioError.value = null;
+            return;
+        }
+
+        const contextKey = `${keyBook}:${block.block_uuid}:${block.current_version_id || 'new'}`;
+        if (!force && audioContextKey.value === contextKey && audioStatus.value !== 'error') return;
+
+        audioContextKey.value = contextKey;
+        audioSegments.value = [];
+        audioStatus.value = 'loading';
+        audioError.value = null;
+
+        _.http.getJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/audio`)
+            .then((payload) => {
+                if (audioContextKey.value !== contextKey) return;
+
+                const data = normalizeDataPayload(payload);
+                audioSegments.value = data.segments || [];
+
+                if (data.assignment) {
+                    voiceAssignment.value = data.assignment;
+                    selectedVoiceProfileId.value = data.assignment.voice_profile_id
+                        ? String(data.assignment.voice_profile_id)
+                        : '';
+                    voiceAssignmentStatus.value = 'ready';
+                }
+
+                audioStatus.value = 'ready';
+            })
+            .catch((error) => {
+                if (audioContextKey.value !== contextKey) return;
+
+                audioSegments.value = [];
+                audioError.value = requestErrorMessage(error, 'Unable to load audio segments.');
+                audioStatus.value = 'error';
+            });
+    };
+
+    generateBlockAudio = (block) => {
+        if (!keyBook || !block?.block_uuid || block.dirty || !block.current_version_id || !voiceAssignment.value || audioActionStatus.value !== 'idle') return;
+
+        const audioSetting = audioAiSetting();
+        audioActionStatus.value = 'generating';
+        audioError.value = null;
+
+        _.http.postJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/audio/generate`, {
+            provider_key: audioSetting.provider_key,
+            model: audioSetting.model,
+        })
+            .then((payload) => {
+                const data = normalizeDataPayload(payload);
+
+                if (data.segment) {
+                    audioSegments.value = [
+                        data.segment,
+                        ...audioSegments.value.filter((segment) => segment.id !== data.segment.id),
+                    ];
+                    audioStatus.value = 'ready';
+                } else {
+                    loadBlockAudio(block, { force: true });
+                }
+            })
+            .catch((error) => {
+                audioError.value = requestErrorMessage(error, 'Unable to generate audio.');
+                audioStatus.value = 'error';
+            })
+            .finally(() => {
+                audioActionStatus.value = 'idle';
+            });
+    };
+
     const voiceProfileForm = (bookKey, close) => _.form({
         action: '#',
         method: 'post',
@@ -2715,6 +2928,11 @@ function editorText(keyBook) {
         selectedVoiceProfileId.value = '';
         voiceProfileDialogStatus.value = null;
         savingVoiceProfile.value = false;
+        audioSegments.value = [];
+        audioStatus.value = 'idle';
+        audioContextKey.value = null;
+        audioError.value = null;
+        audioActionStatus.value = 'idle';
         aiChatMessages.value = [];
         aiChatDraft.value = '';
         aiChatStatus.value = 'idle';
@@ -2742,6 +2960,8 @@ function editorText(keyBook) {
         saveBlockVoiceAssignment = () => { };
         clearBlockVoiceAssignment = () => { };
         openVoiceProfileDialog = () => { };
+        loadBlockAudio = () => { };
+        generateBlockAudio = () => { };
         askAiChat = () => { };
         loadAiChatMessages = () => { };
         loadAiProviders = () => { };

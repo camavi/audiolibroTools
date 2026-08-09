@@ -51,4 +51,14 @@ class BookBlockVersion extends Model
     {
         return $this->hasMany(BookBlockVoiceAssignment::class, 'book_block_version_id');
     }
+
+    public function audioJobs(): HasMany
+    {
+        return $this->hasMany(BookAudioJob::class, 'book_block_version_id');
+    }
+
+    public function audioSegments(): HasMany
+    {
+        return $this->hasMany(BookAudioSegment::class, 'book_block_version_id');
+    }
 }

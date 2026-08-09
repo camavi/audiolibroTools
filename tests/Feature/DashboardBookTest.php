@@ -988,6 +988,97 @@ class DashboardBookTest extends TestCase
         $this->assertDatabaseCount('book_block_voice_assignments', 0);
     }
 
+    public function test_dashboard_can_generate_mock_audio_for_assigned_block(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $saved = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Paragraph for generated audio.'),
+            'text_plain' => 'Paragraph for generated audio.',
+        ]);
+
+        $profile = BookVoiceProfile::query()->create([
+            'book_id' => $book->id,
+            'name' => 'Narrator',
+            'role' => 'narrator',
+            'voice_provider' => 'local',
+            'voice_id' => 'narrator-main',
+        ]);
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/voice-assignment", [
+            'voice_profile_id' => $profile->id,
+        ])->assertOk();
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/audio/generate", [
+            'provider_key' => 'mock',
+            'model' => 'mock-tts-v1',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.job.status', 'completed')
+            ->assertJsonPath('data.segment.status', 'completed')
+            ->assertJsonPath('data.segment.provider_key', 'mock')
+            ->assertJsonPath('data.segment.model', 'mock-tts-v1')
+            ->assertJsonPath('data.segment.voice_profile.name', 'Narrator')
+            ->assertJsonPath('data.segment.voice_id', 'narrator-main')
+            ->assertJsonPath('data.segment.block_version_id', $saved['version']->id)
+            ->assertJsonPath('data.segment.version_number', 1)
+            ->assertJsonPath('data.segment.is_current_version', true)
+            ->assertJsonPath('data.segment.text_plain', 'Paragraph for generated audio.');
+
+        $this->assertDatabaseHas('book_audio_jobs', [
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+            'book_voice_profile_id' => $profile->id,
+            'status' => 'completed',
+            'provider_key' => 'mock',
+            'model' => 'mock-tts-v1',
+        ]);
+
+        $this->assertDatabaseHas('book_audio_segments', [
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+            'book_voice_profile_id' => $profile->id,
+            'status' => 'completed',
+            'voice_id' => 'narrator-main',
+            'text_plain' => 'Paragraph for generated audio.',
+        ]);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/audio")
+            ->assertOk()
+            ->assertJsonPath('data.assignment.voice_profile.name', 'Narrator')
+            ->assertJsonPath('data.segments.0.voice_profile.name', 'Narrator')
+            ->assertJsonPath('data.segments.0.status', 'completed');
+    }
+
+    public function test_dashboard_requires_voice_assignment_before_audio_generation(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Paragraph without voice.'),
+            'text_plain' => 'Paragraph without voice.',
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/audio/generate", [
+            'provider_key' => 'mock',
+            'model' => 'mock-tts-v1',
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.voice.0', 'Assign a voice before generating audio.');
+    }
+
     private function createBook(): Book
     {
         return Book::query()->create([

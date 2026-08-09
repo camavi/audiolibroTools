@@ -37,6 +37,16 @@ class BookVoiceProfile extends Model
         return $this->hasMany(BookBlockVoiceAssignment::class);
     }
 
+    public function audioJobs(): HasMany
+    {
+        return $this->hasMany(BookAudioJob::class);
+    }
+
+    public function audioSegments(): HasMany
+    {
+        return $this->hasMany(BookAudioSegment::class);
+    }
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');

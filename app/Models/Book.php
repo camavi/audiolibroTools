@@ -50,6 +50,16 @@ class Book extends Model
         return $this->hasMany(BookBlockVoiceAssignment::class);
     }
 
+    public function audioJobs(): HasMany
+    {
+        return $this->hasMany(BookAudioJob::class);
+    }
+
+    public function audioSegments(): HasMany
+    {
+        return $this->hasMany(BookAudioSegment::class);
+    }
+
     public function aiChatThreads(): HasMany
     {
         return $this->hasMany(AiChatThread::class);
