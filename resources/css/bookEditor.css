@@ -1281,6 +1281,31 @@
     gap: 12px;
 }
 
+.at-versionDiffToolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 10px;
+}
+
+.at-versionDiffToggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    color: #334155;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.at-versionDiffToggle input {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+}
+
 .at-versionDiffContent {
     display: grid;
     gap: 12px;
@@ -1316,6 +1341,45 @@
     font-size: 13px;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.at-versionDiffSplit {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+}
+
+.at-versionDiffSplit div {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.at-versionDiffSplit span {
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.at-versionDiffSplit strong {
+    display: block;
+    margin-top: 2px;
+    color: #0f172a;
+    font-size: 13px;
+}
+
+.at-versionDiffSplit p {
+    display: -webkit-box;
+    margin: 6px 0 0 !important;
+    overflow: hidden;
+    color: #334155 !important;
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 8;
 }
 
 .at-versionDiffBody {
@@ -1369,6 +1433,7 @@
 
 .at-versionDiffActions {
     display: flex;
+    gap: 8px;
     justify-content: flex-end;
 }
 

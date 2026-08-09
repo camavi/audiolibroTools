@@ -1013,8 +1013,9 @@ function versionActivityBadges(version) {
         }, `${label} ${activity[key]}`));
 }
 
-function openVersionDiffDialog(version, versions) {
-    const comparison = resolveVersionComparison(version, versions);
+function openVersionDiffDialog(block, version, versions) {
+    const compareTarget = _.rod(defaultVersionCompareTarget(version, versions));
+    const showOnlyChanges = _.rod(false);
 
     _.Dialog({
         size: 'lg',
@@ -1022,36 +1023,109 @@ function openVersionDiffDialog(version, versions) {
         slots: {
             header: _.div({ class: 'at-versionDiffHeader' },
                 _.h2('Version changes'),
-                _.p(comparison
-                    ? `${comparison.fromLabel} -> ${comparison.toLabel}`
-                    : `v${version.version_number}`
-                )
+                _.p(`v${version.version_number}`)
             ),
             content: ({ close }) => _.div({ class: 'at-versionDiffDialog' },
-                comparison
-                    ? versionDiffContent(comparison)
-                    : _.div({ class: 'at-versionDiffEmpty' },
-                        _.strong('No comparison available'),
-                        _.p('This block has only one saved version.')
-                    ),
+                _.div({ class: 'at-versionDiffToolbar' },
+                    _.Select({
+                        label: 'Compare with',
+                        icon: 'compare_arrows',
+                        model: compareTarget,
+                        options: versionCompareOptions(version, versions),
+                        onChange: (value) => {
+                            compareTarget.value = selectChangeValue(value, compareTarget.value);
+                        },
+                    }),
+                    _.label({ class: 'at-versionDiffToggle' },
+                        _.input({
+                            type: 'checkbox',
+                            checked: () => showOnlyChanges.value,
+                            onchange: (event) => {
+                                showOnlyChanges.value = Boolean(event.target.checked);
+                            },
+                        }),
+                        _.span('Only changes')
+                    )
+                ),
+                () => {
+                    const comparison = resolveVersionComparison(version, versions, compareTarget.value);
+
+                    return comparison
+                        ? versionDiffContent(comparison, showOnlyChanges.value)
+                        : _.div({ class: 'at-versionDiffEmpty' },
+                            _.strong('No comparison available'),
+                            _.p('This block has only one saved version.')
+                        );
+                },
                 _.div({ class: 'at-versionDiffActions' },
-                    _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Close')
+                    _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Close'),
+                    _.Btn({
+                        type: 'button',
+                        color: 'primary',
+                        disabled: () => {
+                            const comparison = resolveVersionComparison(version, versions, compareTarget.value);
+
+                            return !comparison
+                                || blockVersionActionStatus.value !== 'idle'
+                                || versionsAiSummary().missingApiKey;
+                        },
+                        onClick: async () => {
+                            const comparison = resolveVersionComparison(version, versions, compareTarget.value);
+                            if (!comparison) return;
+
+                            await explainBlockVersion(block, version, comparison.compare);
+                        },
+                    }, () => blockVersionActionStatus.value === `explaining:${version.id}` ? 'Explaining...' : 'Explain this diff')
                 )
             ),
         },
     }).open();
 }
 
-function resolveVersionComparison(version, versions) {
+function defaultVersionCompareTarget(version, versions) {
+    const comparison = resolveVersionComparison(version, versions);
+
+    return comparison?.compare ? `version:${comparison.compare.id}` : '';
+}
+
+function versionCompareOptions(version, versions) {
+    return versions
+        .filter((item) => item.id !== version.id)
+        .sort((a, b) => Number(b.version_number || 0) - Number(a.version_number || 0))
+        .map((item) => ({
+            label: `${item.is_current ? 'Current ' : ''}v${item.version_number} · ${item.source || 'manual'}`,
+            value: `version:${item.id}`,
+        }));
+}
+
+function resolveVersionComparison(version, versions, target = '') {
     const ordered = [...versions].sort((a, b) => Number(a.version_number || 0) - Number(b.version_number || 0));
     const current = ordered.find((item) => item.is_current) || ordered[ordered.length - 1];
 
     if (!current) return null;
 
+    if (target.startsWith('version:')) {
+        const compare = ordered.find((item) => String(item.id) === target.replace('version:', ''));
+        if (!compare || compare.id === version.id) return null;
+
+        const [from, to] = Number(version.version_number || 0) <= Number(compare.version_number || 0)
+            ? [version, compare]
+            : [compare, version];
+
+        return {
+            from,
+            to,
+            compare,
+            fromLabel: `v${from.version_number}`,
+            toLabel: `${to.is_current ? 'current ' : ''}v${to.version_number}`,
+        };
+    }
+
     if (!version.is_current) {
         return {
             from: version,
             to: current,
+            compare: current,
             fromLabel: `v${version.version_number}`,
             toLabel: `current v${current.version_number}`,
         };
@@ -1065,13 +1139,17 @@ function resolveVersionComparison(version, versions) {
     return {
         from: previous,
         to: version,
+        compare: previous,
         fromLabel: `v${previous.version_number}`,
         toLabel: `current v${version.version_number}`,
     };
 }
 
-function versionDiffContent(comparison) {
+function versionDiffContent(comparison, showOnlyChanges = false) {
     const parts = buildVersionTextDiff(comparison.from.text_plain, comparison.to.text_plain);
+    const visibleParts = showOnlyChanges
+        ? parts.filter((part) => part.type !== 'same')
+        : parts;
     const summary = summarizeVersionTextDiff(parts);
 
     return _.div({ class: 'at-versionDiffContent' },
@@ -1089,9 +1167,21 @@ function versionDiffContent(comparison) {
                 _.strong(`${comparison.from.source || 'manual'} -> ${comparison.to.source || 'manual'}`)
             )
         ),
+        _.div({ class: 'at-versionDiffSplit' },
+            _.div(
+                _.span('From'),
+                _.strong(comparison.fromLabel),
+                _.p(comparison.from.text_plain || 'Empty block')
+            ),
+            _.div(
+                _.span('To'),
+                _.strong(comparison.toLabel),
+                _.p(comparison.to.text_plain || 'Empty block')
+            )
+        ),
         _.div({ class: 'at-versionDiffBody' },
-            parts.length
-                ? parts.map((part) => _.span({
+            visibleParts.length
+                ? visibleParts.map((part) => _.span({
                     class: `at-versionDiff-token is-${part.type}`,
                 }, part.text))
                 : _.span({ class: 'at-versionDiff-token is-same' }, 'No text changes.')
@@ -1263,7 +1353,7 @@ function versionsPanel(block, keyBook) {
                         _.button({
                             type: 'button',
                             class: 'at-rightWorkspace-action',
-                            onclick: () => openVersionDiffDialog(version, versions),
+                            onclick: () => openVersionDiffDialog(block, version, versions),
                         }, 'View changes'),
                         _.button({
                             type: 'button',
@@ -2698,7 +2788,7 @@ function editorText(keyBook) {
             });
     };
 
-    explainBlockVersion = async (block, version) => {
+    explainBlockVersion = async (block, version, compareVersion = null) => {
         if (!keyBook || !block?.block_uuid || !version?.id) return;
         if (blockVersionActionStatus.value !== 'idle') return;
 
@@ -2714,6 +2804,7 @@ function editorText(keyBook) {
         try {
             const payload = await _.http.postJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/versions/explain`, {
                 version_id: version.id,
+                compare_version_id: compareVersion?.id || null,
                 provider_key: aiSummary.setting.provider_key,
                 model: aiSummary.model,
             });

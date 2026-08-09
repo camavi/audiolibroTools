@@ -66,3 +66,4 @@
 - Reso operativo Restore nel pannello Versions: il backend crea una nuova versione `restore` copiando una versione precedente e il frontend ricarica TipTap e storico senza perdere la traccia.
 - Avviato Explain changes nel pannello Versions: servizio AI dedicato, endpoint per spiegare il confronto tra versioni, salvataggio come activity AI `versions` e card con ultima spiegazione.
 - Migliorata usabilita' del pannello Versions: filtri All/Current/Activity/Stale/AI con contatori, ordine newest/oldest e search persistiti nelle preferenze locali.
+- Migliorato dialog View changes: selettore della versione da confrontare, split view vecchio/nuovo, toggle only changes e azione `Explain this diff` sul confronto scelto.

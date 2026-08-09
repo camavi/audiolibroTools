@@ -615,6 +615,7 @@ class DashboardBookTest extends TestCase
 
         $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/versions/explain", [
             'version_id' => $first['version']->id,
+            'compare_version_id' => $second['version']->id,
             'provider_key' => 'mock',
             'model' => 'mock-correction-v1',
         ])

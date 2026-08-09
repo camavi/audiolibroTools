@@ -256,6 +256,7 @@ class DashboardBookController extends Controller
     ): JsonResponse {
         $validated = $request->validate([
             'version_id' => ['required', 'integer'],
+            'compare_version_id' => ['nullable', 'integer'],
             'provider_key' => ['nullable', 'string', 'max:80'],
             'model' => ['nullable', 'string', 'max:120'],
         ]);
@@ -272,8 +273,11 @@ class DashboardBookController extends Controller
         $version = $block->versions()
             ->whereKey($validated['version_id'])
             ->firstOrFail();
+        $compareVersion = isset($validated['compare_version_id'])
+            ? $block->versions()->whereKey($validated['compare_version_id'])->firstOrFail()
+            : null;
 
-        $comparison = $this->versionComparison($block, $version);
+        $comparison = $this->versionComparison($block, $version, $compareVersion);
 
         if (! $comparison) {
             return response()->json([
@@ -1319,8 +1323,14 @@ class DashboardBookController extends Controller
         ]);
     }
 
-    private function versionComparison(BookBlock $block, $version): ?array
+    private function versionComparison(BookBlock $block, $version, $compareVersion = null): ?array
     {
+        if ($compareVersion && (int) $compareVersion->id !== (int) $version->id) {
+            return $version->version_number <= $compareVersion->version_number
+                ? [$version, $compareVersion]
+                : [$compareVersion, $version];
+        }
+
         $ordered = $block->versions()
             ->orderBy('version_number')
             ->get();
