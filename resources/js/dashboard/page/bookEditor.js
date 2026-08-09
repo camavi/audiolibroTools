@@ -2,7 +2,7 @@ import { Editor, Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
-import { buildVersionTextDiff, summarizeVersionTextDiff } from '../editorDiff';
+import { buildVersionTextDiff, findApproximateTextMatch, summarizeVersionTextDiff } from '../editorDiff';
 
 
 const EDITOR_PREFERENCES_KEY = 'audiobookTools.editor.preferences';
@@ -840,6 +840,14 @@ function anchorSnippet(anchor, maxLength = 90) {
     if (!text) return '';
 
     return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
+}
+
+function commentAnchorStateLabel(comment) {
+    const anchor = commentAnchor(comment);
+    if (!anchor) return null;
+    if (comment.is_current_version) return 'Anchored';
+
+    return anchor.reanchored ? 'Reanchored' : 'Stale anchor';
 }
 
 function blockCommentContextBlockUuid() {
@@ -1714,7 +1722,7 @@ function commentsPanel(block) {
                     ),
                     anchorSnippet(anchor)
                         ? _.div({ class: 'at-commentAnchor' },
-                            _.span('Anchor'),
+                            _.span(commentAnchorStateLabel(comment) || 'Anchor'),
                             _.strong(anchorSnippet(anchor))
                         )
                         : null,
@@ -2749,6 +2757,31 @@ function editorText(keyBook) {
         return docPosition;
     };
 
+    const resolveCommentAnchorRange = (comment, node, blockPos) => {
+        const anchor = commentAnchor(comment);
+        if (!anchor?.text) return null;
+
+        let offsetStart = Number(anchor.offset_start || 0);
+        let offsetEnd = Number(anchor.offset_end || 0);
+        let reanchored = false;
+
+        if (!comment.is_current_version) {
+            const blockText = node.textBetween(0, node.content.size, ' ');
+            const match = findApproximateTextMatch(blockText, anchor.text, offsetStart);
+            if (!match) return null;
+
+            offsetStart = match.start;
+            offsetEnd = match.end;
+            reanchored = true;
+        }
+
+        const from = textOffsetToDocPosition(node, blockPos, offsetStart);
+        const to = textOffsetToDocPosition(node, blockPos, offsetEnd);
+        if (from === null || to === null || to <= from) return null;
+
+        return { from, to, reanchored };
+    };
+
     const buildCommentAnchorDecorations = () => {
         if (!editor) return DecorationSet.empty;
 
@@ -2760,18 +2793,21 @@ function editorText(keyBook) {
             if (!isTrackableNode(node) || !node.attrs?.blockId) return true;
 
             comments
-                .filter((comment) => comment.is_current_version && commentAnchor(comment)?.block_uuid === node.attrs.blockId)
+                .filter((comment) => commentAnchor(comment)?.block_uuid === node.attrs.blockId)
                 .forEach((comment) => {
                     const anchor = commentAnchor(comment);
-                    const from = textOffsetToDocPosition(node, pos, Number(anchor.offset_start || 0));
-                    const to = textOffsetToDocPosition(node, pos, Number(anchor.offset_end || 0));
-                    if (from === null || to === null || to <= from) return;
+                    const range = resolveCommentAnchorRange(comment, node, pos);
+                    if (!range) return;
 
-                    decorations.push(Decoration.inline(from, to, {
-                        class: (comment.status || 'open') === 'open'
-                            ? 'at-commentAnchorHighlight'
-                            : 'at-commentAnchorHighlight is-resolved',
-                        title: anchorSnippet(anchor),
+                    const classes = ['at-commentAnchorHighlight'];
+                    if ((comment.status || 'open') !== 'open') classes.push('is-resolved');
+                    if (!comment.is_current_version) classes.push('is-reanchored');
+
+                    decorations.push(Decoration.inline(range.from, range.to, {
+                        class: classes.join(' '),
+                        title: range.reanchored
+                            ? `Reanchored: ${anchorSnippet(anchor)}`
+                            : anchorSnippet(anchor),
                     }));
                 });
 

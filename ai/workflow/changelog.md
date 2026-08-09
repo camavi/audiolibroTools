@@ -72,3 +72,4 @@
 - Aggiunti marker commenti inline nell'editor: il blocco con commenti caricati mostra badge open/stale/resolved, click per aprire Comments e azione per rifocalizzare il blocco dalla lista commenti.
 - Aggiunto summary globale dei commenti per libro: endpoint conteggi per blocco, badge su Book Index e marker inline su tutti i blocchi commentati.
 - Aggiunti commenti ancorati alla selezione testo: il commento salva l'anchor in `metadata_json` e l'editor mostra highlight visuali tramite ProseMirror decorations.
+- Aggiunto riancoraggio visuale dei commenti: gli anchor stale vengono cercati nel testo corrente con `diff_match_patch` e mostrati come highlight riancorati quando ritrovati.
