@@ -821,7 +821,8 @@
 
 .at-commentItem-actions {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
     margin-top: 9px;
 }
 
@@ -1956,4 +1957,50 @@
 
 .at-tiptap-editor .tiptap>*:first-child {
     margin-top: 0;
+}
+
+.at-tiptap-editor .tiptap [data-block-id].has-editor-comments {
+    position: relative;
+    border-radius: 3px;
+    box-shadow: inset 3px 0 0 #2563eb;
+    cursor: pointer;
+}
+
+.at-tiptap-editor .tiptap [data-block-id].has-editor-comments::after {
+    content: attr(data-comment-count);
+    position: absolute;
+    top: 0.15em;
+    right: -30px;
+    display: grid;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    place-items: center;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.at-tiptap-editor .tiptap [data-block-id].comment-state-stale {
+    box-shadow: inset 3px 0 0 #d97706;
+}
+
+.at-tiptap-editor .tiptap [data-block-id].comment-state-stale::after {
+    border-color: #fde68a;
+    background: #fffbeb;
+    color: #b45309;
+}
+
+.at-tiptap-editor .tiptap [data-block-id].comment-state-resolved {
+    box-shadow: inset 3px 0 0 #16a34a;
+}
+
+.at-tiptap-editor .tiptap [data-block-id].comment-state-resolved::after {
+    border-color: #bbf7d0;
+    background: #f0fdf4;
+    color: #15803d;
 }

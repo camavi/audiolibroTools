@@ -103,6 +103,7 @@ let loadBlockComments = () => { };
 let createBlockComment = () => { };
 let createBlockCommentFromSource = () => { };
 let updateBlockCommentStatus = () => { };
+let refreshInlineCommentMarkers = () => { };
 let loadVoiceProfiles = () => { };
 let loadBlockVoiceAssignment = () => { };
 let saveBlockVoiceAssignment = () => { };
@@ -768,6 +769,14 @@ function setBlockCommentFilter(filter) {
     writeEditorPreference('blockCommentFilter', filter);
 }
 
+function cssSelectorEscape(value) {
+    const stringValue = String(value || '');
+
+    return globalThis.CSS?.escape
+        ? globalThis.CSS.escape(stringValue)
+        : stringValue.replace(/["\\]/g, '\\$&');
+}
+
 function activeBlockCommentCounts() {
     const comments = blockComments.value;
 
@@ -776,6 +785,28 @@ function activeBlockCommentCounts() {
         open: comments.filter((comment) => (comment.status || 'open') === 'open' && comment.is_current_version).length,
         resolved: comments.filter((comment) => comment.status === 'resolved').length,
         stale: comments.filter((comment) => !comment.is_current_version).length,
+    };
+}
+
+function blockCommentContextBlockUuid() {
+    const [, blockUuid] = String(blockCommentsContextKey.value || '').split(':');
+
+    return blockUuid || null;
+}
+
+function commentMarkerStateForBlock(blockUuid) {
+    if (!blockUuid || blockCommentsStatus.value === 'idle') return null;
+    if (blockCommentContextBlockUuid() !== blockUuid) return null;
+
+    const counts = activeBlockCommentCounts();
+    if (!counts.all) return null;
+
+    const state = counts.open ? 'open' : (counts.stale ? 'stale' : 'resolved');
+
+    return {
+        count: counts.open || counts.stale || counts.resolved || counts.all,
+        state,
+        title: `${counts.open} open comments, ${counts.resolved} resolved, ${counts.stale} stale`,
     };
 }
 
@@ -1623,6 +1654,11 @@ function commentsPanel(block) {
                     _.div({ class: 'at-commentItem-actions' },
                         _.button({
                             type: 'button',
+                            class: 'at-commentItem-action',
+                            onclick: () => focusEditorBlock(comment.block_uuid || block.block_uuid),
+                        }, 'Focus block'),
+                        _.button({
+                            type: 'button',
                             class: isOpen ? 'at-commentItem-action' : 'at-commentItem-action is-apply',
                             disabled: isBusy || actionStatus !== 'idle',
                             onclick: () => updateBlockCommentStatus(block, comment, isOpen ? 'resolved' : 'open'),
@@ -2351,6 +2387,7 @@ function editorText(keyBook) {
     let pendingSave = false;
     let autosaveBlocked = false;
     let isApplyingRemoteContent = false;
+    let inlineCommentMarkerFrame = null;
     const blockMeta = new Map();
 
     const editorMount = _.div({
@@ -2358,6 +2395,63 @@ function editorText(keyBook) {
         role: 'textbox',
         'aria-label': 'Book content editor',
     });
+
+    const clearInlineCommentMarkers = () => {
+        editorMount.querySelectorAll('[data-comment-marker="1"]').forEach((element) => {
+            element.classList.remove(
+                'has-editor-comments',
+                'comment-state-open',
+                'comment-state-stale',
+                'comment-state-resolved'
+            );
+            delete element.dataset.commentMarker;
+            delete element.dataset.commentCount;
+            element.removeAttribute('title');
+        });
+    };
+
+    const refreshCurrentInlineCommentMarkers = () => {
+        clearInlineCommentMarkers();
+
+        const blockUuid = blockCommentContextBlockUuid();
+        const marker = commentMarkerStateForBlock(blockUuid);
+        if (!editor?.view?.dom || !marker) return;
+
+        const blockElement = editor.view.dom.querySelector(`[data-block-id="${cssSelectorEscape(blockUuid)}"]`);
+        if (!blockElement) return;
+
+        blockElement.classList.add('has-editor-comments', `comment-state-${marker.state}`);
+        blockElement.dataset.commentMarker = '1';
+        blockElement.dataset.commentCount = String(marker.count);
+        blockElement.title = marker.title;
+    };
+
+    refreshInlineCommentMarkers = refreshCurrentInlineCommentMarkers;
+
+    const scheduleInlineCommentMarkerRefresh = () => {
+        if (inlineCommentMarkerFrame !== null) return;
+
+        inlineCommentMarkerFrame = requestAnimationFrame(() => {
+            inlineCommentMarkerFrame = null;
+            refreshCurrentInlineCommentMarkers();
+        });
+    };
+
+    const handleInlineCommentMarkerClick = (event) => {
+        const markerElement = event.target?.closest?.('[data-comment-marker="1"]');
+        if (!markerElement || !editorMount.contains(markerElement)) return;
+
+        const blockUuid = markerElement.dataset.blockId;
+        const block = blockMeta.get(blockUuid) || currentEditorBlocks.find((item) => item.block_uuid === blockUuid);
+        if (!block) return;
+
+        event.preventDefault();
+        setRightWorkspaceTool('comments');
+        focusEditorBlock(blockUuid);
+        loadBlockComments(block);
+    };
+
+    editorMount.addEventListener('click', handleInlineCommentMarkerClick);
 
     const refreshEditorUi = () => {
         editorUiTick.value += 1;
@@ -2567,10 +2661,7 @@ function editorText(keyBook) {
 
         editor.chain().focus(targetPos + 1).run();
 
-        const escapedBlockUuid = globalThis.CSS?.escape
-            ? globalThis.CSS.escape(blockUuid)
-            : blockUuid.replace(/"/g, '\\"');
-        const blockElement = editor.view.dom.querySelector(`[data-block-id="${escapedBlockUuid}"]`);
+        const blockElement = editor.view.dom.querySelector(`[data-block-id="${cssSelectorEscape(blockUuid)}"]`);
         blockElement?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 
         activeEditorBlockId.value = blockUuid;
@@ -3035,6 +3126,7 @@ function editorText(keyBook) {
             blockCommentsStatus.value = 'idle';
             blockCommentsContextKey.value = null;
             blockCommentsError.value = null;
+            scheduleInlineCommentMarkerRefresh();
             return;
         }
 
@@ -3043,8 +3135,15 @@ function editorText(keyBook) {
 
         blockCommentsContextKey.value = contextKey;
         blockComments.value = [];
-        blockCommentsStatus.value = 'loading';
         blockCommentsError.value = null;
+
+        if (!block.current_version_id) {
+            blockCommentsStatus.value = 'ready';
+            scheduleInlineCommentMarkerRefresh();
+            return;
+        }
+
+        blockCommentsStatus.value = 'loading';
 
         _.http.getJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/comments`)
             .then((payload) => {
@@ -3053,13 +3152,24 @@ function editorText(keyBook) {
                 const data = normalizeDataPayload(payload);
                 blockComments.value = data.comments || [];
                 blockCommentsStatus.value = 'ready';
+                scheduleInlineCommentMarkerRefresh();
             })
             .catch((error) => {
                 if (blockCommentsContextKey.value !== contextKey) return;
 
+                const statusCode = error?.response?.status || error?.status;
+                if (statusCode === 404) {
+                    blockComments.value = [];
+                    blockCommentsError.value = null;
+                    blockCommentsStatus.value = 'ready';
+                    scheduleInlineCommentMarkerRefresh();
+                    return;
+                }
+
                 blockComments.value = [];
                 blockCommentsError.value = requestErrorMessage(error, 'Unable to load comments for this block.');
                 blockCommentsStatus.value = 'error';
+                scheduleInlineCommentMarkerRefresh();
             });
     };
 
@@ -3075,6 +3185,7 @@ function editorText(keyBook) {
         });
         blockCommentsError.value = null;
         blockCommentsStatus.value = 'ready';
+        scheduleInlineCommentMarkerRefresh();
     };
 
     createBlockCommentFromSource = async (block, body, versionId = null) => {
@@ -3936,10 +4047,17 @@ function editorText(keyBook) {
         syncEditorBlocks();
         updateActiveBlock();
         editorReady.value = true;
+        scheduleInlineCommentMarkerRefresh();
         refreshEditorUi();
     };
 
     const destroyEditor = () => {
+        if (inlineCommentMarkerFrame !== null) {
+            cancelAnimationFrame(inlineCommentMarkerFrame);
+            inlineCommentMarkerFrame = null;
+        }
+        editorMount.removeEventListener('click', handleInlineCommentMarkerClick);
+        clearInlineCommentMarkers();
         editorReady.value = false;
         editorUiTick.value += 1;
         editorStatus.value = null;
@@ -4012,6 +4130,7 @@ function editorText(keyBook) {
         createBlockComment = () => { };
         createBlockCommentFromSource = () => { };
         updateBlockCommentStatus = () => { };
+        refreshInlineCommentMarkers = () => { };
         loadVoiceProfiles = () => { };
         loadBlockVoiceAssignment = () => { };
         saveBlockVoiceAssignment = () => { };

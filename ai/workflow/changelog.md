@@ -69,3 +69,4 @@
 - Migliorato dialog View changes: selettore della versione da confrontare, split view vecchio/nuovo, toggle only changes e azione `Explain this diff` sul confronto scelto.
 - Migliorato tool Comments: filtri Open/Resolved/Stale/All con contatori, preferenza locale del filtro e badge commenti nel Book Index per il blocco selezionato.
 - Collegato Versions a Comments: commenti creabili da diff e spiegazioni AI, con supporto backend a `book_block_version_id` per tracciare note su versioni specifiche.
+- Aggiunti marker commenti inline nell'editor: il blocco con commenti caricati mostra badge open/stale/resolved, click per aprire Comments e azione per rifocalizzare il blocco dalla lista commenti.
