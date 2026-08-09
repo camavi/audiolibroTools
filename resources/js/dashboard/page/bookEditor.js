@@ -101,6 +101,7 @@ let applyBlockReview = () => { };
 let rejectBlockReview = () => { };
 let loadBlockComments = () => { };
 let createBlockComment = () => { };
+let createBlockCommentFromSource = () => { };
 let updateBlockCommentStatus = () => { };
 let loadVoiceProfiles = () => { };
 let loadBlockVoiceAssignment = () => { };
@@ -1112,6 +1113,25 @@ function openVersionDiffDialog(block, version, versions) {
                     _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Close'),
                     _.Btn({
                         type: 'button',
+                        color: 'secondary',
+                        disabled: () => {
+                            const comparison = resolveVersionComparison(version, versions, compareTarget.value);
+
+                            return !comparison
+                                || !block?.current_version_id
+                                || block?.dirty
+                                || blockCommentActionStatus.value !== 'idle';
+                        },
+                        onClick: async () => {
+                            const comparison = resolveVersionComparison(version, versions, compareTarget.value);
+                            if (!comparison) return;
+
+                            await createBlockCommentFromSource(block, versionDiffCommentBody(comparison), version.id);
+                            close();
+                        },
+                    }, () => blockCommentActionStatus.value === 'creating' ? 'Adding...' : 'Add as comment'),
+                    _.Btn({
+                        type: 'button',
                         color: 'primary',
                         disabled: () => {
                             const comparison = resolveVersionComparison(version, versions, compareTarget.value);
@@ -1238,6 +1258,18 @@ function versionDiffContent(comparison, showOnlyChanges = false) {
                 : _.span({ class: 'at-versionDiff-token is-same' }, 'No text changes.')
         )
     );
+}
+
+function versionDiffCommentBody(comparison) {
+    const parts = buildVersionTextDiff(comparison.from.text_plain, comparison.to.text_plain);
+    const summary = summarizeVersionTextDiff(parts);
+
+    return [
+        `Version diff ${comparison.fromLabel} -> ${comparison.toLabel}`,
+        `Added: ${summary.added} words. Removed: ${summary.removed} words.`,
+        '',
+        'Review this change before applying related editorial, audio or translation decisions.',
+    ].join('\n');
 }
 
 function versionHasActivity(version) {
@@ -1398,7 +1430,17 @@ function versionsPanel(block, keyBook) {
                             _.strong(version.explanation.provider_name || 'AI'),
                             _.span(version.explanation.model || '')
                         ),
-                        _.p(version.explanation.answer || '')
+                        _.p(version.explanation.answer || ''),
+                        _.div({ class: 'at-versionExplanation-actions' },
+                            _.button({
+                                type: 'button',
+                                class: 'at-versionExplanation-action',
+                                disabled: () => !block?.current_version_id
+                                    || block?.dirty
+                                    || blockCommentActionStatus.value !== 'idle',
+                                onclick: () => createBlockCommentFromSource(block, version.explanation.answer || '', version.id),
+                            }, () => blockCommentActionStatus.value === 'creating' ? 'Adding...' : 'Add comment')
+                        )
                     ) : null,
                     _.div({ class: 'at-versionItem-actions' },
                         _.button({
@@ -3035,34 +3077,43 @@ function editorText(keyBook) {
         blockCommentsStatus.value = 'ready';
     };
 
-    createBlockComment = (block) => {
-        const body = blockCommentDraft.value.trim();
-        if (!keyBook || !block?.block_uuid || !body || block.dirty || !block.current_version_id || blockCommentActionStatus.value !== 'idle') return;
+    createBlockCommentFromSource = async (block, body, versionId = null) => {
+        const commentBody = String(body || '').trim();
+        if (!keyBook || !block?.block_uuid || !commentBody || block.dirty || !block.current_version_id || blockCommentActionStatus.value !== 'idle') return;
 
         blockCommentActionStatus.value = 'creating';
         blockCommentsError.value = null;
 
-        _.http.postJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/comments`, {
-            body,
-        })
-            .then((payload) => {
-                const data = normalizeDataPayload(payload);
-
-                if (data.comment) {
-                    blockCommentsContextKey.value = `${keyBook}:${block.block_uuid}:${block.current_version_id || 'new'}`;
-                    upsertCommentInList(data.comment);
-                    blockCommentDraft.value = '';
-                } else {
-                    loadBlockComments(block, { force: true });
-                }
-            })
-            .catch((error) => {
-                blockCommentsError.value = requestErrorMessage(error, 'Unable to create comment.');
-                blockCommentsStatus.value = 'error';
-            })
-            .finally(() => {
-                blockCommentActionStatus.value = 'idle';
+        try {
+            const payload = await _.http.postJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/comments`, {
+                body: commentBody,
+                book_block_version_id: versionId || null,
             });
+            const data = normalizeDataPayload(payload);
+
+            if (data.comment) {
+                blockCommentsContextKey.value = `${keyBook}:${block.block_uuid}:${block.current_version_id || 'new'}`;
+                upsertCommentInList(data.comment);
+                setRightWorkspaceTool('comments');
+            } else {
+                loadBlockComments(block, { force: true });
+            }
+        } catch (error) {
+            blockCommentsError.value = requestErrorMessage(error, 'Unable to create comment.');
+            blockCommentsStatus.value = 'error';
+            setRightWorkspaceTool('comments');
+        } finally {
+            blockCommentActionStatus.value = 'idle';
+        }
+    };
+
+    createBlockComment = async (block) => {
+        const body = blockCommentDraft.value.trim();
+        await createBlockCommentFromSource(block, body);
+
+        if (blockCommentsStatus.value !== 'error') {
+            blockCommentDraft.value = '';
+        }
     };
 
     updateBlockCommentStatus = (block, comment, status) => {
@@ -3959,6 +4010,7 @@ function editorText(keyBook) {
         rejectBlockReview = () => { };
         loadBlockComments = () => { };
         createBlockComment = () => { };
+        createBlockCommentFromSource = () => { };
         updateBlockCommentStatus = () => { };
         loadVoiceProfiles = () => { };
         loadBlockVoiceAssignment = () => { };

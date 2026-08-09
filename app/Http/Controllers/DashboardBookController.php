@@ -640,6 +640,7 @@ class DashboardBookController extends Controller
     {
         $validated = $request->validate([
             'body' => ['required', 'string', 'max:5000'],
+            'book_block_version_id' => ['nullable', 'integer'],
         ]);
 
         $book = Book::query()
@@ -660,10 +661,14 @@ class DashboardBookController extends Controller
             ], 422);
         }
 
+        $commentVersion = isset($validated['book_block_version_id'])
+            ? $block->versions()->whereKey($validated['book_block_version_id'])->firstOrFail()
+            : $block->currentVersion;
+
         $comment = BookBlockComment::query()->create([
             'book_id' => $book->id,
             'book_block_id' => $block->id,
-            'book_block_version_id' => $block->currentVersion->id,
+            'book_block_version_id' => $commentVersion->id,
             'block_uuid' => $block->block_uuid,
             'status' => 'open',
             'body' => trim($validated['body']),

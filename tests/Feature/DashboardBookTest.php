@@ -977,6 +977,39 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.comments.0.status', 'open');
     }
 
+    public function test_dashboard_can_create_comment_for_specific_block_version(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $first = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Older paragraph.'),
+            'text_plain' => 'Older paragraph.',
+        ]);
+
+        $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'base_version_id' => $first['version']->id,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Current paragraph.'),
+            'text_plain' => 'Current paragraph.',
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/comments", [
+            'body' => 'Review this old version before restoring.',
+            'book_block_version_id' => $first['version']->id,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.comment.block_version_id', $first['version']->id)
+            ->assertJsonPath('data.comment.version_number', 1)
+            ->assertJsonPath('data.comment.is_current_version', false);
+    }
+
     public function test_dashboard_can_resolve_and_reopen_block_comment(): void
     {
         $book = $this->createBook();
