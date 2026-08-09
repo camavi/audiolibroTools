@@ -1127,6 +1127,74 @@
     -webkit-line-clamp: 3;
 }
 
+.at-versionControls {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.at-versionFilterBar {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+}
+
+.at-versionFilter {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 5px 6px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #334155;
+    cursor: pointer;
+    font: inherit;
+}
+
+.at-versionFilter:hover {
+    border-color: #93c5fd;
+    background: #f8fbff;
+}
+
+.at-versionFilter.is-active {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.at-versionFilter span {
+    overflow: hidden;
+    font-size: 11px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.at-versionFilter strong {
+    min-width: 18px;
+    padding: 1px 4px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #334155;
+    font-size: 10px;
+    line-height: 1.4;
+    text-align: center;
+}
+
+.at-versionFilter.is-active strong {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.at-versionControls-row {
+    display: grid;
+    grid-template-columns: minmax(0, 0.78fr) minmax(0, 1fr);
+    gap: 6px;
+}
+
 .at-versionItem-actions {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));

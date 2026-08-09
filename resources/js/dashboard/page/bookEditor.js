@@ -23,6 +23,9 @@ const blockVersionsContextKey = _.rod(null);
 const blockVersionActionStatus = _.rod('idle');
 const blockVersionsError = _.rod(null);
 const hiddenVersionExplanationIds = _.rod([]);
+const versionFilter = _.rod('all');
+const versionSortOrder = _.rod('newest');
+const versionSearch = _.rod('');
 const blockReviews = _.rod([]);
 const blockReviewsStatus = _.rod('idle');
 const blockReviewsContextKey = _.rod(null);
@@ -165,6 +168,19 @@ const translationLocaleOptions = [
     { label: 'Korean', value: 'ko' },
 ];
 
+const versionFilterOptions = [
+    { label: 'All', value: 'all' },
+    { label: 'Current', value: 'current' },
+    { label: 'Activity', value: 'activity' },
+    { label: 'Stale', value: 'stale' },
+    { label: 'AI', value: 'ai' },
+];
+
+const versionSortOptions = [
+    { label: 'Newest first', value: 'newest' },
+    { label: 'Oldest first', value: 'oldest' },
+];
+
 function readEditorPreferences() {
     try {
         return JSON.parse(globalThis.localStorage?.getItem(EDITOR_PREFERENCES_KEY) || '{}');
@@ -195,6 +211,9 @@ function restoreEditorPreferences() {
     if (pageFormats.has(preferences.pageFormat)) editorPageFormat.value = preferences.pageFormat;
     if (tools.has(preferences.rightWorkspaceTool)) rightWorkspaceTool.value = preferences.rightWorkspaceTool;
     if (locales.has(preferences.translationTargetLocale)) translationTargetLocale.value = preferences.translationTargetLocale;
+    if (versionFilterOptions.some((option) => option.value === preferences.versionFilter)) versionFilter.value = preferences.versionFilter;
+    if (versionSortOptions.some((option) => option.value === preferences.versionSortOrder)) versionSortOrder.value = preferences.versionSortOrder;
+    if (typeof preferences.versionSearch === 'string') versionSearch.value = preferences.versionSearch;
     if (Array.isArray(preferences.hiddenVersionExplanationIds)) {
         hiddenVersionExplanationIds.value = preferences.hiddenVersionExplanationIds.filter((id) => Number.isFinite(Number(id)));
     }
@@ -719,6 +738,21 @@ function setTranslationTargetLocale(locale) {
     writeEditorPreference('translationTargetLocale', locale);
 }
 
+function setVersionFilter(filter) {
+    versionFilter.value = filter;
+    writeEditorPreference('versionFilter', filter);
+}
+
+function setVersionSortOrder(order) {
+    versionSortOrder.value = order;
+    writeEditorPreference('versionSortOrder', order);
+}
+
+function setVersionSearch(search) {
+    versionSearch.value = search;
+    writeEditorPreference('versionSearch', search);
+}
+
 function isVersionExplanationHidden(version) {
     const explanationId = Number(version?.explanation?.id || 0);
     if (!explanationId) return false;
@@ -1065,6 +1099,81 @@ function versionDiffContent(comparison) {
     );
 }
 
+function versionHasActivity(version) {
+    return Object.values(version.activity || {}).some((count) => Number(count) > 0);
+}
+
+function versionSearchText(version) {
+    return [
+        `v${version.version_number || ''}`,
+        version.source || '',
+        version.text_plain || '',
+        version.explanation?.answer || '',
+        version.explanation?.provider_name || '',
+        version.explanation?.model || '',
+    ].join(' ').toLowerCase();
+}
+
+function versionFilterCounts(versions) {
+    return {
+        all: versions.length,
+        current: versions.filter((version) => version.is_current).length,
+        activity: versions.filter(versionHasActivity).length,
+        stale: versions.filter((version) => version.has_stale_activity).length,
+        ai: versions.filter((version) => Boolean(version.explanation)).length,
+    };
+}
+
+function visibleVersions(versions) {
+    const search = versionSearch.value.trim().toLowerCase();
+    const filtered = versions.filter((version) => {
+        if (versionFilter.value === 'current' && !version.is_current) return false;
+        if (versionFilter.value === 'activity' && !versionHasActivity(version)) return false;
+        if (versionFilter.value === 'stale' && !version.has_stale_activity) return false;
+        if (versionFilter.value === 'ai' && !version.explanation) return false;
+
+        return !search || versionSearchText(version).includes(search);
+    });
+
+    return filtered.sort((first, second) => {
+        const direction = versionSortOrder.value === 'oldest' ? 1 : -1;
+
+        return direction * (Number(first.version_number || 0) - Number(second.version_number || 0));
+    });
+}
+
+function versionListControls(versions) {
+    const counts = versionFilterCounts(versions);
+
+    return _.div({ class: 'at-versionControls' },
+        _.div({ class: 'at-versionFilterBar' }, versionFilterOptions.map((option) => _.button({
+            type: 'button',
+            class: option.value === versionFilter.value ? 'at-versionFilter is-active' : 'at-versionFilter',
+            onclick: () => setVersionFilter(option.value),
+        },
+            _.span(option.label),
+            _.strong(String(counts[option.value] || 0))
+        ))),
+        _.div({ class: 'at-versionControls-row' },
+            _.Select({
+                label: 'Order',
+                icon: 'sort',
+                model: versionSortOrder,
+                options: versionSortOptions,
+                onChange: (value) => setVersionSortOrder(selectChangeValue(value, versionSortOrder.value)),
+            }),
+            _.Input({
+                label: 'Search',
+                icon: 'search',
+                model: versionSearch,
+                placeholder: 'Search versions',
+                onInput: (event) => setVersionSearch(event.target.value),
+                onChange: (value) => setVersionSearch(selectChangeValue(value, versionSearch.value)),
+            })
+        )
+    );
+}
+
 function versionsPanel(block, keyBook) {
     if (!block) {
         return _.div({ class: 'at-rightWorkspace-section' },
@@ -1090,6 +1199,7 @@ function versionsPanel(block, keyBook) {
     }
 
     const versions = blockVersions.value;
+    const filteredVersions = visibleVersions(versions);
     const staleActivityCount = versions.filter((version) => version.has_stale_activity).length;
     const aiSummary = versionsAiSummary();
 
@@ -1110,8 +1220,10 @@ function versionsPanel(block, keyBook) {
         staleActivityCount ? _.div({ class: 'at-rightWorkspace-note warning' },
             `${staleActivityCount} older version${staleActivityCount === 1 ? ' has' : 's have'} linked activity.`
         ) : null,
+        versions.length ? versionListControls(versions) : null,
         versions.length
-            ? _.div({ class: 'at-versionList' }, versions.map((version) => {
+            ? filteredVersions.length
+                ? _.div({ class: 'at-versionList' }, filteredVersions.map((version) => {
                 const activityBadges = versionActivityBadges(version);
                 const classes = ['at-versionItem'];
                 if (version.is_current) classes.push('is-current');
@@ -1170,6 +1282,10 @@ function versionsPanel(block, keyBook) {
                     )
                 );
             }))
+                : _.div({ class: 'at-rightWorkspace-emptyState' },
+                    _.strong('No matching versions'),
+                    _.p('Adjust the filter, order or search text.')
+                )
             : _.p('No versions saved for this block yet.')
     );
 }
