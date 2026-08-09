@@ -17,6 +17,7 @@ use App\Models\BookCategory;
 use App\Models\BookVoiceProfile;
 use App\Services\Ai\EditorAiChatService;
 use App\Services\Ai\EditorAiCorrectionService;
+use App\Services\Ai\EditorAiVersionService;
 use App\Services\BookBlockService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -240,10 +241,86 @@ class DashboardBookController extends Controller
                             + $version->source_translations_count
                             + $version->ai_chat_threads_count
                         ) > 0,
+                        'explanation' => $this->latestVersionExplanation($version),
                     ])
                     ->values(),
             ],
         ]);
+    }
+
+    public function explainBlockVersion(
+        Request $request,
+        string $keyBook,
+        string $blockUuid,
+        EditorAiVersionService $versions,
+    ): JsonResponse {
+        $validated = $request->validate([
+            'version_id' => ['required', 'integer'],
+            'provider_key' => ['nullable', 'string', 'max:80'],
+            'model' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->with('currentVersion')
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        $version = $block->versions()
+            ->whereKey($validated['version_id'])
+            ->firstOrFail();
+
+        $comparison = $this->versionComparison($block, $version);
+
+        if (! $comparison) {
+            return response()->json([
+                'message' => 'No comparison version is available.',
+                'errors' => [
+                    'version_id' => ['This block needs at least two versions before AI can explain changes.'],
+                ],
+            ], 422);
+        }
+
+        [$fromVersion, $toVersion] = $comparison;
+        $message = $versions->explain(
+            $book,
+            $block,
+            $fromVersion,
+            $toVersion,
+            $validated['provider_key'] ?? null,
+            $validated['model'] ?? null,
+        );
+
+        $thread = AiChatThread::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $block->id,
+            'book_block_version_id' => $version->id,
+            'scope' => 'versions',
+            'block_uuid' => $block->block_uuid,
+            'title' => $message['metadata']['message'],
+            'created_by' => auth()->id(),
+        ]);
+
+        AiChatMessage::query()->create([
+            'ai_chat_thread_id' => $thread->id,
+            'role' => 'assistant',
+            'content' => $message['answer'],
+            'source' => $message['source'],
+            'provider_key' => $message['provider_key'],
+            'model' => $message['model'],
+            'metadata_json' => $message['metadata'],
+            'created_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'data' => [
+                'thread' => $this->serializeChatThread($thread->refresh()),
+                'explanation' => $this->serializeVersionExplanation($thread),
+            ],
+        ], 201);
     }
 
     public function restoreBlockVersion(
@@ -1240,6 +1317,61 @@ class DashboardBookController extends Controller
             'title' => mb_substr(trim($message), 0, 180),
             'created_by' => auth()->id(),
         ]);
+    }
+
+    private function versionComparison(BookBlock $block, $version): ?array
+    {
+        $ordered = $block->versions()
+            ->orderBy('version_number')
+            ->get();
+        $current = $ordered->firstWhere('id', $block->current_version_id) ?: $ordered->last();
+
+        if (! $current) {
+            return null;
+        }
+
+        if ((int) $version->id !== (int) $current->id) {
+            return [$version, $current];
+        }
+
+        $currentIndex = $ordered->search(fn ($item) => (int) $item->id === (int) $version->id);
+        $previous = $currentIndex !== false ? $ordered->get($currentIndex - 1) : null;
+
+        return $previous ? [$previous, $version] : null;
+    }
+
+    private function latestVersionExplanation($version): ?array
+    {
+        $thread = $version->aiChatThreads()
+            ->where('scope', 'versions')
+            ->latest('id')
+            ->first();
+
+        return $thread ? $this->serializeVersionExplanation($thread) : null;
+    }
+
+    private function serializeVersionExplanation(AiChatThread $thread): ?array
+    {
+        $message = $thread->messages()
+            ->where('role', 'assistant')
+            ->latest('id')
+            ->first();
+
+        if (! $message) {
+            return null;
+        }
+
+        return [
+            'id' => $message->id,
+            'thread_id' => $thread->id,
+            'answer' => $message->content,
+            'source' => $message->source,
+            'provider_key' => $message->provider_key,
+            'provider_name' => $message->metadata_json['provider_name'] ?? $message->provider_key,
+            'model' => $message->model,
+            'metadata' => $message->metadata_json ?? [],
+            'created_at' => $message->created_at?->toISOString(),
+        ];
     }
 
     private function serializeChatThread(AiChatThread $thread): array

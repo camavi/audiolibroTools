@@ -64,3 +64,4 @@
 - Migliorato pannello Versions: ogni versione mostra activity count per correzioni, commenti, voci, audio, traduzioni e chat AI, con evidenza delle versioni vecchie che hanno link stale.
 - Aggiunta diff visuale nel pannello Versions: riuso dell'algoritmo storico `diff_match_patch` come modulo ES, pulsante `View changes` per ogni versione e dialog con parole aggiunte/rimosse.
 - Reso operativo Restore nel pannello Versions: il backend crea una nuova versione `restore` copiando una versione precedente e il frontend ricarica TipTap e storico senza perdere la traccia.
+- Avviato Explain changes nel pannello Versions: servizio AI dedicato, endpoint per spiegare il confronto tra versioni, salvataggio come activity AI `versions` e card con ultima spiegazione.

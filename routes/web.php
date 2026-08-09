@@ -48,6 +48,7 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::get('/books/{keyBook}/ai/chat', [DashboardBookController::class, 'aiChatThread'])->name('books.ai.chat.thread');
     Route::post('/books/{keyBook}/ai/chat', [DashboardBookController::class, 'aiChat'])->name('books.ai.chat');
     Route::get('/books/{keyBook}/blocks/{blockUuid}/versions', [DashboardBookController::class, 'blockVersions'])->name('books.blocks.versions');
+    Route::post('/books/{keyBook}/blocks/{blockUuid}/versions/explain', [DashboardBookController::class, 'explainBlockVersion'])->name('books.blocks.versions.explain');
     Route::post('/books/{keyBook}/blocks/{blockUuid}/versions/restore', [DashboardBookController::class, 'restoreBlockVersion'])->name('books.blocks.versions.restore');
     Route::get('/books/{keyBook}/blocks/{blockUuid}/voice-assignment', [DashboardBookController::class, 'blockVoiceAssignment'])->name('books.blocks.voice-assignment');
     Route::patch('/books/{keyBook}/blocks/{blockUuid}/voice-assignment', [DashboardBookController::class, 'updateBlockVoiceAssignment'])->name('books.blocks.voice-assignment.update');

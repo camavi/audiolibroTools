@@ -21,6 +21,8 @@ const blockVersions = _.rod([]);
 const blockVersionsStatus = _.rod('idle');
 const blockVersionsContextKey = _.rod(null);
 const blockVersionActionStatus = _.rod('idle');
+const blockVersionsError = _.rod(null);
+const hiddenVersionExplanationIds = _.rod([]);
 const blockReviews = _.rod([]);
 const blockReviewsStatus = _.rod('idle');
 const blockReviewsContextKey = _.rod(null);
@@ -88,6 +90,7 @@ const savingAiSetting = _.rod(false);
 let focusEditorBlock = () => { };
 let loadBlockVersions = () => { };
 let restoreBlockVersion = () => { };
+let explainBlockVersion = () => { };
 let loadBlockReviews = () => { };
 let createBlockReview = () => { };
 let applyBlockReview = () => { };
@@ -192,6 +195,9 @@ function restoreEditorPreferences() {
     if (pageFormats.has(preferences.pageFormat)) editorPageFormat.value = preferences.pageFormat;
     if (tools.has(preferences.rightWorkspaceTool)) rightWorkspaceTool.value = preferences.rightWorkspaceTool;
     if (locales.has(preferences.translationTargetLocale)) translationTargetLocale.value = preferences.translationTargetLocale;
+    if (Array.isArray(preferences.hiddenVersionExplanationIds)) {
+        hiddenVersionExplanationIds.value = preferences.hiddenVersionExplanationIds.filter((id) => Number.isFinite(Number(id)));
+    }
 }
 
 restoreEditorPreferences();
@@ -557,6 +563,31 @@ function translateAiSummary() {
     };
 }
 
+function versionsAiSetting() {
+    if (aiServiceSettings.value.versions) return aiServiceSettings.value.versions;
+    if (aiProviderSetting.value.service === 'versions') return aiProviderSetting.value;
+
+    return {
+        service: 'versions',
+        provider_key: 'mock',
+        model: 'mock-correction-v1',
+    };
+}
+
+function versionsAiSummary() {
+    const setting = versionsAiSetting();
+    const provider = providerByKey(setting.provider_key);
+
+    return {
+        setting,
+        provider,
+        providerName: provider?.name || setting.provider_key || 'Versions provider',
+        model: setting.model || provider?.default_model || '',
+        hasApiKey: Boolean(provider?.has_api_key),
+        missingApiKey: providerNeedsApiKey(setting.provider_key) && !provider?.has_api_key,
+    };
+}
+
 function syncAiSettingModels(setting) {
     const service = setting.service || 'correction';
     const providerKey = setting.provider_key || 'mock';
@@ -688,6 +719,25 @@ function setTranslationTargetLocale(locale) {
     writeEditorPreference('translationTargetLocale', locale);
 }
 
+function isVersionExplanationHidden(version) {
+    const explanationId = Number(version?.explanation?.id || 0);
+    if (!explanationId) return false;
+
+    return hiddenVersionExplanationIds.value.includes(explanationId);
+}
+
+function toggleVersionExplanation(version) {
+    const explanationId = Number(version?.explanation?.id || 0);
+    if (!explanationId) return;
+
+    const hiddenIds = hiddenVersionExplanationIds.value.includes(explanationId)
+        ? hiddenVersionExplanationIds.value.filter((id) => id !== explanationId)
+        : [...hiddenVersionExplanationIds.value, explanationId];
+
+    hiddenVersionExplanationIds.value = hiddenIds;
+    writeEditorPreference('hiddenVersionExplanationIds', hiddenIds);
+}
+
 function saveStatusLabel(status) {
     const labels = {
         idle: 'Idle',
@@ -725,6 +775,7 @@ function activeServerEvents() {
     if (aiProviderStatus.value === 'loading') events.push('Loading AI settings');
     if (blockVersionsStatus.value === 'loading') events.push('Loading versions');
     if (blockVersionActionStatus.value.startsWith('restoring:')) events.push('Restoring version');
+    if (blockVersionActionStatus.value.startsWith('explaining:')) events.push('Explaining changes');
     if (blockReviewsStatus.value === 'loading') events.push('Loading corrections');
     if (blockReviewActionStatus.value === 'checking') events.push('Checking block');
     if (blockCommentsStatus.value === 'loading') events.push('Loading comments');
@@ -1014,7 +1065,7 @@ function versionDiffContent(comparison) {
     );
 }
 
-function versionsPanel(block) {
+function versionsPanel(block, keyBook) {
     if (!block) {
         return _.div({ class: 'at-rightWorkspace-section' },
             _.h3('Version history'),
@@ -1040,9 +1091,22 @@ function versionsPanel(block) {
 
     const versions = blockVersions.value;
     const staleActivityCount = versions.filter((version) => version.has_stale_activity).length;
+    const aiSummary = versionsAiSummary();
 
     return _.div({ class: 'at-rightWorkspace-section' },
         _.h3('Version history'),
+        _.div({ class: aiSummary.missingApiKey ? 'at-correctionProvider has-warning' : 'at-correctionProvider' },
+            _.div({ class: 'at-correctionProvider-main' },
+                _.span('Provider'),
+                _.strong(`${aiSummary.providerName}${aiSummary.model ? ` · ${aiSummary.model}` : ''}`)
+            ),
+            aiSummary.missingApiKey ? _.button({
+                type: 'button',
+                class: 'at-correctionProvider-action',
+                onclick: () => openToolAiSettingsDialog(keyBook, 'versions', 'Versions'),
+            }, 'Configure AI settings') : null
+        ),
+        () => blockVersionsError.value ? _.div({ class: 'at-chatError' }, blockVersionsError.value) : null,
         staleActivityCount ? _.div({ class: 'at-rightWorkspace-note warning' },
             `${staleActivityCount} older version${staleActivityCount === 1 ? ' has' : 's have'} linked activity.`
         ) : null,
@@ -1052,6 +1116,7 @@ function versionsPanel(block) {
                 const classes = ['at-versionItem'];
                 if (version.is_current) classes.push('is-current');
                 if (version.has_stale_activity) classes.push('has-staleActivity');
+                const explanationHidden = isVersionExplanationHidden(version);
 
                 return _.div({
                     class: classes.join(' '),
@@ -1068,12 +1133,34 @@ function versionsPanel(block) {
                     ),
                     activityBadges.length ? _.div({ class: 'at-versionActivity' }, activityBadges) : null,
                     _.div({ class: 'at-versionItem-preview' }, version.text_plain || 'Empty block'),
+                    version.explanation ? _.div({ class: 'at-versionExplanationToggle' },
+                        _.button({
+                            type: 'button',
+                            class: 'at-versionExplanationToggleButton',
+                            onclick: () => toggleVersionExplanation(version),
+                        }, explanationHidden ? 'Show explanation' : 'Hide explanation')
+                    ) : null,
+                    version.explanation && !explanationHidden ? _.div({ class: 'at-versionExplanation' },
+                        _.div({ class: 'at-versionExplanation-head' },
+                            _.strong(version.explanation.provider_name || 'AI'),
+                            _.span(version.explanation.model || '')
+                        ),
+                        _.p(version.explanation.answer || '')
+                    ) : null,
                     _.div({ class: 'at-versionItem-actions' },
                         _.button({
                             type: 'button',
                             class: 'at-rightWorkspace-action',
                             onclick: () => openVersionDiffDialog(version, versions),
                         }, 'View changes'),
+                        _.button({
+                            type: 'button',
+                            class: 'at-rightWorkspace-action',
+                            disabled: () => versions.length < 2
+                                || blockVersionActionStatus.value !== 'idle'
+                                || versionsAiSummary().missingApiKey,
+                            onclick: () => explainBlockVersion(block, version),
+                        }, () => blockVersionActionStatus.value === `explaining:${version.id}` ? 'Explaining...' : 'Explain'),
                         _.button({
                             type: 'button',
                             class: 'at-rightWorkspace-action',
@@ -1824,10 +1911,11 @@ function rightWorkspaceBody(tool, block, keyBook) {
 
     if (tool.id === 'versions') {
         loadBlockVersions(block);
+        runUntracked(() => loadAiProviders(keyBook, 'versions'));
 
         return _.div({ class: 'at-rightWorkspace-body' },
             blockContextSummary(block),
-            versionsPanel(block)
+            versionsPanel(block, keyBook)
         );
     }
 
@@ -2451,6 +2539,7 @@ function editorText(keyBook) {
             blockVersions.value = [];
             blockVersionsStatus.value = 'idle';
             blockVersionsContextKey.value = null;
+            blockVersionsError.value = null;
             return;
         }
 
@@ -2459,6 +2548,13 @@ function editorText(keyBook) {
 
         blockVersionsContextKey.value = contextKey;
         blockVersions.value = [];
+        blockVersionsError.value = null;
+
+        if (!block.current_version_id) {
+            blockVersionsStatus.value = 'ready';
+            return;
+        }
+
         blockVersionsStatus.value = 'loading';
 
         _.http.getJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/versions`)
@@ -2469,12 +2565,63 @@ function editorText(keyBook) {
                 blockVersions.value = data.versions || [];
                 blockVersionsStatus.value = 'ready';
             })
-            .catch(() => {
+            .catch((error) => {
                 if (blockVersionsContextKey.value !== contextKey) return;
+
+                const statusCode = error?.response?.status || error?.status;
+                if (statusCode === 404) {
+                    blockVersions.value = [];
+                    blockVersionsStatus.value = 'ready';
+                    blockVersionsError.value = null;
+                    return;
+                }
 
                 blockVersions.value = [];
                 blockVersionsStatus.value = 'error';
+                blockVersionsError.value = 'Unable to load versions for this block.';
             });
+    };
+
+    explainBlockVersion = async (block, version) => {
+        if (!keyBook || !block?.block_uuid || !version?.id) return;
+        if (blockVersionActionStatus.value !== 'idle') return;
+
+        const aiSummary = versionsAiSummary();
+        if (aiSummary.missingApiKey) {
+            blockVersionsError.value = 'Configure the Versions AI provider before explaining changes.';
+            return;
+        }
+
+        blockVersionActionStatus.value = `explaining:${version.id}`;
+        blockVersionsError.value = null;
+
+        try {
+            const payload = await _.http.postJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/versions/explain`, {
+                version_id: version.id,
+                provider_key: aiSummary.setting.provider_key,
+                model: aiSummary.model,
+            });
+            const data = normalizeDataPayload(payload);
+
+            blockVersions.value = blockVersions.value.map((item) => item.id === version.id
+                ? {
+                    ...item,
+                    explanation: data.explanation || item.explanation || null,
+                    activity: {
+                        ...(item.activity || {}),
+                        ai_chats: ((item.activity || {}).ai_chats || 0) + 1,
+                    },
+                    has_activity: true,
+                }
+                : item);
+            blockVersionsContextKey.value = null;
+            loadBlockVersions(block);
+        } catch (error) {
+            blockVersionsError.value = requestErrorMessage(error, 'Unable to explain version changes.');
+        } finally {
+            blockVersionActionStatus.value = 'idle';
+            refreshEditorUi();
+        }
     };
 
     restoreBlockVersion = async (block, version) => {
@@ -3483,6 +3630,7 @@ function editorText(keyBook) {
         blockVersionsStatus.value = 'idle';
         blockVersionsContextKey.value = null;
         blockVersionActionStatus.value = 'idle';
+        blockVersionsError.value = null;
         blockReviews.value = [];
         blockReviewsStatus.value = 'idle';
         blockReviewsContextKey.value = null;

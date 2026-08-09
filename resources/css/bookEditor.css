@@ -1129,9 +1129,72 @@
 
 .at-versionItem-actions {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
     margin-top: 9px;
+}
+
+.at-versionExplanation {
+    display: grid;
+    gap: 5px;
+    margin-top: 8px;
+    padding: 8px;
+    border: 1px solid #dbeafe;
+    border-radius: 4px;
+    background: #f8fbff;
+}
+
+.at-versionExplanationToggle {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 7px;
+}
+
+.at-versionExplanationToggleButton {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #2563eb;
+    cursor: pointer;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.at-versionExplanationToggleButton:hover {
+    color: #1d4ed8;
+    text-decoration: underline;
+}
+
+.at-versionExplanation-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.at-versionExplanation-head strong {
+    color: #0f172a;
+    font-size: 12px;
+}
+
+.at-versionExplanation-head span {
+    overflow: hidden;
+    color: #64748b;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.at-versionExplanation p {
+    display: -webkit-box;
+    margin: 0 !important;
+    overflow: hidden;
+    color: #334155 !important;
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
 }
 
 .at-versionDiffHeader h2,

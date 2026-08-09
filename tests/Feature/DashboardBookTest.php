@@ -590,6 +590,55 @@ class DashboardBookTest extends TestCase
         ]);
     }
 
+    public function test_dashboard_can_explain_editor_block_version_changes(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $first = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('First short paragraph.'),
+            'text_plain' => 'First short paragraph.',
+        ]);
+
+        $second = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'base_version_id' => $first['version']->id,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Second paragraph with a little more detail.'),
+            'text_plain' => 'Second paragraph with a little more detail.',
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/versions/explain", [
+            'version_id' => $first['version']->id,
+            'provider_key' => 'mock',
+            'model' => 'mock-correction-v1',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.thread.scope', 'versions')
+            ->assertJsonPath('data.thread.book_block_version_id', $first['version']->id)
+            ->assertJsonPath('data.explanation.provider_key', 'mock')
+            ->assertJsonPath('data.explanation.metadata.from_version_id', $first['version']->id)
+            ->assertJsonPath('data.explanation.metadata.to_version_id', $second['version']->id);
+
+        $this->assertDatabaseHas('ai_chat_threads', [
+            'book_id' => $book->id,
+            'book_block_id' => $first['block']->id,
+            'book_block_version_id' => $first['version']->id,
+            'scope' => 'versions',
+        ]);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/versions")
+            ->assertOk()
+            ->assertJsonPath('data.versions.1.explanation.provider_key', 'mock')
+            ->assertJsonPath('data.versions.1.explanation.metadata.from_version_number', 1)
+            ->assertJsonPath('data.versions.1.explanation.metadata.to_version_number', 2);
+    }
+
     public function test_dashboard_can_return_editor_block_reviews(): void
     {
         $book = $this->createBook();
