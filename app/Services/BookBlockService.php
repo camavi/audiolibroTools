@@ -108,6 +108,63 @@ class BookBlockService
             ->update(['status' => 'deleted']);
     }
 
+    public function restoreVersion(Book $book, BookBlock $block, BookBlockVersion $version, ?int $userId = null): array
+    {
+        return DB::transaction(function () use ($book, $block, $version, $userId) {
+            $block = BookBlock::query()
+                ->whereKey($block->id)
+                ->where('book_id', $book->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $version = $block->versions()
+                ->whereKey($version->id)
+                ->firstOrFail();
+
+            if ((int) $block->current_version_id === (int) $version->id) {
+                return [
+                    'block' => $block->fresh(['currentVersion']),
+                    'version' => $block->currentVersion,
+                    'restored_from' => $version,
+                    'changed' => false,
+                ];
+            }
+
+            $contentJson = $version->content_json;
+            $textPlain = $this->normalizeText($version->text_plain);
+            $contentHash = $version->content_hash ?: $this->hashContent($contentJson, $textPlain);
+
+            $restoredVersion = $this->createVersion($block, [
+                'source' => 'restore',
+                'content_json' => $contentJson,
+                'text_plain' => $textPlain,
+                'content_hash' => $contentHash,
+                'diff_json' => [
+                    'type' => 'restore',
+                    'restored_from_version_id' => $version->id,
+                    'restored_from_version_number' => $version->version_number,
+                ],
+                'created_by' => $userId,
+            ]);
+
+            $block->update([
+                'type' => $block->type,
+                'content_json' => $contentJson,
+                'text_plain' => $textPlain,
+                'content_hash' => $contentHash,
+                'current_version_id' => $restoredVersion->id,
+                'status' => 'clean',
+            ]);
+
+            return [
+                'block' => $block->fresh(['currentVersion']),
+                'version' => $restoredVersion,
+                'restored_from' => $version,
+                'changed' => true,
+            ];
+        });
+    }
+
     public function normalizeText(?string $text): string
     {
         $text = str_replace(["\r\n", "\r"], "\n", $text ?? '');

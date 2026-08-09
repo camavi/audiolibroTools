@@ -246,6 +246,51 @@ class DashboardBookController extends Controller
         ]);
     }
 
+    public function restoreBlockVersion(
+        Request $request,
+        string $keyBook,
+        string $blockUuid,
+        BookBlockService $blocks,
+    ): JsonResponse {
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $block = $book->blocks()
+            ->where('block_uuid', $blockUuid)
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'version_id' => ['required', 'integer'],
+        ]);
+
+        $version = $block->versions()
+            ->whereKey($validated['version_id'])
+            ->firstOrFail();
+
+        $result = $blocks->restoreVersion($book, $block, $version, auth()->id());
+
+        return response()->json([
+            'data' => [
+                'block' => $this->serializeEditorBlock($result['block']),
+                'version' => [
+                    'id' => $result['version']->id,
+                    'version_number' => $result['version']->version_number,
+                    'source' => $result['version']->source,
+                    'text_plain' => $result['version']->text_plain,
+                    'content_hash' => $result['version']->content_hash,
+                    'created_at' => $result['version']->created_at?->toISOString(),
+                    'is_current' => true,
+                ],
+                'restored_from' => [
+                    'id' => $result['restored_from']->id,
+                    'version_number' => $result['restored_from']->version_number,
+                ],
+                'changed' => $result['changed'],
+            ],
+        ], $result['changed'] ? 201 : 200);
+    }
+
     public function blockReviews(string $keyBook, string $blockUuid): JsonResponse
     {
         $book = Book::query()

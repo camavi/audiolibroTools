@@ -538,6 +538,58 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.versions.1.has_stale_activity', true);
     }
 
+    public function test_dashboard_can_restore_editor_block_version(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $first = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('First paragraph.'),
+            'text_plain' => 'First paragraph.',
+        ]);
+
+        $second = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'base_version_id' => $first['version']->id,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Second paragraph.'),
+            'text_plain' => 'Second paragraph.',
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/versions/restore", [
+            'version_id' => $first['version']->id,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.block.block_uuid', $blockUuid)
+            ->assertJsonPath('data.block.text_plain', 'First paragraph.')
+            ->assertJsonPath('data.version.version_number', 3)
+            ->assertJsonPath('data.version.source', 'restore')
+            ->assertJsonPath('data.restored_from.id', $first['version']->id)
+            ->assertJsonPath('data.changed', true);
+
+        $this->assertDatabaseHas('book_blocks', [
+            'id' => $first['block']->id,
+            'text_plain' => 'First paragraph.',
+        ]);
+
+        $this->assertDatabaseHas('book_block_versions', [
+            'book_block_id' => $first['block']->id,
+            'version_number' => 3,
+            'source' => 'restore',
+            'text_plain' => 'First paragraph.',
+        ]);
+
+        $this->assertDatabaseMissing('book_blocks', [
+            'id' => $second['block']->id,
+            'current_version_id' => $second['version']->id,
+        ]);
+    }
+
     public function test_dashboard_can_return_editor_block_reviews(): void
     {
         $book = $this->createBook();

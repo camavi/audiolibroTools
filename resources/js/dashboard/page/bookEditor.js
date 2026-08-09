@@ -20,6 +20,7 @@ const rightWorkspaceTool = _.rod('chat');
 const blockVersions = _.rod([]);
 const blockVersionsStatus = _.rod('idle');
 const blockVersionsContextKey = _.rod(null);
+const blockVersionActionStatus = _.rod('idle');
 const blockReviews = _.rod([]);
 const blockReviewsStatus = _.rod('idle');
 const blockReviewsContextKey = _.rod(null);
@@ -86,6 +87,7 @@ const savingAiSetting = _.rod(false);
 
 let focusEditorBlock = () => { };
 let loadBlockVersions = () => { };
+let restoreBlockVersion = () => { };
 let loadBlockReviews = () => { };
 let createBlockReview = () => { };
 let applyBlockReview = () => { };
@@ -722,6 +724,7 @@ function activeServerEvents() {
     if (saveStatus.value === 'saving') events.push('Saving document');
     if (aiProviderStatus.value === 'loading') events.push('Loading AI settings');
     if (blockVersionsStatus.value === 'loading') events.push('Loading versions');
+    if (blockVersionActionStatus.value.startsWith('restoring:')) events.push('Restoring version');
     if (blockReviewsStatus.value === 'loading') events.push('Loading corrections');
     if (blockReviewActionStatus.value === 'checking') events.push('Checking block');
     if (blockCommentsStatus.value === 'loading') events.push('Loading comments');
@@ -752,6 +755,7 @@ function serverHealthStatus() {
         blockTranslationsStatus.value,
         aiChatStatus.value,
         aiProviderStatus.value,
+        blockVersionsStatus.value,
     ].includes('error') || ['error', 'conflict'].includes(saveStatus.value);
 
     if (hasError) return 'error';
@@ -1073,8 +1077,9 @@ function versionsPanel(block) {
                         _.button({
                             type: 'button',
                             class: 'at-rightWorkspace-action',
-                            disabled: true,
-                        }, 'Restore')
+                            disabled: () => version.is_current || blockVersionActionStatus.value !== 'idle',
+                            onclick: () => restoreBlockVersion(block, version),
+                        }, () => blockVersionActionStatus.value === `restoring:${version.id}` ? 'Restoring...' : 'Restore')
                     )
                 );
             }))
@@ -2472,6 +2477,39 @@ function editorText(keyBook) {
             });
     };
 
+    restoreBlockVersion = async (block, version) => {
+        if (!keyBook || !block?.block_uuid || !version?.id) return;
+        if (version.is_current || blockVersionActionStatus.value !== 'idle') return;
+
+        blockVersionActionStatus.value = `restoring:${version.id}`;
+
+        try {
+            clearTimeout(autosaveTimer);
+            const saved = await saveDirtyBlocks();
+            if (!saved) throw new Error('Unable to save pending changes before restore.');
+
+            const payload = await _.http.postJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/versions/restore`, {
+                version_id: version.id,
+            });
+            const data = normalizeDataPayload(payload);
+            const restoredBlock = data.block || {
+                ...block,
+                current_version_id: data.version?.id || block.current_version_id,
+            };
+
+            await applyRemoteContent();
+            blockVersionsContextKey.value = null;
+            loadBlockVersions(restoredBlock);
+            setSaveStatus('saved');
+        } catch {
+            blockVersionsStatus.value = 'error';
+            setSaveStatus('error');
+        } finally {
+            blockVersionActionStatus.value = 'idle';
+            refreshEditorUi();
+        }
+    };
+
     loadBlockReviews = (block) => {
         if (!keyBook || !block?.block_uuid) {
             blockReviews.value = [];
@@ -3444,6 +3482,7 @@ function editorText(keyBook) {
         blockVersions.value = [];
         blockVersionsStatus.value = 'idle';
         blockVersionsContextKey.value = null;
+        blockVersionActionStatus.value = 'idle';
         blockReviews.value = [];
         blockReviewsStatus.value = 'idle';
         blockReviewsContextKey.value = null;
