@@ -426,6 +426,52 @@ class DashboardBookController extends Controller
         ]);
     }
 
+    public function bookComments(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate([
+            'status' => ['nullable', 'string', 'in:open,resolved,stale,all'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:250'],
+        ]);
+
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $status = $validated['status'] ?? 'all';
+        $limit = (int) ($validated['limit'] ?? 150);
+
+        $comments = BookBlockComment::query()
+            ->with([
+                'block' => fn ($query) => $query->with('currentVersion'),
+                'blockVersion:id,version_number',
+            ])
+            ->join('book_blocks', 'book_block_comments.book_block_id', '=', 'book_blocks.id')
+            ->where('book_block_comments.book_id', $book->id)
+            ->where('book_blocks.status', '!=', 'deleted')
+            ->when($status === 'open', function ($query) {
+                $query
+                    ->where('book_block_comments.status', 'open')
+                    ->whereColumn('book_block_comments.book_block_version_id', 'book_blocks.current_version_id');
+            })
+            ->when($status === 'resolved', fn ($query) => $query->where('book_block_comments.status', 'resolved'))
+            ->when($status === 'stale', fn ($query) => $query->whereColumn('book_block_comments.book_block_version_id', '!=', 'book_blocks.current_version_id'))
+            ->orderByRaw("case when book_block_comments.status = 'open' then 0 else 1 end")
+            ->orderBy('book_blocks.sort_order')
+            ->orderByDesc('book_block_comments.created_at')
+            ->orderByDesc('book_block_comments.id')
+            ->limit($limit)
+            ->get('book_block_comments.*');
+
+        return response()->json([
+            'data' => [
+                'comments' => $comments
+                    ->filter(fn (BookBlockComment $comment) => $comment->block)
+                    ->map(fn (BookBlockComment $comment) => $this->serializeBlockComment($comment, $comment->block))
+                    ->values(),
+            ],
+        ]);
+    }
+
     public function blockCommentSummary(string $keyBook): JsonResponse
     {
         $book = Book::query()
@@ -1237,6 +1283,9 @@ class DashboardBookController extends Controller
             'block_version_id' => $comment->book_block_version_id,
             'version_number' => $comment->blockVersion?->version_number,
             'is_current_version' => $block->current_version_id === $comment->book_block_version_id,
+            'block_type' => $block->type,
+            'block_sort_order' => $block->sort_order,
+            'block_text_plain' => $block->text_plain,
         ];
     }
 

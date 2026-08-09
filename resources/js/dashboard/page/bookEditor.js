@@ -33,6 +33,10 @@ const blockReviewsContextKey = _.rod(null);
 const blockReviewsError = _.rod(null);
 const blockReviewActionStatus = _.rod('idle');
 const blockComments = _.rod([]);
+const bookCommentsQueue = _.rod([]);
+const bookCommentsQueueStatus = _.rod('idle');
+const bookCommentsQueueContextKey = _.rod(null);
+const bookCommentsQueueError = _.rod(null);
 const blockCommentSummaries = _.rod({});
 const blockCommentSelectionAnchor = _.rod(null);
 const blockCommentAnchorResolutions = _.rod({});
@@ -106,6 +110,7 @@ let createBlockReview = () => { };
 let applyBlockReview = () => { };
 let rejectBlockReview = () => { };
 let loadBlockComments = () => { };
+let loadBookCommentsQueue = () => { };
 let createBlockComment = () => { };
 let createBlockCommentFromSource = () => { };
 let updateBlockCommentStatus = () => { };
@@ -933,6 +938,18 @@ function visibleBlockComments(comments) {
     }).filter((comment) => commentMatchesAnchorFilter(comment));
 }
 
+function visibleBookCommentsQueue() {
+    return visibleBlockComments(bookCommentsQueue.value);
+}
+
+function bookCommentsQueueCounts() {
+    return summarizeBlockComments(bookCommentsQueue.value);
+}
+
+function bookCommentsQueueAnchorCounts() {
+    return activeBlockAnchorCounts(bookCommentsQueue.value);
+}
+
 function bookCommentSummaryCounts() {
     return Object.values(blockCommentSummaries.value || {}).reduce((summary, counts) => {
         summary.all += Number(counts.all || 0);
@@ -1017,6 +1034,7 @@ function activeServerEvents() {
     if (blockReviewsStatus.value === 'loading') events.push('Loading corrections');
     if (blockReviewActionStatus.value === 'checking') events.push('Checking block');
     if (blockCommentsStatus.value === 'loading') events.push('Loading comments');
+    if (bookCommentsQueueStatus.value === 'loading') events.push('Loading comment queue');
     if (blockCommentActionStatus.value === 'creating') events.push('Adding comment');
     if (voiceProfilesStatus.value === 'loading') events.push('Loading voices');
     if (voiceAssignmentStatus.value === 'loading') events.push('Loading voice assignment');
@@ -1038,6 +1056,7 @@ function serverHealthStatus() {
     const hasError = [
         blockReviewsStatus.value,
         blockCommentsStatus.value,
+        bookCommentsQueueStatus.value,
         voiceProfilesStatus.value,
         voiceAssignmentStatus.value,
         audioStatus.value,
@@ -1713,9 +1732,12 @@ function commentsPanel(block) {
     const actionStatus = blockCommentActionStatus.value;
     const comments = blockComments.value;
     const visibleComments = visibleBlockComments(comments);
-    const counts = activeBlockCommentCounts();
-    const anchorCounts = activeBlockAnchorCounts(comments);
-    const activeCommentIndex = visibleComments.findIndex((comment) => comment.id === activeBlockCommentId.value);
+    const visibleQueue = visibleBookCommentsQueue();
+    const queueCounts = bookCommentsQueueCounts();
+    const queueAnchorCounts = bookCommentsQueueAnchorCounts();
+    const counts = queueCounts.all ? queueCounts : activeBlockCommentCounts();
+    const anchorCounts = queueCounts.all ? queueAnchorCounts : activeBlockAnchorCounts(comments);
+    const activeCommentIndex = visibleQueue.findIndex((comment) => comment.id === activeBlockCommentId.value);
     const selectedAnchor = blockCommentSelectionAnchor.value?.block_uuid === block.block_uuid
         ? blockCommentSelectionAnchor.value
         : null;
@@ -1784,8 +1806,10 @@ function commentsPanel(block) {
                 _.p('Switch filter to see other comment states.')
             )
         : _.div({ class: 'at-rightWorkspace-emptyState' },
-            _.strong('No comments yet'),
-            _.p('Add comments to track manual editorial notes on this block version.')
+            _.strong(queueCounts.all ? 'No comments on selected block' : 'No comments yet'),
+            _.p(queueCounts.all
+                ? 'Use Previous or Next to jump to another block with comments.'
+                : 'Add comments to track manual editorial notes on this block version.')
         );
 
     return _.div({ class: 'at-rightWorkspace-section at-commentsReviewSection' },
@@ -1821,13 +1845,22 @@ function commentsPanel(block) {
                     type: 'button',
                     class: 'at-rightWorkspace-action',
                     disabled: () => actionStatus !== 'idle',
-                    onclick: () => loadBlockComments(block, { force: true }),
+                    onclick: () => {
+                        loadBlockComments(block, { force: true });
+                        loadBookCommentsQueue({ force: true });
+                    },
                 }, 'Refresh')
             ),
             status === 'loading'
                 ? _.div({ class: 'at-chatNotice' }, 'Loading comments...')
                 : null,
-            comments.length ? _.div({ class: 'at-commentFilters' }, commentFilterOptions.map((option) => _.button({
+            bookCommentsQueueStatus.value === 'loading'
+                ? _.div({ class: 'at-chatNotice' }, 'Loading book comment queue...')
+                : null,
+            bookCommentsQueueError.value
+                ? _.div({ class: 'at-chatError' }, bookCommentsQueueError.value)
+                : null,
+            comments.length || queueCounts.all ? _.div({ class: 'at-commentFilters' }, commentFilterOptions.map((option) => _.button({
                 type: 'button',
                 class: option.value === blockCommentFilter.value ? 'at-commentFilter is-active' : 'at-commentFilter',
                 onclick: () => setBlockCommentFilter(option.value),
@@ -1835,7 +1868,7 @@ function commentsPanel(block) {
                 _.span(option.label),
                 _.strong(String(counts[option.value] || 0))
             ))) : null,
-            comments.length ? _.div({ class: 'at-commentFilters is-anchor' }, commentAnchorFilterOptions.map((option) => _.button({
+            comments.length || queueCounts.all ? _.div({ class: 'at-commentFilters is-anchor' }, commentAnchorFilterOptions.map((option) => _.button({
                 type: 'button',
                 class: option.value === blockCommentAnchorFilter.value ? 'at-commentFilter is-active' : 'at-commentFilter',
                 onclick: () => setBlockCommentAnchorFilter(option.value),
@@ -1845,20 +1878,20 @@ function commentsPanel(block) {
             ))) : null,
             commentCards()
         ),
-        comments.length ? _.div({ class: 'at-commentReviewNav' },
+        visibleQueue.length ? _.div({ class: 'at-commentReviewNav' },
             _.button({
                 type: 'button',
                 class: 'at-commentNavBtn',
-                disabled: !visibleComments.length,
+                disabled: !visibleQueue.length,
                 onclick: () => navigateBlockComment(block, -1),
             }, 'Previous'),
-            _.span(visibleComments.length
-                ? `${Math.max(activeCommentIndex, 0) + 1} / ${visibleComments.length}`
+            _.span(visibleQueue.length
+                ? `${Math.max(activeCommentIndex, 0) + 1} / ${visibleQueue.length}`
                 : '0 / 0'),
             _.button({
                 type: 'button',
                 class: 'at-commentNavBtn',
-                disabled: !visibleComments.length,
+                disabled: !visibleQueue.length,
                 onclick: () => navigateBlockComment(block, 1),
             }, 'Next')
         ) : null
@@ -2469,6 +2502,7 @@ function rightWorkspaceBody(tool, block, keyBook) {
 
     if (tool.id === 'comments') {
         runUntracked(() => loadBlockComments(block));
+        runUntracked(() => loadBookCommentsQueue());
 
         return _.div({ class: 'at-rightWorkspace-body is-commentsReview' },
             blockContextSummary(block),
@@ -3570,9 +3604,46 @@ function editorText(keyBook) {
             });
     };
 
+    loadBookCommentsQueue = ({ force = false } = {}) => {
+        if (!keyBook) {
+            bookCommentsQueue.value = [];
+            bookCommentsQueueStatus.value = 'idle';
+            bookCommentsQueueContextKey.value = null;
+            bookCommentsQueueError.value = null;
+            return;
+        }
+
+        const contextKey = `${keyBook}:comments`;
+        if (!force && bookCommentsQueueContextKey.value === contextKey && bookCommentsQueueStatus.value !== 'error') return;
+
+        bookCommentsQueueContextKey.value = contextKey;
+        bookCommentsQueueStatus.value = 'loading';
+        bookCommentsQueueError.value = null;
+
+        _.http.getJSON(`/dashboard/api/books/${keyBook}/comments?limit=200`)
+            .then((payload) => {
+                if (bookCommentsQueueContextKey.value !== contextKey) return;
+
+                const data = normalizeDataPayload(payload);
+                bookCommentsQueue.value = data.comments || [];
+                bookCommentsQueueStatus.value = 'ready';
+            })
+            .catch((error) => {
+                if (bookCommentsQueueContextKey.value !== contextKey) return;
+
+                bookCommentsQueue.value = [];
+                bookCommentsQueueError.value = requestErrorMessage(error, 'Unable to load book comment queue.');
+                bookCommentsQueueStatus.value = 'error';
+            });
+    };
+
     loadBlockComments = (block, { force = false } = {}) => {
         if (!keyBook) {
             blockComments.value = [];
+            bookCommentsQueue.value = [];
+            bookCommentsQueueStatus.value = 'idle';
+            bookCommentsQueueContextKey.value = null;
+            bookCommentsQueueError.value = null;
             blockCommentsStatus.value = 'idle';
             blockCommentsContextKey.value = null;
             blockCommentsError.value = null;
@@ -3664,6 +3735,16 @@ function editorText(keyBook) {
         blockCommentsError.value = null;
         blockCommentsStatus.value = 'ready';
         setBlockCommentSummaryFromComments(comment.block_uuid, blockComments.value);
+        bookCommentsQueue.value = [
+            comment,
+            ...bookCommentsQueue.value.filter((item) => item.id !== comment.id),
+        ].sort((a, b) => {
+            if ((a.status === 'open') !== (b.status === 'open')) return a.status === 'open' ? -1 : 1;
+            if ((a.block_sort_order || 0) !== (b.block_sort_order || 0)) return (a.block_sort_order || 0) - (b.block_sort_order || 0);
+            return (b.id || 0) - (a.id || 0);
+        });
+        bookCommentsQueueStatus.value = 'ready';
+        bookCommentsQueueError.value = null;
         refreshCommentAnchorDecorations();
         scheduleInlineCommentMarkerRefresh();
     };
@@ -3687,6 +3768,7 @@ function editorText(keyBook) {
                 blockCommentsContextKey.value = `${keyBook}:${block.block_uuid}:${block.current_version_id || 'new'}`;
                 upsertCommentInList(data.comment);
                 loadBlockCommentSummaries();
+                loadBookCommentsQueue({ force: true });
                 setRightWorkspaceTool('comments');
             } else {
                 loadBlockComments(block, { force: true });
@@ -3729,6 +3811,7 @@ function editorText(keyBook) {
                 if (data.comment) {
                     upsertCommentInList(data.comment);
                     loadBlockCommentSummaries();
+                    loadBookCommentsQueue({ force: true });
                     refreshCommentAnchorDecorations();
                 } else {
                     loadBlockComments(block, { force: true });
@@ -3771,6 +3854,7 @@ function editorText(keyBook) {
                     activeBlockCommentId.value = data.comment.id;
                     upsertCommentInList(data.comment);
                     loadBlockCommentSummaries();
+                    loadBookCommentsQueue({ force: true });
                     refreshCommentAnchorDecorations();
                 } else {
                     loadBlockComments(block, { force: true });
@@ -3786,7 +3870,7 @@ function editorText(keyBook) {
     };
 
     navigateBlockComment = (block, direction = 1) => {
-        const comments = visibleBlockComments(blockComments.value);
+        const comments = visibleBookCommentsQueue();
         if (!comments.length) return;
 
         const currentIndex = comments.findIndex((comment) => comment.id === activeBlockCommentId.value);
@@ -3797,7 +3881,14 @@ function editorText(keyBook) {
         const blockUuid = nextComment.block_uuid || block?.block_uuid || commentAnchor(nextComment)?.block_uuid;
 
         activeBlockCommentId.value = nextComment.id;
-        if (blockUuid) focusEditorBlock(blockUuid);
+        if (blockUuid) {
+            focusEditorBlock(blockUuid);
+
+            const targetBlock = editorOutline.value.find((item) => item.block_uuid === blockUuid) || block;
+            if (targetBlock?.block_uuid && targetBlock.block_uuid !== blockCommentContextBlockUuid()) {
+                loadBlockComments(targetBlock);
+            }
+        }
 
         requestAnimationFrame(() => {
             document
@@ -4602,6 +4693,7 @@ function editorText(keyBook) {
         updateActiveBlock();
         editorReady.value = true;
         loadBlockCommentSummaries();
+        loadBookCommentsQueue({ force: true });
         scheduleInlineCommentMarkerRefresh();
         refreshEditorUi();
     };
@@ -4634,6 +4726,10 @@ function editorText(keyBook) {
         blockReviewsError.value = null;
         blockReviewActionStatus.value = 'idle';
         blockComments.value = [];
+        bookCommentsQueue.value = [];
+        bookCommentsQueueStatus.value = 'idle';
+        bookCommentsQueueContextKey.value = null;
+        bookCommentsQueueError.value = null;
         blockCommentSummaries.value = {};
         blockCommentSelectionAnchor.value = null;
         blockCommentAnchorResolutions.value = {};
@@ -4686,6 +4782,7 @@ function editorText(keyBook) {
         applyBlockReview = () => { };
         rejectBlockReview = () => { };
         loadBlockComments = () => { };
+        loadBookCommentsQueue = () => { };
         createBlockComment = () => { };
         createBlockCommentFromSource = () => { };
         updateBlockCommentStatus = () => { };

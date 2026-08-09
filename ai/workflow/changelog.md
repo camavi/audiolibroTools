@@ -75,3 +75,4 @@
 - Aggiunto riancoraggio visuale dei commenti: gli anchor stale vengono cercati nel testo corrente con `diff_match_patch` e mostrati come highlight riancorati quando ritrovati.
 - Aggiunte azioni sui commenti ancorati: click sull'highlight apre Comments, seleziona la card e `Update anchor` conferma il reanchor sulla versione corrente.
 - Migliorato pannello Comments come revisione: navigazione Previous/Next, filtro anchor Anchored/Reanchored/Stale e conteggi commenti nella bottom bar.
+- Aggiunta queue globale Comments per libro: endpoint API lista commenti, navigazione Previous/Next tra blocchi diversi e sincronizzazione dopo create/resolve/reanchor.
