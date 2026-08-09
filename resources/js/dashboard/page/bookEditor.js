@@ -1,5 +1,6 @@
 import { Editor, Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 import { buildVersionTextDiff, summarizeVersionTextDiff } from '../editorDiff';
 
@@ -33,6 +34,7 @@ const blockReviewsError = _.rod(null);
 const blockReviewActionStatus = _.rod('idle');
 const blockComments = _.rod([]);
 const blockCommentSummaries = _.rod({});
+const blockCommentSelectionAnchor = _.rod(null);
 const blockCommentDraft = _.rod('');
 const blockCommentFilter = _.rod('open');
 const blockCommentsStatus = _.rod('idle');
@@ -124,6 +126,7 @@ let openToolAiSettingsDialog = () => { };
 let openSystemPromptDialog = () => { };
 
 const AUTOSAVE_DELAY = 1200;
+const commentAnchorPluginKey = new PluginKey('audiobookCommentAnchors');
 
 const pageFormatOptions = [
     { label: 'Book - Novel', value: 'book' },
@@ -301,6 +304,32 @@ const TrackableBlocks = Extension.create({
                     });
 
                     return tr.docChanged ? tr : null;
+                },
+            }),
+        ];
+    },
+});
+
+const CommentAnchors = Extension.create({
+    name: 'commentAnchors',
+
+    addProseMirrorPlugins() {
+        return [
+            new Plugin({
+                key: commentAnchorPluginKey,
+                state: {
+                    init: () => DecorationSet.empty,
+                    apply(transaction, decorations) {
+                        const nextDecorations = transaction.getMeta(commentAnchorPluginKey);
+                        if (nextDecorations) return nextDecorations;
+
+                        return decorations.map(transaction.mapping, transaction.doc);
+                    },
+                },
+                props: {
+                    decorations(state) {
+                        return commentAnchorPluginKey.getState(state);
+                    },
                 },
             }),
         ];
@@ -800,6 +829,17 @@ function normalizeBlockCommentSummary(summary) {
         resolved: Number(summary?.resolved || 0),
         stale: Number(summary?.stale || 0),
     };
+}
+
+function commentAnchor(comment) {
+    return comment?.metadata_json?.anchor || null;
+}
+
+function anchorSnippet(anchor, maxLength = 90) {
+    const text = String(anchor?.text || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+
+    return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
 }
 
 function blockCommentContextBlockUuid() {
@@ -1604,11 +1644,20 @@ function commentsPanel(block) {
     const comments = blockComments.value;
     const visibleComments = visibleBlockComments(comments);
     const counts = activeBlockCommentCounts();
+    const selectedAnchor = blockCommentSelectionAnchor.value?.block_uuid === block.block_uuid
+        ? blockCommentSelectionAnchor.value
+        : null;
 
     return _.div({ class: 'at-rightWorkspace-section' },
         _.h3('Editorial comments'),
         block.dirty ? _.div({ class: 'at-rightWorkspace-note warning' }, 'Save the selected block before adding a comment.') : null,
         !block.current_version_id ? _.div({ class: 'at-rightWorkspace-note warning' }, 'This block needs a saved version before comments can be tracked.') : null,
+        selectedAnchor
+            ? _.div({ class: 'at-commentAnchorPreview' },
+                _.strong('Anchored to selection'),
+                _.span(anchorSnippet(selectedAnchor))
+            )
+            : null,
         _.Textarea({
             label: 'Comment',
             icon: 'comment',
@@ -1650,6 +1699,7 @@ function commentsPanel(block) {
                 ? _.div({ class: 'at-commentList' }, visibleComments.map((comment) => {
                 const isOpen = (comment.status || 'open') === 'open';
                 const isBusy = actionStatus === `updating:${comment.id}`;
+                const anchor = commentAnchor(comment);
 
                 return _.div({
                     class: comment.is_current_version ? 'at-commentItem' : 'at-commentItem is-stale',
@@ -1662,6 +1712,12 @@ function commentsPanel(block) {
                         ? `v${comment.version_number}${comment.is_current_version ? ' current' : ' stale'}`
                         : ''
                     ),
+                    anchorSnippet(anchor)
+                        ? _.div({ class: 'at-commentAnchor' },
+                            _.span('Anchor'),
+                            _.strong(anchorSnippet(anchor))
+                        )
+                        : null,
                     _.p({ class: 'at-commentBody' }, comment.body || ''),
                     _.div({ class: 'at-commentItem-actions' },
                         _.button({
@@ -2614,6 +2670,123 @@ function editorText(keyBook) {
         activeEditorBlockId.value = blockId;
     };
 
+    const findTrackableSelectionBlock = () => {
+        if (!editor) return null;
+
+        const { selection } = editor.state;
+        const findDepth = ($pos) => {
+            for (let depth = $pos.depth; depth > 0; depth -= 1) {
+                const node = $pos.node(depth);
+                if (!isTrackableNode(node) || !node.attrs?.blockId) continue;
+
+                return { depth, node, blockUuid: node.attrs.blockId, pos: $pos.before(depth) };
+            }
+
+            return null;
+        };
+
+        const fromBlock = findDepth(selection.$from);
+        const toBlock = findDepth(selection.$to);
+        if (!fromBlock || !toBlock || fromBlock.blockUuid !== toBlock.blockUuid) return null;
+
+        return fromBlock;
+    };
+
+    const updateCommentSelectionAnchor = () => {
+        if (!editor) {
+            blockCommentSelectionAnchor.value = null;
+            return;
+        }
+
+        const { selection, doc } = editor.state;
+        if (selection.empty) {
+            blockCommentSelectionAnchor.value = null;
+            return;
+        }
+
+        const selectionBlock = findTrackableSelectionBlock();
+        if (!selectionBlock) {
+            blockCommentSelectionAnchor.value = null;
+            return;
+        }
+
+        const selectedText = doc.textBetween(selection.from, selection.to, ' ').replace(/\s+/g, ' ').trim();
+        if (!selectedText) {
+            blockCommentSelectionAnchor.value = null;
+            return;
+        }
+
+        const blockTextBefore = doc.textBetween(selectionBlock.pos + 1, selection.from, ' ');
+        const offsetStart = blockTextBefore.length;
+
+        blockCommentSelectionAnchor.value = {
+            type: 'text-selection',
+            block_uuid: selectionBlock.blockUuid,
+            offset_start: offsetStart,
+            offset_end: offsetStart + selectedText.length,
+            text: selectedText,
+        };
+    };
+
+    const textOffsetToDocPosition = (node, blockPos, targetOffset) => {
+        let textOffset = 0;
+        let docPosition = null;
+
+        node.descendants((child, childPos) => {
+            if (!child.isText) return true;
+
+            const textLength = child.text?.length || 0;
+            const nextOffset = textOffset + textLength;
+            if (targetOffset <= nextOffset) {
+                docPosition = blockPos + childPos + 1 + Math.max(0, targetOffset - textOffset);
+                return false;
+            }
+
+            textOffset = nextOffset;
+            return true;
+        });
+
+        return docPosition;
+    };
+
+    const buildCommentAnchorDecorations = () => {
+        if (!editor) return DecorationSet.empty;
+
+        const decorations = [];
+        const comments = blockComments.value || [];
+        const doc = editor.state.doc;
+
+        doc.descendants((node, pos) => {
+            if (!isTrackableNode(node) || !node.attrs?.blockId) return true;
+
+            comments
+                .filter((comment) => comment.is_current_version && commentAnchor(comment)?.block_uuid === node.attrs.blockId)
+                .forEach((comment) => {
+                    const anchor = commentAnchor(comment);
+                    const from = textOffsetToDocPosition(node, pos, Number(anchor.offset_start || 0));
+                    const to = textOffsetToDocPosition(node, pos, Number(anchor.offset_end || 0));
+                    if (from === null || to === null || to <= from) return;
+
+                    decorations.push(Decoration.inline(from, to, {
+                        class: (comment.status || 'open') === 'open'
+                            ? 'at-commentAnchorHighlight'
+                            : 'at-commentAnchorHighlight is-resolved',
+                        title: anchorSnippet(anchor),
+                    }));
+                });
+
+            return true;
+        });
+
+        return DecorationSet.create(doc, decorations);
+    };
+
+    const refreshCommentAnchorDecorations = () => {
+        if (!editor) return;
+
+        editor.view.dispatch(editor.state.tr.setMeta(commentAnchorPluginKey, buildCommentAnchorDecorations()));
+    };
+
     const textContent = (text) => text
         ? [{ type: 'text', text }]
         : [];
@@ -3197,6 +3370,8 @@ function editorText(keyBook) {
             blockCommentsContextKey.value = null;
             blockCommentsError.value = null;
             blockCommentSummaries.value = {};
+            blockCommentSelectionAnchor.value = null;
+            refreshCommentAnchorDecorations();
             scheduleInlineCommentMarkerRefresh();
             return;
         }
@@ -3206,6 +3381,8 @@ function editorText(keyBook) {
             blockCommentsStatus.value = 'idle';
             blockCommentsContextKey.value = null;
             blockCommentsError.value = null;
+            blockCommentSelectionAnchor.value = null;
+            refreshCommentAnchorDecorations();
             scheduleInlineCommentMarkerRefresh();
             return;
         }
@@ -3220,6 +3397,7 @@ function editorText(keyBook) {
         if (!block.current_version_id) {
             blockCommentsStatus.value = 'ready';
             setBlockCommentSummary(block.block_uuid, { all: 0, open: 0, resolved: 0, stale: 0 });
+            refreshCommentAnchorDecorations();
             scheduleInlineCommentMarkerRefresh();
             return;
         }
@@ -3234,6 +3412,7 @@ function editorText(keyBook) {
                 blockComments.value = data.comments || [];
                 blockCommentsStatus.value = 'ready';
                 setBlockCommentSummaryFromComments(block.block_uuid, blockComments.value);
+                refreshCommentAnchorDecorations();
                 scheduleInlineCommentMarkerRefresh();
             })
             .catch((error) => {
@@ -3245,6 +3424,7 @@ function editorText(keyBook) {
                     blockCommentsError.value = null;
                     blockCommentsStatus.value = 'ready';
                     setBlockCommentSummary(block.block_uuid, { all: 0, open: 0, resolved: 0, stale: 0 });
+                    refreshCommentAnchorDecorations();
                     scheduleInlineCommentMarkerRefresh();
                     return;
                 }
@@ -3252,6 +3432,7 @@ function editorText(keyBook) {
                 blockComments.value = [];
                 blockCommentsError.value = requestErrorMessage(error, 'Unable to load comments for this block.');
                 blockCommentsStatus.value = 'error';
+                refreshCommentAnchorDecorations();
                 scheduleInlineCommentMarkerRefresh();
             });
     };
@@ -3269,10 +3450,11 @@ function editorText(keyBook) {
         blockCommentsError.value = null;
         blockCommentsStatus.value = 'ready';
         setBlockCommentSummaryFromComments(comment.block_uuid, blockComments.value);
+        refreshCommentAnchorDecorations();
         scheduleInlineCommentMarkerRefresh();
     };
 
-    createBlockCommentFromSource = async (block, body, versionId = null) => {
+    createBlockCommentFromSource = async (block, body, versionId = null, metadata = null) => {
         const commentBody = String(body || '').trim();
         if (!keyBook || !block?.block_uuid || !commentBody || block.dirty || !block.current_version_id || blockCommentActionStatus.value !== 'idle') return;
 
@@ -3283,6 +3465,7 @@ function editorText(keyBook) {
             const payload = await _.http.postJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/comments`, {
                 body: commentBody,
                 book_block_version_id: versionId || null,
+                metadata_json: metadata || null,
             });
             const data = normalizeDataPayload(payload);
 
@@ -3305,10 +3488,15 @@ function editorText(keyBook) {
 
     createBlockComment = async (block) => {
         const body = blockCommentDraft.value.trim();
-        await createBlockCommentFromSource(block, body);
+        const anchor = blockCommentSelectionAnchor.value?.block_uuid === block.block_uuid
+            ? blockCommentSelectionAnchor.value
+            : null;
+
+        await createBlockCommentFromSource(block, body, null, anchor ? { anchor } : null);
 
         if (blockCommentsStatus.value !== 'error') {
             blockCommentDraft.value = '';
+            blockCommentSelectionAnchor.value = null;
         }
     };
 
@@ -3327,6 +3515,7 @@ function editorText(keyBook) {
                 if (data.comment) {
                     upsertCommentInList(data.comment);
                     loadBlockCommentSummaries();
+                    refreshCommentAnchorDecorations();
                 } else {
                     loadBlockComments(block, { force: true });
                 }
@@ -4008,6 +4197,7 @@ function editorText(keyBook) {
                 });
             });
             syncEditorBlocks();
+            refreshCommentAnchorDecorations();
             loadBlockCommentSummaries();
             setSaveStatus('saved');
             return true;
@@ -4168,6 +4358,7 @@ function editorText(keyBook) {
         blockReviewActionStatus.value = 'idle';
         blockComments.value = [];
         blockCommentSummaries.value = {};
+        blockCommentSelectionAnchor.value = null;
         blockCommentDraft.value = '';
         blockCommentsStatus.value = 'idle';
         blockCommentsContextKey.value = null;
@@ -4249,12 +4440,14 @@ function editorText(keyBook) {
             extensions: [
                 StarterKit,
                 TrackableBlocks,
+                CommentAnchors,
             ],
             content: defaultDocument(),
             onCreate: afterEditorCreate,
             onUpdate: afterEditorChange,
             onSelectionUpdate: () => {
                 updateActiveBlock();
+                updateCommentSelectionAnchor();
                 refreshEditorUi();
             },
         });

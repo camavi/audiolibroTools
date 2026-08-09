@@ -71,3 +71,4 @@
 - Collegato Versions a Comments: commenti creabili da diff e spiegazioni AI, con supporto backend a `book_block_version_id` per tracciare note su versioni specifiche.
 - Aggiunti marker commenti inline nell'editor: il blocco con commenti caricati mostra badge open/stale/resolved, click per aprire Comments e azione per rifocalizzare il blocco dalla lista commenti.
 - Aggiunto summary globale dei commenti per libro: endpoint conteggi per blocco, badge su Book Index e marker inline su tutti i blocchi commentati.
+- Aggiunti commenti ancorati alla selezione testo: il commento salva l'anchor in `metadata_json` e l'editor mostra highlight visuali tramite ProseMirror decorations.

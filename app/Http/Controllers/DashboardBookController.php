@@ -677,6 +677,7 @@ class DashboardBookController extends Controller
         $validated = $request->validate([
             'body' => ['required', 'string', 'max:5000'],
             'book_block_version_id' => ['nullable', 'integer'],
+            'metadata_json' => ['nullable', 'array'],
         ]);
 
         $book = Book::query()
@@ -708,6 +709,7 @@ class DashboardBookController extends Controller
             'block_uuid' => $block->block_uuid,
             'status' => 'open',
             'body' => trim($validated['body']),
+            'metadata_json' => $validated['metadata_json'] ?? null,
             'created_by' => auth()->id(),
         ]);
 

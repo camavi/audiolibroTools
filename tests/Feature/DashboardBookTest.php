@@ -1010,6 +1010,45 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.comment.is_current_version', false);
     }
 
+    public function test_dashboard_can_create_block_comment_with_text_anchor(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $blockUuid = (string) Str::uuid();
+
+        $saved = $service->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Paragraph with an anchored sentence.'),
+            'text_plain' => 'Paragraph with an anchored sentence.',
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/comments", [
+            'body' => 'This note targets a sentence.',
+            'metadata_json' => [
+                'anchor' => [
+                    'type' => 'text-selection',
+                    'block_uuid' => $blockUuid,
+                    'offset_start' => 15,
+                    'offset_end' => 32,
+                    'text' => 'anchored sentence',
+                ],
+            ],
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.comment.metadata_json.anchor.type', 'text-selection')
+            ->assertJsonPath('data.comment.metadata_json.anchor.block_uuid', $blockUuid)
+            ->assertJsonPath('data.comment.metadata_json.anchor.text', 'anchored sentence');
+
+        $this->assertDatabaseHas('book_block_comments', [
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+            'body' => 'This note targets a sentence.',
+        ]);
+    }
+
     public function test_dashboard_can_resolve_and_reopen_block_comment(): void
     {
         $book = $this->createBook();

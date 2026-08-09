@@ -758,6 +758,27 @@
     color: #1d4ed8;
 }
 
+.at-commentAnchorPreview {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 10px;
+    padding: 8px;
+    border: 1px solid #bfdbfe;
+    border-radius: 4px;
+    background: #eff6ff;
+    color: #1e3a8a;
+}
+
+.at-commentAnchorPreview strong {
+    font-size: 12px;
+}
+
+.at-commentAnchorPreview span {
+    color: #334155;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
 .at-commentItem {
     padding: 9px;
     border: 1px solid #e2e8f0;
@@ -809,6 +830,28 @@
     margin-top: 4px;
     color: #64748b;
     font-size: 11px;
+}
+
+.at-commentAnchor {
+    display: grid;
+    gap: 3px;
+    margin-top: 8px;
+    padding: 7px;
+    border-left: 3px solid #2563eb;
+    background: #f8fbff;
+}
+
+.at-commentAnchor span {
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.at-commentAnchor strong {
+    color: #1e293b;
+    font-size: 12px;
+    line-height: 1.35;
 }
 
 .at-commentBody {
@@ -2003,4 +2046,15 @@
     border-color: #bbf7d0;
     background: #f0fdf4;
     color: #15803d;
+}
+
+.at-commentAnchorHighlight {
+    border-radius: 2px;
+    background: #fef3c7;
+    box-shadow: 0 0 0 1px #f59e0b33;
+}
+
+.at-commentAnchorHighlight.is-resolved {
+    background: #dcfce7;
+    box-shadow: 0 0 0 1px #22c55e33;
 }
