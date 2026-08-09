@@ -61,3 +61,4 @@
 - Avviato tool Audio: job e segmenti audio per blocco/versione/voce, generazione mock TTS, API di lista/generate e pannello Right Workspace con provider audio, voce assegnata e lista segmenti.
 - Avviato tool Translate: traduzioni draft per blocco/versione sorgente, target locale, provider/model, API read/create/approve-reject e pannello Right Workspace con lingua target e lista traduzioni.
 - Aggiunta Bottom Bar operativa e persistenza locale preferenze editor: pannelli laterali, tool destro, formato pagina e lingua target vengono ripristinati da `localStorage`.
+- Migliorato pannello Versions: ogni versione mostra activity count per correzioni, commenti, voci, audio, traduzioni e chat AI, con evidenza delle versioni vecchie che hanno link stale.

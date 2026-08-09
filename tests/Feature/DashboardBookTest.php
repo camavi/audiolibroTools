@@ -476,6 +476,48 @@ class DashboardBookTest extends TestCase
             'text_plain' => 'Second paragraph.',
         ]);
 
+        BookBlockComment::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $first['block']->id,
+            'book_block_version_id' => $first['version']->id,
+            'block_uuid' => $blockUuid,
+            'status' => 'open',
+            'body' => 'Older note.',
+        ]);
+
+        BookBlockReview::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $second['block']->id,
+            'book_block_version_id' => $second['version']->id,
+            'type' => 'grammar',
+            'status' => 'draft',
+            'source' => 'mock-ai',
+            'original_text' => 'Second paragraph.',
+            'suggested_text' => 'Second paragraph improved.',
+        ]);
+
+        $profile = BookVoiceProfile::query()->create([
+            'book_id' => $book->id,
+            'name' => 'Narrator',
+            'role' => 'narrator',
+            'voice_id' => 'narrator-main',
+        ]);
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/voice-assignment", [
+            'voice_profile_id' => $profile->id,
+        ])->assertOk();
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/audio/generate", [
+            'provider_key' => 'mock',
+            'model' => 'mock-tts-v1',
+        ])->assertCreated();
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/translations", [
+            'target_locale' => 'fr',
+            'provider_key' => 'mock',
+            'model' => 'mock-translation-v1',
+        ])->assertCreated();
+
         $this->getJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/versions")
             ->assertOk()
             ->assertJsonPath('data.block.block_uuid', $blockUuid)
@@ -483,9 +525,17 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.versions.0.id', $second['version']->id)
             ->assertJsonPath('data.versions.0.version_number', 2)
             ->assertJsonPath('data.versions.0.is_current', true)
+            ->assertJsonPath('data.versions.0.activity.reviews', 1)
+            ->assertJsonPath('data.versions.0.activity.voices', 1)
+            ->assertJsonPath('data.versions.0.activity.audio', 1)
+            ->assertJsonPath('data.versions.0.activity.translations', 1)
+            ->assertJsonPath('data.versions.0.has_stale_activity', false)
             ->assertJsonPath('data.versions.1.id', $first['version']->id)
             ->assertJsonPath('data.versions.1.version_number', 1)
-            ->assertJsonPath('data.versions.1.is_current', false);
+            ->assertJsonPath('data.versions.1.is_current', false)
+            ->assertJsonPath('data.versions.1.activity.comments', 1)
+            ->assertJsonPath('data.versions.1.has_activity', true)
+            ->assertJsonPath('data.versions.1.has_stale_activity', true);
     }
 
     public function test_dashboard_can_return_editor_block_reviews(): void

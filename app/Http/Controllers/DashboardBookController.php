@@ -193,6 +193,14 @@ class DashboardBookController extends Controller
             ->firstOrFail();
 
         $versions = $block->versions()
+            ->withCount([
+                'reviews',
+                'comments',
+                'voiceAssignments',
+                'audioSegments',
+                'sourceTranslations',
+                'aiChatThreads',
+            ])
             ->orderByDesc('version_number')
             ->get();
 
@@ -208,6 +216,30 @@ class DashboardBookController extends Controller
                         'content_hash' => $version->content_hash,
                         'created_at' => $version->created_at?->toISOString(),
                         'is_current' => $block->current_version_id === $version->id,
+                        'activity' => [
+                            'reviews' => $version->reviews_count,
+                            'comments' => $version->comments_count,
+                            'voices' => $version->voice_assignments_count,
+                            'audio' => $version->audio_segments_count,
+                            'translations' => $version->source_translations_count,
+                            'ai_chats' => $version->ai_chat_threads_count,
+                        ],
+                        'has_activity' => (
+                            $version->reviews_count
+                            + $version->comments_count
+                            + $version->voice_assignments_count
+                            + $version->audio_segments_count
+                            + $version->source_translations_count
+                            + $version->ai_chat_threads_count
+                        ) > 0,
+                        'has_stale_activity' => $block->current_version_id !== $version->id && (
+                            $version->reviews_count
+                            + $version->comments_count
+                            + $version->voice_assignments_count
+                            + $version->audio_segments_count
+                            + $version->source_translations_count
+                            + $version->ai_chat_threads_count
+                        ) > 0,
                     ])
                     ->values(),
             ],

@@ -698,6 +698,19 @@ function saveStatusLabel(status) {
     return labels[status] || 'Idle';
 }
 
+function saveStatusIcon(status) {
+    const icons = {
+        idle: 'cloud_done',
+        dirty: 'sync_problem',
+        saving: 'sync',
+        saved: 'cloud_done',
+        error: 'cloud_off',
+        conflict: 'report',
+    };
+
+    return icons[status] || 'cloud_done';
+}
+
 function activeToolLabel() {
     return rightWorkspaceTools.find((tool) => tool.id === rightWorkspaceTool.value)?.label || 'AI Chat';
 }
@@ -891,6 +904,25 @@ function blockContextSummary(block) {
     );
 }
 
+function versionActivityBadges(version) {
+    const activity = version.activity || {};
+    const badges = [
+        ['reviews', 'Correct'],
+        ['comments', 'Comments'],
+        ['voices', 'Voices'],
+        ['audio', 'Audio'],
+        ['translations', 'Translate'],
+        ['ai_chats', 'Chat'],
+    ];
+
+    return badges
+        .filter(([key]) => activity[key])
+        .map(([key, label]) => _.span({
+            class: `at-versionActivityBadge type-${key}`,
+            title: `${activity[key]} ${label}`,
+        }, `${label} ${activity[key]}`));
+}
+
 function versionsPanel(block) {
     if (!block) {
         return _.div({ class: 'at-rightWorkspace-section' },
@@ -916,24 +948,37 @@ function versionsPanel(block) {
     }
 
     const versions = blockVersions.value;
+    const staleActivityCount = versions.filter((version) => version.has_stale_activity).length;
 
     return _.div({ class: 'at-rightWorkspace-section' },
         _.h3('Version history'),
+        staleActivityCount ? _.div({ class: 'at-rightWorkspace-note warning' },
+            `${staleActivityCount} older version${staleActivityCount === 1 ? ' has' : 's have'} linked activity.`
+        ) : null,
         versions.length
-            ? _.div({ class: 'at-versionList' }, versions.map((version) => _.div({
-                class: version.is_current ? 'at-versionItem is-current' : 'at-versionItem',
-            },
-                _.div({ class: 'at-versionItem-head' },
-                    _.strong(`v${version.version_number}`),
-                    _.span(version.source || 'manual'),
-                    version.is_current ? _.span({ class: 'at-versionBadge' }, 'Current') : null
-                ),
-                _.div({ class: 'at-versionItem-date' }, version.created_at
-                    ? new Date(version.created_at).toLocaleString()
-                    : ''
-                ),
-                _.div({ class: 'at-versionItem-preview' }, version.text_plain || 'Empty block')
-            )))
+            ? _.div({ class: 'at-versionList' }, versions.map((version) => {
+                const activityBadges = versionActivityBadges(version);
+                const classes = ['at-versionItem'];
+                if (version.is_current) classes.push('is-current');
+                if (version.has_stale_activity) classes.push('has-staleActivity');
+
+                return _.div({
+                    class: classes.join(' '),
+                },
+                    _.div({ class: 'at-versionItem-head' },
+                        _.strong(`v${version.version_number}`),
+                        _.span(version.source || 'manual'),
+                        version.is_current ? _.span({ class: 'at-versionBadge' }, 'Current') : null,
+                        version.has_stale_activity ? _.span({ class: 'at-versionBadge is-stale' }, 'Stale links') : null
+                    ),
+                    _.div({ class: 'at-versionItem-date' }, version.created_at
+                        ? new Date(version.created_at).toLocaleString()
+                        : ''
+                    ),
+                    activityBadges.length ? _.div({ class: 'at-versionActivity' }, activityBadges) : null,
+                    _.div({ class: 'at-versionItem-preview' }, version.text_plain || 'Empty block')
+                );
+            }))
             : _.p('No versions saved for this block yet.'),
         _.div({ class: 'at-rightWorkspace-actions' },
             _.button({
@@ -3477,7 +3522,15 @@ function bottomBar() {
             })
         ),
         _.div({ class: 'at-bottomBar-right' },
-            _.span({ class: () => `at-saveStatus ${saveStatus.value}` }, () => saveStatusLabel(saveStatus.value))
+            _.span({
+                class: () => `at-saveStatusIcon ${saveStatus.value}`,
+                title: () => saveStatusLabel(saveStatus.value),
+                'aria-label': () => saveStatusLabel(saveStatus.value),
+                role: 'status',
+            }, () => _.Icon
+                ? _.Icon({ name: saveStatusIcon(saveStatus.value), class: 'at-saveStatusIcon-symbol' })
+                : saveStatusLabel(saveStatus.value)
+            )
         )
     );
 }

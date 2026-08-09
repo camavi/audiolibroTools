@@ -71,4 +71,9 @@ class BookBlockVersion extends Model
     {
         return $this->hasMany(BookBlockTranslation::class, 'applied_book_block_version_id');
     }
+
+    public function aiChatThreads(): HasMany
+    {
+        return $this->hasMany(AiChatThread::class, 'book_block_version_id');
+    }
 }

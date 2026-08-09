@@ -72,8 +72,7 @@
 }
 
 .at-bottomBar-item,
-.at-bottomBar-server,
-.at-bottomBar .at-saveStatus {
+.at-bottomBar-server {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -111,6 +110,68 @@
     border-radius: 999px;
     background: currentColor;
     flex: 0 0 auto;
+}
+
+.at-saveStatusIcon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    color: #64748b;
+}
+
+.at-saveStatusIcon-symbol {
+    font-size: 19px;
+    line-height: 1;
+}
+
+.at-saveStatusIcon.saving {
+    color: #2563eb;
+}
+
+.at-saveStatusIcon.dirty {
+    color: #854d0e;
+}
+
+.at-saveStatusIcon.saved {
+    color: #166534;
+}
+
+.at-saveStatusIcon.error,
+.at-saveStatusIcon.conflict {
+    color: #b91c1c;
+}
+
+.at-saveStatusIcon.saving .at-saveStatusIcon-symbol {
+    animation: at-save-spin 900ms linear infinite;
+}
+
+.at-saveStatusIcon.dirty .at-saveStatusIcon-symbol {
+    animation: at-save-pulse 1200ms ease-in-out infinite;
+}
+
+@keyframes at-save-spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes at-save-pulse {
+
+    0%,
+    100% {
+        opacity: 0.55;
+    }
+
+    50% {
+        opacity: 1;
+    }
 }
 
 .at-topBar {
@@ -973,9 +1034,13 @@
     background: #eff6ff;
 }
 
+.at-versionItem.has-staleActivity {
+    border-color: #fcd34d;
+}
+
 .at-versionItem-head {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 8px;
     min-width: 0;
@@ -1004,10 +1069,51 @@
     font-weight: 700;
 }
 
+.at-versionBadge.is-stale {
+    background: #fef3c7;
+    color: #92400e !important;
+}
+
 .at-versionItem-date {
     margin-top: 5px;
     color: #64748b;
     font-size: 11px;
+}
+
+.at-versionActivity {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 7px;
+}
+
+.at-versionActivityBadge {
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: #f1f5f9;
+    color: #334155;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.at-versionActivityBadge.type-audio {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.at-versionActivityBadge.type-translations {
+    background: #ede9fe;
+    color: #6d28d9;
+}
+
+.at-versionActivityBadge.type-reviews {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.at-versionActivityBadge.type-comments {
+    background: #fef3c7;
+    color: #92400e;
 }
 
 .at-versionItem-preview {
@@ -1369,32 +1475,6 @@
     height: 26px;
     margin: 0 4px;
     background: #e0e0e0;
-}
-
-.at-saveStatus {
-    margin-left: auto;
-    color: #64748b;
-    font-size: 12px;
-    white-space: nowrap;
-}
-
-.at-bottomBar .at-saveStatus {
-    margin-left: 0;
-    font-weight: 600;
-}
-
-.at-saveStatus.saving,
-.at-saveStatus.dirty {
-    color: #854d0e;
-}
-
-.at-saveStatus.saved {
-    color: #166534;
-}
-
-.at-saveStatus.error,
-.at-saveStatus.conflict {
-    color: #b91c1c;
 }
 
 .at-editorStatus {
