@@ -33,6 +33,7 @@ const blockReviewsError = _.rod(null);
 const blockReviewActionStatus = _.rod('idle');
 const blockComments = _.rod([]);
 const blockCommentDraft = _.rod('');
+const blockCommentFilter = _.rod('open');
 const blockCommentsStatus = _.rod('idle');
 const blockCommentsContextKey = _.rod(null);
 const blockCommentsError = _.rod(null);
@@ -181,6 +182,13 @@ const versionSortOptions = [
     { label: 'Oldest first', value: 'oldest' },
 ];
 
+const commentFilterOptions = [
+    { label: 'Open', value: 'open' },
+    { label: 'Resolved', value: 'resolved' },
+    { label: 'Stale', value: 'stale' },
+    { label: 'All', value: 'all' },
+];
+
 function readEditorPreferences() {
     try {
         return JSON.parse(globalThis.localStorage?.getItem(EDITOR_PREFERENCES_KEY) || '{}');
@@ -214,6 +222,7 @@ function restoreEditorPreferences() {
     if (versionFilterOptions.some((option) => option.value === preferences.versionFilter)) versionFilter.value = preferences.versionFilter;
     if (versionSortOptions.some((option) => option.value === preferences.versionSortOrder)) versionSortOrder.value = preferences.versionSortOrder;
     if (typeof preferences.versionSearch === 'string') versionSearch.value = preferences.versionSearch;
+    if (commentFilterOptions.some((option) => option.value === preferences.blockCommentFilter)) blockCommentFilter.value = preferences.blockCommentFilter;
     if (Array.isArray(preferences.hiddenVersionExplanationIds)) {
         hiddenVersionExplanationIds.value = preferences.hiddenVersionExplanationIds.filter((id) => Number.isFinite(Number(id)));
     }
@@ -753,6 +762,47 @@ function setVersionSearch(search) {
     writeEditorPreference('versionSearch', search);
 }
 
+function setBlockCommentFilter(filter) {
+    blockCommentFilter.value = filter;
+    writeEditorPreference('blockCommentFilter', filter);
+}
+
+function activeBlockCommentCounts() {
+    const comments = blockComments.value;
+
+    return {
+        all: comments.length,
+        open: comments.filter((comment) => (comment.status || 'open') === 'open' && comment.is_current_version).length,
+        resolved: comments.filter((comment) => comment.status === 'resolved').length,
+        stale: comments.filter((comment) => !comment.is_current_version).length,
+    };
+}
+
+function visibleBlockComments(comments) {
+    return comments.filter((comment) => {
+        if (blockCommentFilter.value === 'open') return (comment.status || 'open') === 'open' && comment.is_current_version;
+        if (blockCommentFilter.value === 'resolved') return comment.status === 'resolved';
+        if (blockCommentFilter.value === 'stale') return !comment.is_current_version;
+
+        return true;
+    });
+}
+
+function blockCommentBadge(item) {
+    if (item.block_uuid !== activeEditorBlockId.value || blockCommentsStatus.value === 'idle') return null;
+    if (!blockCommentsContextKey.value?.includes(`:${item.block_uuid}:`)) return null;
+
+    const counts = activeBlockCommentCounts();
+    if (!counts.all) return null;
+
+    const label = counts.open ? `${counts.open}` : `${counts.all}`;
+
+    return _.span({
+        class: counts.open ? 'at-indexBook-commentBadge has-open' : 'at-indexBook-commentBadge',
+        title: `${counts.open} open comments, ${counts.resolved} resolved, ${counts.stale} stale`,
+    }, label);
+}
+
 function isVersionExplanationHidden(version) {
     const explanationId = Number(version?.explanation?.id || 0);
     if (!explanationId) return false;
@@ -943,6 +993,7 @@ function indexBook() {
             },
                 _.span({ class: `at-indexBook-kind kind-${item.type}` }, outlineKindLabel(item)),
                 _.span({ class: 'at-indexBook-label' }, item.label),
+                blockCommentBadge(item),
                 item.dirty ? _.span({ class: 'at-indexBook-dirty', title: 'Unsaved' }, '•') : null,
             ));
         })
@@ -1466,6 +1517,8 @@ function commentsPanel(block) {
     const status = blockCommentsStatus.value;
     const actionStatus = blockCommentActionStatus.value;
     const comments = blockComments.value;
+    const visibleComments = visibleBlockComments(comments);
+    const counts = activeBlockCommentCounts();
 
     return _.div({ class: 'at-rightWorkspace-section' },
         _.h3('Editorial comments'),
@@ -1499,8 +1552,17 @@ function commentsPanel(block) {
         status === 'loading'
             ? _.div({ class: 'at-chatNotice' }, 'Loading comments...')
             : null,
+        comments.length ? _.div({ class: 'at-commentFilters' }, commentFilterOptions.map((option) => _.button({
+            type: 'button',
+            class: option.value === blockCommentFilter.value ? 'at-commentFilter is-active' : 'at-commentFilter',
+            onclick: () => setBlockCommentFilter(option.value),
+        },
+            _.span(option.label),
+            _.strong(String(counts[option.value] || 0))
+        ))) : null,
         comments.length
-            ? _.div({ class: 'at-commentList' }, comments.map((comment) => {
+            ? visibleComments.length
+                ? _.div({ class: 'at-commentList' }, visibleComments.map((comment) => {
                 const isOpen = (comment.status || 'open') === 'open';
                 const isBusy = actionStatus === `updating:${comment.id}`;
 
@@ -1526,6 +1588,10 @@ function commentsPanel(block) {
                     )
                 );
             }))
+                : _.div({ class: 'at-rightWorkspace-emptyState' },
+                    _.strong('No comments in this filter'),
+                    _.p('Switch filter to see other comment states.')
+                )
             : _.div({ class: 'at-rightWorkspace-emptyState' },
                 _.strong('No comments yet'),
                 _.p('Add comments to track manual editorial notes on this block version.')

@@ -221,7 +221,7 @@
 
 .at-indexBook-item {
     display: grid;
-    grid-template-columns: 58px 1fr 10px;
+    grid-template-columns: 58px minmax(0, 1fr) auto auto;
     align-items: center;
     width: 100%;
     min-height: 34px;
@@ -237,7 +237,7 @@
 }
 
 .at-indexBook-item.level-1 {
-    grid-template-columns: 48px 1fr 10px;
+    grid-template-columns: 48px minmax(0, 1fr) auto auto;
     padding-left: 20px;
 }
 
@@ -306,6 +306,23 @@
     color: #ca8a04;
     font-size: 16px;
     line-height: 1;
+}
+
+.at-indexBook-commentBadge {
+    min-width: 18px;
+    padding: 2px 5px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #334155;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+}
+
+.at-indexBook-commentBadge.has-open {
+    background: #dbeafe;
+    color: #1d4ed8;
 }
 
 .at-rightWorkspace {
@@ -682,6 +699,63 @@
     display: grid;
     gap: 9px;
     margin-top: 10px;
+}
+
+.at-commentFilters {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+    margin-top: 10px;
+}
+
+.at-commentFilter {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 5px 6px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #334155;
+    cursor: pointer;
+    font: inherit;
+}
+
+.at-commentFilter:hover {
+    border-color: #93c5fd;
+    background: #f8fbff;
+}
+
+.at-commentFilter.is-active {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.at-commentFilter span {
+    overflow: hidden;
+    font-size: 11px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.at-commentFilter strong {
+    min-width: 18px;
+    padding: 1px 4px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #334155;
+    font-size: 10px;
+    line-height: 1.4;
+    text-align: center;
+}
+
+.at-commentFilter.is-active strong {
+    background: #dbeafe;
+    color: #1d4ed8;
 }
 
 .at-commentItem {

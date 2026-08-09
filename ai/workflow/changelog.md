@@ -67,3 +67,4 @@
 - Avviato Explain changes nel pannello Versions: servizio AI dedicato, endpoint per spiegare il confronto tra versioni, salvataggio come activity AI `versions` e card con ultima spiegazione.
 - Migliorata usabilita' del pannello Versions: filtri All/Current/Activity/Stale/AI con contatori, ordine newest/oldest e search persistiti nelle preferenze locali.
 - Migliorato dialog View changes: selettore della versione da confrontare, split view vecchio/nuovo, toggle only changes e azione `Explain this diff` sul confronto scelto.
+- Migliorato tool Comments: filtri Open/Resolved/Stale/All con contatori, preferenza locale del filtro e badge commenti nel Book Index per il blocco selezionato.
