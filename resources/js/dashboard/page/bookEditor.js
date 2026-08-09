@@ -39,6 +39,7 @@ const blockCommentAnchorResolutions = _.rod({});
 const activeBlockCommentId = _.rod(null);
 const blockCommentDraft = _.rod('');
 const blockCommentFilter = _.rod('open');
+const blockCommentAnchorFilter = _.rod('all');
 const blockCommentsStatus = _.rod('idle');
 const blockCommentsContextKey = _.rod(null);
 const blockCommentsError = _.rod(null);
@@ -109,6 +110,7 @@ let createBlockComment = () => { };
 let createBlockCommentFromSource = () => { };
 let updateBlockCommentStatus = () => { };
 let updateBlockCommentAnchor = () => { };
+let navigateBlockComment = () => { };
 let refreshInlineCommentMarkers = () => { };
 let loadVoiceProfiles = () => { };
 let loadBlockVoiceAssignment = () => { };
@@ -198,6 +200,13 @@ const commentFilterOptions = [
     { label: 'All', value: 'all' },
 ];
 
+const commentAnchorFilterOptions = [
+    { label: 'Any anchor', value: 'all' },
+    { label: 'Current anchor', value: 'anchored' },
+    { label: 'Matched anchor', value: 'reanchored' },
+    { label: 'Lost anchor', value: 'stale' },
+];
+
 function readEditorPreferences() {
     try {
         return JSON.parse(globalThis.localStorage?.getItem(EDITOR_PREFERENCES_KEY) || '{}');
@@ -232,6 +241,7 @@ function restoreEditorPreferences() {
     if (versionSortOptions.some((option) => option.value === preferences.versionSortOrder)) versionSortOrder.value = preferences.versionSortOrder;
     if (typeof preferences.versionSearch === 'string') versionSearch.value = preferences.versionSearch;
     if (commentFilterOptions.some((option) => option.value === preferences.blockCommentFilter)) blockCommentFilter.value = preferences.blockCommentFilter;
+    if (commentAnchorFilterOptions.some((option) => option.value === preferences.blockCommentAnchorFilter)) blockCommentAnchorFilter.value = preferences.blockCommentAnchorFilter;
     if (Array.isArray(preferences.hiddenVersionExplanationIds)) {
         hiddenVersionExplanationIds.value = preferences.hiddenVersionExplanationIds.filter((id) => Number.isFinite(Number(id)));
     }
@@ -802,6 +812,11 @@ function setBlockCommentFilter(filter) {
     writeEditorPreference('blockCommentFilter', filter);
 }
 
+function setBlockCommentAnchorFilter(filter) {
+    blockCommentAnchorFilter.value = filter;
+    writeEditorPreference('blockCommentAnchorFilter', filter);
+}
+
 function cssSelectorEscape(value) {
     const stringValue = String(value || '');
 
@@ -865,6 +880,27 @@ function commentAnchorStateClass(comment) {
     return resolution?.state === 'reanchored' ? 'is-reanchored' : 'is-stale';
 }
 
+function commentMatchesAnchorFilter(comment) {
+    const anchor = commentAnchor(comment);
+    if (blockCommentAnchorFilter.value === 'all') return true;
+    if (blockCommentAnchorFilter.value === 'anchored') return Boolean(anchor) && comment.is_current_version;
+    if (blockCommentAnchorFilter.value === 'reanchored') return Boolean(anchor) && blockCommentAnchorResolutions.value[comment.id]?.state === 'reanchored';
+    if (blockCommentAnchorFilter.value === 'stale') return Boolean(anchor) && !comment.is_current_version && blockCommentAnchorResolutions.value[comment.id]?.state !== 'reanchored';
+
+    return true;
+}
+
+function activeBlockAnchorCounts(comments) {
+    const commentList = comments || [];
+
+    return {
+        all: commentList.length,
+        anchored: commentList.filter((comment) => commentAnchor(comment) && comment.is_current_version).length,
+        reanchored: commentList.filter((comment) => commentAnchor(comment) && blockCommentAnchorResolutions.value[comment.id]?.state === 'reanchored').length,
+        stale: commentList.filter((comment) => commentAnchor(comment) && !comment.is_current_version && blockCommentAnchorResolutions.value[comment.id]?.state !== 'reanchored').length,
+    };
+}
+
 function blockCommentContextBlockUuid() {
     const [, blockUuid] = String(blockCommentsContextKey.value || '').split(':');
 
@@ -894,7 +930,18 @@ function visibleBlockComments(comments) {
         if (blockCommentFilter.value === 'stale') return !comment.is_current_version;
 
         return true;
-    });
+    }).filter((comment) => commentMatchesAnchorFilter(comment));
+}
+
+function bookCommentSummaryCounts() {
+    return Object.values(blockCommentSummaries.value || {}).reduce((summary, counts) => {
+        summary.all += Number(counts.all || 0);
+        summary.open += Number(counts.open || 0);
+        summary.resolved += Number(counts.resolved || 0);
+        summary.stale += Number(counts.stale || 0);
+
+        return summary;
+    }, { all: 0, open: 0, resolved: 0, stale: 0 });
 }
 
 function blockCommentBadge(item) {
@@ -1482,7 +1529,7 @@ function versionsPanel(block, keyBook) {
     const staleActivityCount = versions.filter((version) => version.has_stale_activity).length;
     const aiSummary = versionsAiSummary();
 
-    return _.div({ class: 'at-rightWorkspace-section' },
+    return _.div({ class: 'at-rightWorkspace-section at-commentsReviewSection' },
         _.h3('Version history'),
         _.div({ class: aiSummary.missingApiKey ? 'at-correctionProvider has-warning' : 'at-correctionProvider' },
             _.div({ class: 'at-correctionProvider-main' },
@@ -1667,123 +1714,154 @@ function commentsPanel(block) {
     const comments = blockComments.value;
     const visibleComments = visibleBlockComments(comments);
     const counts = activeBlockCommentCounts();
+    const anchorCounts = activeBlockAnchorCounts(comments);
+    const activeCommentIndex = visibleComments.findIndex((comment) => comment.id === activeBlockCommentId.value);
     const selectedAnchor = blockCommentSelectionAnchor.value?.block_uuid === block.block_uuid
         ? blockCommentSelectionAnchor.value
         : null;
 
-    return _.div({ class: 'at-rightWorkspace-section' },
-        _.h3('Editorial comments'),
-        block.dirty ? _.div({ class: 'at-rightWorkspace-note warning' }, 'Save the selected block before adding a comment.') : null,
-        !block.current_version_id ? _.div({ class: 'at-rightWorkspace-note warning' }, 'This block needs a saved version before comments can be tracked.') : null,
-        selectedAnchor
-            ? _.div({ class: 'at-commentAnchorPreview' },
-                _.strong('Anchored to selection'),
-                _.span(anchorSnippet(selectedAnchor))
-            )
-            : null,
-        _.Textarea({
-            label: 'Comment',
-            icon: 'comment',
-            rows: 3,
-            model: blockCommentDraft,
-            placeholder: 'Add a note for this block',
-        }),
-        () => blockCommentsError.value ? _.div({ class: 'at-chatError' }, blockCommentsError.value) : null,
-        _.div({ class: 'at-rightWorkspace-actions is-top' },
-            _.button({
-                type: 'button',
-                class: 'at-rightWorkspace-action is-primary',
-                disabled: () => !Boolean(blockCommentDraft.value.trim())
-                    || block.dirty
-                    || !block.current_version_id
-                    || blockCommentActionStatus.value !== 'idle',
-                onclick: () => createBlockComment(block),
-            }, actionStatus === 'creating' ? 'Adding...' : 'Add comment'),
-            _.button({
-                type: 'button',
-                class: 'at-rightWorkspace-action',
-                disabled: () => actionStatus !== 'idle',
-                onclick: () => loadBlockComments(block, { force: true }),
-            }, 'Refresh')
-        ),
-        status === 'loading'
-            ? _.div({ class: 'at-chatNotice' }, 'Loading comments...')
-            : null,
-        comments.length ? _.div({ class: 'at-commentFilters' }, commentFilterOptions.map((option) => _.button({
-            type: 'button',
-            class: option.value === blockCommentFilter.value ? 'at-commentFilter is-active' : 'at-commentFilter',
-            onclick: () => setBlockCommentFilter(option.value),
-        },
-            _.span(option.label),
-            _.strong(String(counts[option.value] || 0))
-        ))) : null,
-        comments.length
-            ? visibleComments.length
-                ? _.div({ class: 'at-commentList' }, visibleComments.map((comment) => {
-                const isOpen = (comment.status || 'open') === 'open';
-                const isBusy = actionStatus === `updating:${comment.id}`;
-                const isUpdatingAnchor = actionStatus === `anchoring:${comment.id}`;
-                const anchor = commentAnchor(comment);
-                const anchorResolution = blockCommentAnchorResolutions.value[comment.id] || null;
-                const isActiveComment = activeBlockCommentId.value === comment.id;
+    const commentCards = () => comments.length
+        ? visibleComments.length
+            ? _.div({ class: 'at-commentList' }, visibleComments.map((comment) => {
+            const isOpen = (comment.status || 'open') === 'open';
+            const isBusy = actionStatus === `updating:${comment.id}`;
+            const isUpdatingAnchor = actionStatus === `anchoring:${comment.id}`;
+            const anchor = commentAnchor(comment);
+            const anchorResolution = blockCommentAnchorResolutions.value[comment.id] || null;
+            const isActiveComment = activeBlockCommentId.value === comment.id;
 
-                return _.div({
-                    class: [
-                        'at-commentItem',
-                        comment.is_current_version ? '' : 'is-stale',
-                        isActiveComment ? 'is-active' : '',
-                    ].filter(Boolean).join(' '),
-                    'data-comment-item-id': String(comment.id),
-                },
-                    _.div({ class: 'at-commentItem-head' },
-                        _.strong(isOpen ? 'Open comment' : 'Resolved comment'),
-                        _.span({ class: `at-commentStatus status-${comment.status}` }, comment.status || 'open')
-                    ),
-                    _.div({ class: 'at-commentItem-version' }, comment.version_number
-                        ? `v${comment.version_number}${comment.is_current_version ? ' current' : ' stale'}`
-                        : ''
-                    ),
-                    anchorSnippet(anchor)
-                        ? _.div({ class: `at-commentAnchor ${commentAnchorStateClass(comment)}` },
-                            _.span(commentAnchorStateLabel(comment) || 'Anchor'),
-                            _.strong(anchorSnippet(anchor)),
-                            anchorResolution?.state === 'reanchored'
-                                ? _.em('Matched in current text')
-                                : null
-                        )
-                        : null,
-                    _.p({ class: 'at-commentBody' }, comment.body || ''),
-                    _.div({ class: 'at-commentItem-actions' },
-                        _.button({
-                            type: 'button',
-                            class: 'at-commentItem-action',
-                            onclick: () => focusEditorBlock(comment.block_uuid || block.block_uuid),
-                        }, 'Focus block'),
+            return _.div({
+                class: [
+                    'at-commentItem',
+                    comment.is_current_version ? '' : 'is-stale',
+                    isActiveComment ? 'is-active' : '',
+                ].filter(Boolean).join(' '),
+                'data-comment-item-id': String(comment.id),
+            },
+                _.div({ class: 'at-commentItem-head' },
+                    _.strong(isOpen ? 'Open comment' : 'Resolved comment'),
+                    _.span({ class: `at-commentStatus status-${comment.status}` }, comment.status || 'open')
+                ),
+                _.div({ class: 'at-commentItem-version' }, comment.version_number
+                    ? `v${comment.version_number}${comment.is_current_version ? ' current' : ' stale'}`
+                    : ''
+                ),
+                anchorSnippet(anchor)
+                    ? _.div({ class: `at-commentAnchor ${commentAnchorStateClass(comment)}` },
+                        _.span(commentAnchorStateLabel(comment) || 'Anchor'),
+                        _.strong(anchorSnippet(anchor)),
                         anchorResolution?.state === 'reanchored'
-                            ? _.button({
-                                type: 'button',
-                                class: 'at-commentItem-action is-apply',
-                                disabled: isUpdatingAnchor || actionStatus !== 'idle' || !block.current_version_id,
-                                onclick: () => updateBlockCommentAnchor(block, comment, anchorResolution),
-                            }, isUpdatingAnchor ? 'Saving...' : 'Update anchor')
-                            : null,
-                        _.button({
-                            type: 'button',
-                            class: isOpen ? 'at-commentItem-action' : 'at-commentItem-action is-apply',
-                            disabled: isBusy || actionStatus !== 'idle',
-                            onclick: () => updateBlockCommentStatus(block, comment, isOpen ? 'resolved' : 'open'),
-                        }, isBusy ? 'Saving...' : (isOpen ? 'Resolve' : 'Reopen'))
+                            ? _.em('Matched in current text')
+                            : null
                     )
-                );
-            }))
-                : _.div({ class: 'at-rightWorkspace-emptyState' },
-                    _.strong('No comments in this filter'),
-                    _.p('Switch filter to see other comment states.')
+                    : null,
+                _.p({ class: 'at-commentBody' }, comment.body || ''),
+                _.div({ class: 'at-commentItem-actions' },
+                    _.button({
+                        type: 'button',
+                        class: 'at-commentItem-action',
+                        onclick: () => focusEditorBlock(comment.block_uuid || block.block_uuid),
+                    }, 'Focus block'),
+                    anchorResolution?.state === 'reanchored'
+                        ? _.button({
+                            type: 'button',
+                            class: 'at-commentItem-action is-apply',
+                            disabled: isUpdatingAnchor || actionStatus !== 'idle' || !block.current_version_id,
+                            onclick: () => updateBlockCommentAnchor(block, comment, anchorResolution),
+                        }, isUpdatingAnchor ? 'Saving...' : 'Update anchor')
+                        : null,
+                    _.button({
+                        type: 'button',
+                        class: isOpen ? 'at-commentItem-action' : 'at-commentItem-action is-apply',
+                        disabled: isBusy || actionStatus !== 'idle',
+                        onclick: () => updateBlockCommentStatus(block, comment, isOpen ? 'resolved' : 'open'),
+                    }, isBusy ? 'Saving...' : (isOpen ? 'Resolve' : 'Reopen'))
                 )
+            );
+        }))
             : _.div({ class: 'at-rightWorkspace-emptyState' },
-                _.strong('No comments yet'),
-                _.p('Add comments to track manual editorial notes on this block version.')
+                _.strong('No comments in this filter'),
+                _.p('Switch filter to see other comment states.')
             )
+        : _.div({ class: 'at-rightWorkspace-emptyState' },
+            _.strong('No comments yet'),
+            _.p('Add comments to track manual editorial notes on this block version.')
+        );
+
+    return _.div({ class: 'at-rightWorkspace-section at-commentsReviewSection' },
+        _.div({ class: 'at-commentsReviewScroller' },
+            _.h3('Editorial comments'),
+            block.dirty ? _.div({ class: 'at-rightWorkspace-note warning' }, 'Save the selected block before adding a comment.') : null,
+            !block.current_version_id ? _.div({ class: 'at-rightWorkspace-note warning' }, 'This block needs a saved version before comments can be tracked.') : null,
+            selectedAnchor
+                ? _.div({ class: 'at-commentAnchorPreview' },
+                    _.strong('Anchored to selection'),
+                    _.span(anchorSnippet(selectedAnchor))
+                )
+                : null,
+            _.Textarea({
+                label: 'Comment',
+                icon: 'comment',
+                rows: 3,
+                model: blockCommentDraft,
+                placeholder: 'Add a note for this block',
+            }),
+            () => blockCommentsError.value ? _.div({ class: 'at-chatError' }, blockCommentsError.value) : null,
+            _.div({ class: 'at-rightWorkspace-actions is-top' },
+                _.button({
+                    type: 'button',
+                    class: 'at-rightWorkspace-action is-primary',
+                    disabled: () => !Boolean(blockCommentDraft.value.trim())
+                        || block.dirty
+                        || !block.current_version_id
+                        || blockCommentActionStatus.value !== 'idle',
+                    onclick: () => createBlockComment(block),
+                }, actionStatus === 'creating' ? 'Adding...' : 'Add comment'),
+                _.button({
+                    type: 'button',
+                    class: 'at-rightWorkspace-action',
+                    disabled: () => actionStatus !== 'idle',
+                    onclick: () => loadBlockComments(block, { force: true }),
+                }, 'Refresh')
+            ),
+            status === 'loading'
+                ? _.div({ class: 'at-chatNotice' }, 'Loading comments...')
+                : null,
+            comments.length ? _.div({ class: 'at-commentFilters' }, commentFilterOptions.map((option) => _.button({
+                type: 'button',
+                class: option.value === blockCommentFilter.value ? 'at-commentFilter is-active' : 'at-commentFilter',
+                onclick: () => setBlockCommentFilter(option.value),
+            },
+                _.span(option.label),
+                _.strong(String(counts[option.value] || 0))
+            ))) : null,
+            comments.length ? _.div({ class: 'at-commentFilters is-anchor' }, commentAnchorFilterOptions.map((option) => _.button({
+                type: 'button',
+                class: option.value === blockCommentAnchorFilter.value ? 'at-commentFilter is-active' : 'at-commentFilter',
+                onclick: () => setBlockCommentAnchorFilter(option.value),
+            },
+                _.span(option.label),
+                _.strong(String(anchorCounts[option.value] || 0))
+            ))) : null,
+            commentCards()
+        ),
+        comments.length ? _.div({ class: 'at-commentReviewNav' },
+            _.button({
+                type: 'button',
+                class: 'at-commentNavBtn',
+                disabled: !visibleComments.length,
+                onclick: () => navigateBlockComment(block, -1),
+            }, 'Previous'),
+            _.span(visibleComments.length
+                ? `${Math.max(activeCommentIndex, 0) + 1} / ${visibleComments.length}`
+                : '0 / 0'),
+            _.button({
+                type: 'button',
+                class: 'at-commentNavBtn',
+                disabled: !visibleComments.length,
+                onclick: () => navigateBlockComment(block, 1),
+            }, 'Next')
+        ) : null
     );
 }
 
@@ -2392,7 +2470,7 @@ function rightWorkspaceBody(tool, block, keyBook) {
     if (tool.id === 'comments') {
         runUntracked(() => loadBlockComments(block));
 
-        return _.div({ class: 'at-rightWorkspace-body' },
+        return _.div({ class: 'at-rightWorkspace-body is-commentsReview' },
             blockContextSummary(block),
             commentsPanel(block)
         );
@@ -3707,6 +3785,27 @@ function editorText(keyBook) {
             });
     };
 
+    navigateBlockComment = (block, direction = 1) => {
+        const comments = visibleBlockComments(blockComments.value);
+        if (!comments.length) return;
+
+        const currentIndex = comments.findIndex((comment) => comment.id === activeBlockCommentId.value);
+        const fallbackIndex = direction > 0 ? -1 : 0;
+        const nextIndex = (currentIndex >= 0 ? currentIndex : fallbackIndex) + direction;
+        const normalizedIndex = (nextIndex + comments.length) % comments.length;
+        const nextComment = comments[normalizedIndex];
+        const blockUuid = nextComment.block_uuid || block?.block_uuid || commentAnchor(nextComment)?.block_uuid;
+
+        activeBlockCommentId.value = nextComment.id;
+        if (blockUuid) focusEditorBlock(blockUuid);
+
+        requestAnimationFrame(() => {
+            document
+                .querySelector(`[data-comment-item-id="${cssSelectorEscape(nextComment.id)}"]`)
+                ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        });
+    };
+
     loadVoiceProfiles = (bookKey = keyBook, { force = false } = {}) => {
         if (!bookKey) {
             voiceProfiles.value = [];
@@ -4591,6 +4690,7 @@ function editorText(keyBook) {
         createBlockCommentFromSource = () => { };
         updateBlockCommentStatus = () => { };
         updateBlockCommentAnchor = () => { };
+        navigateBlockComment = () => { };
         refreshInlineCommentMarkers = () => { };
         loadVoiceProfiles = () => { };
         loadBlockVoiceAssignment = () => { };
@@ -4694,6 +4794,13 @@ function bottomBar() {
                 })
             ),
             _.span({ class: 'at-bottomBar-item' }, () => `Tool: ${activeToolLabel()}`),
+            _.span({ class: 'at-bottomBar-item' }, () => {
+                const counts = bookCommentSummaryCounts();
+
+                return counts.all
+                    ? `Comments: ${counts.open} open, ${counts.stale} stale`
+                    : 'Comments: 0';
+            }),
             _.span({ class: 'at-bottomBar-item' }, () => {
                 const block = activeOutlineItem();
                 const text = block?.label || '';

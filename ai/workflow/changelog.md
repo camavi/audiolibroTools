@@ -74,3 +74,4 @@
 - Aggiunti commenti ancorati alla selezione testo: il commento salva l'anchor in `metadata_json` e l'editor mostra highlight visuali tramite ProseMirror decorations.
 - Aggiunto riancoraggio visuale dei commenti: gli anchor stale vengono cercati nel testo corrente con `diff_match_patch` e mostrati come highlight riancorati quando ritrovati.
 - Aggiunte azioni sui commenti ancorati: click sull'highlight apre Comments, seleziona la card e `Update anchor` conferma il reanchor sulla versione corrente.
+- Migliorato pannello Comments come revisione: navigazione Previous/Next, filtro anchor Anchored/Reanchored/Stale e conteggi commenti nella bottom bar.

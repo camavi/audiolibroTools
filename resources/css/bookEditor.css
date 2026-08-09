@@ -329,6 +329,7 @@
     display: grid;
     grid-template-columns: 48px 1fr;
     height: 100%;
+    min-height: 0;
     min-width: 0;
     background: #ffffff;
 }
@@ -383,11 +384,16 @@
 }
 
 .at-rightWorkspace-panel {
+    display: flex;
+    height: 100%;
+    min-height: 0;
     min-width: 0;
-    overflow: auto;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .at-rightWorkspace-header {
+    flex: 0 0 auto;
     padding: 12px 14px;
     border-bottom: 1px solid #e0e0e0;
     background: #ffffff;
@@ -453,7 +459,22 @@
 }
 
 .at-rightWorkspace-body {
+    position: relative;
+    flex: 1 1 auto;
+    height: 0;
+    min-height: 0;
+    overflow: auto;
     padding: 12px;
+}
+
+.at-rightWorkspace-body.is-commentsReview {
+    display: flex;
+    overflow: hidden;
+    flex-direction: column;
+}
+
+.at-rightWorkspace-body.is-commentsReview .at-rightWorkspace-summary {
+    flex: 0 0 auto;
 }
 
 .at-rightWorkspace-summary {
@@ -695,10 +716,65 @@
     white-space: nowrap;
 }
 
+.at-commentsReviewSection {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.at-commentsReviewScroller {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding-bottom: 66px;
+}
+
 .at-commentList {
     display: grid;
     gap: 9px;
     margin-top: 10px;
+}
+
+.at-commentReviewNav {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 6px;
+    align-items: center;
+    padding: 8px 0 0;
+    border-top: 1px solid #e2e8f0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), #ffffff 42%);
+}
+
+.at-commentReviewNav span {
+    min-width: 46px;
+    color: #475569;
+    font-size: 11px;
+    text-align: center;
+}
+
+.at-commentNavBtn {
+    min-height: 30px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #334155;
+    font: inherit;
+    font-size: 12px;
+}
+
+.at-commentNavBtn:not(:disabled) {
+    cursor: pointer;
+}
+
+.at-commentNavBtn:disabled {
+    background: #f8fafc;
+    color: #94a3b8;
 }
 
 .at-commentFilters {
@@ -706,6 +782,11 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 5px;
     margin-top: 10px;
+}
+
+.at-commentFilters.is-anchor {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 6px;
 }
 
 .at-commentFilter {
