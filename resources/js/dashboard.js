@@ -1,6 +1,7 @@
 import 'cmswift';
 import newBookStartPage from './dashboard/page/newBookStart.js';
 import bookEditorPage from './dashboard/page/bookEditor.js';
+import settingPage from './dashboard/page/setting.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
@@ -24,7 +25,7 @@ const navGroups = [
     { label: 'Team', key: 'team', icon: 'diversity_3' },
     { label: 'Profile', key: 'profile', icon: 'person' },
     { label: 'Organization', key: 'organization', icon: 'hub' },
-    { label: 'Settings', key: 'setting', icon: 'settings' },
+    { label: 'Settings', key: 'setting', icon: 'settings', link: '/dashboard/setting' },
     { label: 'Prompts AI', key: 'prompts-ai', icon: 'psychology' },
     { label: 'Upload audio', key: 'upload-audio', icon: 'upload_file' },
     { label: 'Logout', key: 'logout', icon: 'logout' },
@@ -126,4 +127,5 @@ _.router.setOutlet(contentPage);
 _.router.add('/dashboard', pageDashboard);
 _.router.add('/dashboard/new-book', newBookStart);
 _.router.add('/dashboard/book/:key_book/edit', bookEditor);
+_.router.add('/dashboard/setting', settingPage);
 _.router.start();
