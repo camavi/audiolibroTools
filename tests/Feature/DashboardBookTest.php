@@ -5,10 +5,10 @@ namespace Tests\Feature;
 use App\Models\AiChatMessage;
 use App\Models\AiChatThread;
 use App\Models\Book;
-use App\Models\BookBlockVoiceAssignment;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
 use App\Models\BookBlockTranslation;
+use App\Models\BookBlockVoiceAssignment;
 use App\Models\BookCategory;
 use App\Models\BookVoiceProfile;
 use App\Services\BookBlockService;
@@ -1239,7 +1239,7 @@ class DashboardBookTest extends TestCase
             'text_plain' => 'Second activity block.',
         ]);
 
-        BookBlockReview::query()->create([
+        $review = BookBlockReview::query()->create([
             'book_id' => $book->id,
             'book_block_id' => $firstBlock['block']->id,
             'book_block_version_id' => $firstBlock['version']->id,
@@ -1259,7 +1259,7 @@ class DashboardBookTest extends TestCase
             'body' => 'Review this sentence.',
         ]);
 
-        BookBlockTranslation::query()->create([
+        $translation = BookBlockTranslation::query()->create([
             'book_id' => $book->id,
             'book_block_id' => $secondBlock['block']->id,
             'source_book_block_version_id' => $secondBlock['version']->id,
@@ -1299,9 +1299,11 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.items.0.type', 'draft_reviews')
             ->assertJsonPath('data.items.0.tool', 'correct')
             ->assertJsonPath('data.items.0.title', 'Correction draft ready')
+            ->assertJsonPath('data.items.0.action_target.id', $review->id)
             ->assertJsonPath('data.items.1.type', 'draft_translations')
             ->assertJsonPath('data.items.1.tool', 'translate')
             ->assertJsonPath('data.items.1.title', 'Translation draft ready')
+            ->assertJsonPath('data.items.1.action_target.id', $translation->id)
             ->assertJsonPath('data.items.2.type', 'audio_missing')
             ->assertJsonPath('data.items.2.tool', 'audio')
             ->assertJsonPath('data.items.2.title', 'Audio not generated')

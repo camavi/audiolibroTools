@@ -504,6 +504,14 @@ class DashboardBookController extends Controller
             }
 
             if ($block->draft_reviews_count) {
+                $singleReview = $block->draft_reviews_count === 1
+                    ? $block->reviews()
+                        ->where('status', 'draft')
+                        ->where('book_block_version_id', $block->current_version_id)
+                        ->latest('id')
+                        ->first()
+                    : null;
+
                 $items->push([
                     ...$base,
                     'id' => "reviews-draft-{$block->block_uuid}",
@@ -513,6 +521,13 @@ class DashboardBookController extends Controller
                     'title' => 'Correction draft ready',
                     'count' => (int) $block->draft_reviews_count,
                     'description' => 'AI corrections are waiting for apply or reject.',
+                    'action_target' => $singleReview ? [
+                        'id' => $singleReview->id,
+                        'status' => $singleReview->status,
+                        'suggested_text' => $singleReview->suggested_text,
+                        'original_text' => $singleReview->original_text,
+                        'is_current_version' => true,
+                    ] : null,
                 ]);
             }
 
@@ -530,6 +545,14 @@ class DashboardBookController extends Controller
             }
 
             if ($block->draft_translations_count) {
+                $singleTranslation = $block->draft_translations_count === 1
+                    ? $block->translations()
+                        ->where('status', 'draft')
+                        ->where('source_book_block_version_id', $block->current_version_id)
+                        ->latest('id')
+                        ->first()
+                    : null;
+
                 $items->push([
                     ...$base,
                     'id' => "translations-draft-{$block->block_uuid}",
@@ -539,6 +562,13 @@ class DashboardBookController extends Controller
                     'title' => 'Translation draft ready',
                     'count' => (int) $block->draft_translations_count,
                     'description' => 'Translations are waiting for approval or rejection.',
+                    'action_target' => $singleTranslation ? [
+                        'id' => $singleTranslation->id,
+                        'status' => $singleTranslation->status,
+                        'target_locale' => $singleTranslation->target_locale,
+                        'translated_text' => $singleTranslation->translated_text,
+                        'is_current_version' => true,
+                    ] : null,
                 ]);
             }
 

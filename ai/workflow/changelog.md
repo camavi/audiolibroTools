@@ -87,3 +87,4 @@
 - Corretto scroll Activity: `Focus` e click sulla card mantengono la posizione della lista, mentre `Previous/Next` continua a centrare l'item attivo.
 - Migliorata priorita' Activity: label editoriali piu' chiare, ordinamento deterministico per severita'/blocco/tipo e badge sorgente per ogni item.
 - Avviate azioni dirette Activity: gli item `Audio not generated` possono generare audio dalla coda senza aprire il pannello Audio.
+- Estese le azioni dirette Activity a draft singoli: correzioni con `Apply/Reject` e traduzioni con `Approve/Reject`, mentre i gruppi multipli restano nel tool dedicato.

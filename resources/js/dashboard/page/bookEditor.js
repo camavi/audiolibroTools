@@ -1064,38 +1064,73 @@ function activityOpenActionLabel(item) {
     return labels[item?.tool] || 'Open';
 }
 
-function activityDirectActionLabel(item) {
-    const labels = {
-        audio_missing: 'Generate audio',
-    };
-
-    return labels[item?.type] || null;
+function activityTargetBlock(item) {
+    return editorOutline.value.find((block) => block.block_uuid === item?.block_uuid) || null;
 }
 
-function activityActionStatusForItem(item) {
-    return item?.id ? `activity:${item.id}` : 'idle';
+function activityDirectActions(item) {
+    if (item?.type === 'audio_missing') {
+        return [{ action: 'generate_audio', label: 'Generate audio', primary: true }];
+    }
+
+    if (item?.type === 'draft_reviews' && item.action_target?.id && Number(item.count || 0) === 1) {
+        return [
+            { action: 'apply_review', label: 'Apply', primary: true },
+            { action: 'reject_review', label: 'Reject' },
+        ];
+    }
+
+    if (item?.type === 'draft_translations' && item.action_target?.id && Number(item.count || 0) === 1) {
+        return [
+            { action: 'approve_translation', label: 'Approve', primary: true },
+            { action: 'reject_translation', label: 'Reject' },
+        ];
+    }
+
+    return [];
 }
 
-function isActivityItemActionBusy(item) {
-    return bookActivityActionStatus.value === activityActionStatusForItem(item);
+function activityActionStatusForItem(item, action = 'run') {
+    return item?.id ? `activity:${item.id}:${action}` : 'idle';
 }
 
-function canRunActivityDirectAction(item) {
-    return Boolean(activityDirectActionLabel(item)) && bookActivityActionStatus.value === 'idle';
+function isActivityItemActionBusy(item, action = 'run') {
+    return bookActivityActionStatus.value === activityActionStatusForItem(item, action);
 }
 
-function runBookActivityItemAction(item, keyBook) {
-    if (!item || !keyBook || !canRunActivityDirectAction(item)) return;
+function canRunActivityDirectAction(item, action = 'run') {
+    if (bookActivityActionStatus.value !== 'idle') return false;
+    if (!activityDirectActions(item).some((candidate) => candidate.action === action)) return false;
 
-    if (item.type === 'audio_missing') {
-        generateActivityAudio(item, keyBook);
+    const block = activityTargetBlock(item);
+    if ((action === 'apply_review' || action === 'reject_review') && (!block || block.dirty || blockReviewActionStatus.value !== 'idle')) return false;
+    if ((action === 'approve_translation' || action === 'reject_translation') && (!block || blockTranslationActionStatus.value !== 'idle')) return false;
+
+    return true;
+}
+
+function runBookActivityItemAction(item, keyBook, action = 'run') {
+    if (!item || !keyBook || !canRunActivityDirectAction(item, action)) return;
+
+    if (action === 'generate_audio') {
+        generateActivityAudio(item, keyBook, action);
+        return;
+    }
+
+    if (action === 'apply_review' || action === 'reject_review') {
+        updateActivityReview(item, action);
+        return;
+    }
+
+    if (action === 'approve_translation' || action === 'reject_translation') {
+        updateActivityTranslation(item, keyBook, action);
     }
 }
 
-function generateActivityAudio(item, keyBook) {
+function generateActivityAudio(item, keyBook, action = 'generate_audio') {
     if (!item?.block_uuid || bookActivityActionStatus.value !== 'idle') return;
 
-    const statusKey = activityActionStatusForItem(item);
+    const statusKey = activityActionStatusForItem(item, action);
     const audioSetting = audioAiSetting();
 
     preserveActivityScroll(() => {
@@ -1126,6 +1161,86 @@ function generateActivityAudio(item, keyBook) {
         })
         .catch((error) => {
             bookActivityError.value = requestErrorMessage(error, 'Unable to run activity action.');
+        })
+        .finally(() => {
+            if (bookActivityActionStatus.value === statusKey) {
+                bookActivityActionStatus.value = 'idle';
+            }
+        });
+}
+
+async function updateActivityReview(item, action) {
+    const block = activityTargetBlock(item);
+    const review = item?.action_target;
+    if (!block || !review?.id || bookActivityActionStatus.value !== 'idle') return;
+
+    const statusKey = activityActionStatusForItem(item, action);
+
+    preserveActivityScroll(() => {
+        activeBookActivityItemId.value = item.id || null;
+        focusEditorBlock(item.block_uuid);
+    });
+
+    bookActivityActionStatus.value = statusKey;
+    bookActivityError.value = null;
+
+    try {
+        if (action === 'apply_review') {
+            await applyBlockReview(block, {
+                ...review,
+                status: 'draft',
+                is_current_version: true,
+            });
+        } else {
+            await rejectBlockReview(block, {
+                ...review,
+                status: 'draft',
+                is_current_version: true,
+            });
+        }
+    } catch (error) {
+        bookActivityError.value = requestErrorMessage(error, 'Unable to update correction from Activity.');
+    } finally {
+        if (bookActivityActionStatus.value === statusKey) {
+            bookActivityActionStatus.value = 'idle';
+        }
+    }
+}
+
+function updateActivityTranslation(item, keyBook, action) {
+    const block = activityTargetBlock(item);
+    const translation = item?.action_target;
+    if (!block || !translation?.id || bookActivityActionStatus.value !== 'idle') return;
+
+    const statusKey = activityActionStatusForItem(item, action);
+    const status = action === 'approve_translation' ? 'approved' : 'rejected';
+
+    preserveActivityScroll(() => {
+        activeBookActivityItemId.value = item.id || null;
+        focusEditorBlock(item.block_uuid);
+    });
+
+    bookActivityActionStatus.value = statusKey;
+    bookActivityError.value = null;
+
+    _.http.patchJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/translations/${translation.id}`, {
+        status,
+    })
+        .then((payload) => {
+            const data = normalizeDataPayload(payload);
+
+            if (data.translation) {
+                blockTranslations.value = [
+                    data.translation,
+                    ...blockTranslations.value.filter((itemTranslation) => itemTranslation.id !== data.translation.id),
+                ];
+                blockTranslationsStatus.value = 'ready';
+            }
+
+            loadBookActivity(keyBook, { force: true });
+        })
+        .catch((error) => {
+            bookActivityError.value = requestErrorMessage(error, 'Unable to update translation from Activity.');
         })
         .finally(() => {
             if (bookActivityActionStatus.value === statusKey) {
@@ -1477,7 +1592,6 @@ function activityPanel(keyBook) {
             items.length
                 ? _.div({ class: 'at-activityList' }, items.map((item) => {
                     const targetTool = rightWorkspaceTools.find((tool) => tool.id === item.tool);
-                    const directActionLabel = activityDirectActionLabel(item);
                     const actionButtons = [
                         _.button({
                             type: 'button',
@@ -1488,15 +1602,15 @@ function activityPanel(keyBook) {
                                 openBookActivityItem(item, { openTool: false });
                             },
                         }, 'Focus'),
-                        directActionLabel ? _.button({
+                        ...activityDirectActions(item).map((directAction) => _.button({
                             type: 'button',
-                            class: 'at-activityItemAction is-primary',
-                            disabled: () => !canRunActivityDirectAction(item),
+                            class: directAction.primary ? 'at-activityItemAction is-primary' : 'at-activityItemAction',
+                            disabled: () => !canRunActivityDirectAction(item, directAction.action),
                             onclick: (event) => {
                                 event.stopPropagation();
-                                runBookActivityItemAction(item, keyBook);
+                                runBookActivityItemAction(item, keyBook, directAction.action);
                             },
-                        }, () => isActivityItemActionBusy(item) ? 'Generating...' : directActionLabel) : null,
+                        }, () => isActivityItemActionBusy(item, directAction.action) ? `${directAction.label}...` : directAction.label)),
                         _.button({
                             type: 'button',
                             class: 'at-activityItemAction',
