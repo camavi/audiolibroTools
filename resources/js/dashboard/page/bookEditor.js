@@ -34,6 +34,7 @@ const bookActivityContextKey = _.rod(null);
 const bookActivityError = _.rod(null);
 const bookActivityFilter = _.rod('all');
 const activeBookActivityItemId = _.rod(null);
+const bookActivityActionStatus = _.rod('idle');
 const blockReviews = _.rod([]);
 const blockReviewsStatus = _.rod('idle');
 const blockReviewsContextKey = _.rod(null);
@@ -1063,6 +1064,76 @@ function activityOpenActionLabel(item) {
     return labels[item?.tool] || 'Open';
 }
 
+function activityDirectActionLabel(item) {
+    const labels = {
+        audio_missing: 'Generate audio',
+    };
+
+    return labels[item?.type] || null;
+}
+
+function activityActionStatusForItem(item) {
+    return item?.id ? `activity:${item.id}` : 'idle';
+}
+
+function isActivityItemActionBusy(item) {
+    return bookActivityActionStatus.value === activityActionStatusForItem(item);
+}
+
+function canRunActivityDirectAction(item) {
+    return Boolean(activityDirectActionLabel(item)) && bookActivityActionStatus.value === 'idle';
+}
+
+function runBookActivityItemAction(item, keyBook) {
+    if (!item || !keyBook || !canRunActivityDirectAction(item)) return;
+
+    if (item.type === 'audio_missing') {
+        generateActivityAudio(item, keyBook);
+    }
+}
+
+function generateActivityAudio(item, keyBook) {
+    if (!item?.block_uuid || bookActivityActionStatus.value !== 'idle') return;
+
+    const statusKey = activityActionStatusForItem(item);
+    const audioSetting = audioAiSetting();
+
+    preserveActivityScroll(() => {
+        activeBookActivityItemId.value = item.id || null;
+        focusEditorBlock(item.block_uuid);
+    });
+
+    bookActivityActionStatus.value = statusKey;
+    bookActivityError.value = null;
+
+    _.http.postJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(item.block_uuid)}/audio/generate`, {
+        provider_key: audioSetting.provider_key,
+        model: audioSetting.model,
+    })
+        .then((payload) => {
+            const data = normalizeDataPayload(payload);
+            const activeBlock = activeOutlineItem();
+
+            if (data.segment && activeBlock?.block_uuid === item.block_uuid) {
+                audioSegments.value = [
+                    data.segment,
+                    ...audioSegments.value.filter((segment) => segment.id !== data.segment.id),
+                ];
+                audioStatus.value = 'ready';
+            }
+
+            loadBookActivity(keyBook, { force: true });
+        })
+        .catch((error) => {
+            bookActivityError.value = requestErrorMessage(error, 'Unable to run activity action.');
+        })
+        .finally(() => {
+            if (bookActivityActionStatus.value === statusKey) {
+                bookActivityActionStatus.value = 'idle';
+            }
+        });
+}
+
 function activitySummaryLabel(item) {
     if (!item) return null;
 
@@ -1157,6 +1228,7 @@ function activeServerEvents() {
     if (saveStatus.value === 'saving') events.push('Saving document');
     if (aiProviderStatus.value === 'loading') events.push('Loading AI settings');
     if (bookActivityStatus.value === 'loading') events.push('Loading activity');
+    if (bookActivityActionStatus.value.startsWith('activity:')) events.push('Running activity action');
     if (blockVersionsStatus.value === 'loading') events.push('Loading versions');
     if (blockVersionActionStatus.value.startsWith('restoring:')) events.push('Restoring version');
     if (blockVersionActionStatus.value.startsWith('explaining:')) events.push('Explaining changes');
@@ -1194,7 +1266,7 @@ function serverHealthStatus() {
         aiChatStatus.value,
         aiProviderStatus.value,
         blockVersionsStatus.value,
-    ].includes('error') || ['error', 'conflict'].includes(saveStatus.value);
+    ].includes('error') || bookActivityActionStatus.value === 'error' || ['error', 'conflict'].includes(saveStatus.value);
 
     if (hasError) return 'error';
     if (activeServerEvents().length) return 'busy';
@@ -1405,6 +1477,36 @@ function activityPanel(keyBook) {
             items.length
                 ? _.div({ class: 'at-activityList' }, items.map((item) => {
                     const targetTool = rightWorkspaceTools.find((tool) => tool.id === item.tool);
+                    const directActionLabel = activityDirectActionLabel(item);
+                    const actionButtons = [
+                        _.button({
+                            type: 'button',
+                            class: 'at-activityItemAction',
+                            disabled: () => bookActivityActionStatus.value !== 'idle',
+                            onclick: (event) => {
+                                event.stopPropagation();
+                                openBookActivityItem(item, { openTool: false });
+                            },
+                        }, 'Focus'),
+                        directActionLabel ? _.button({
+                            type: 'button',
+                            class: 'at-activityItemAction is-primary',
+                            disabled: () => !canRunActivityDirectAction(item),
+                            onclick: (event) => {
+                                event.stopPropagation();
+                                runBookActivityItemAction(item, keyBook);
+                            },
+                        }, () => isActivityItemActionBusy(item) ? 'Generating...' : directActionLabel) : null,
+                        _.button({
+                            type: 'button',
+                            class: 'at-activityItemAction',
+                            disabled: () => bookActivityActionStatus.value !== 'idle',
+                            onclick: (event) => {
+                                event.stopPropagation();
+                                openBookActivityItem(item, { openTool: true });
+                            },
+                        }, activityOpenActionLabel(item)),
+                    ].filter(Boolean);
 
                     return _.div({
                         role: 'button',
@@ -1436,24 +1538,7 @@ function activityPanel(keyBook) {
                             _.span({ class: 'at-activityItemMeta' }, `${targetTool?.label || item.tool} · ${activityBlockKindLabel(item)}`),
                             _.span({ class: 'at-activityItemBody' }, item.description || ''),
                             item.preview ? _.span({ class: 'at-activityItemPreview' }, item.preview) : null,
-                            _.span({ class: 'at-activityItemActions' },
-                                _.button({
-                                    type: 'button',
-                                    class: 'at-activityItemAction',
-                                    onclick: (event) => {
-                                        event.stopPropagation();
-                                        openBookActivityItem(item, { openTool: false });
-                                    },
-                                }, 'Focus'),
-                                _.button({
-                                    type: 'button',
-                                    class: 'at-activityItemAction',
-                                    onclick: (event) => {
-                                        event.stopPropagation();
-                                        openBookActivityItem(item, { openTool: true });
-                                    },
-                                }, activityOpenActionLabel(item))
-                            )
+                            _.span({ class: 'at-activityItemActions' }, ...actionButtons)
                         )
                     );
                 }))

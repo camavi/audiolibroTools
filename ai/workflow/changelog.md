@@ -86,3 +86,4 @@
 - Migliorata Activity inbox: ogni item ha azioni `Focus` e `Open`, e la bottom bar mostra il contesto dell'activity selezionata.
 - Corretto scroll Activity: `Focus` e click sulla card mantengono la posizione della lista, mentre `Previous/Next` continua a centrare l'item attivo.
 - Migliorata priorita' Activity: label editoriali piu' chiare, ordinamento deterministico per severita'/blocco/tipo e badge sorgente per ogni item.
+- Avviate azioni dirette Activity: gli item `Audio not generated` possono generare audio dalla coda senza aprire il pannello Audio.
