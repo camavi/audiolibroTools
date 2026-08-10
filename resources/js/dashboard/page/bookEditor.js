@@ -27,6 +27,12 @@ const hiddenVersionExplanationIds = _.rod([]);
 const versionFilter = _.rod('all');
 const versionSortOrder = _.rod('newest');
 const versionSearch = _.rod('');
+const bookActivityItems = _.rod([]);
+const bookActivitySummary = _.rod({ all: 0, action: 0, review: 0, stale: 0 });
+const bookActivityStatus = _.rod('idle');
+const bookActivityContextKey = _.rod(null);
+const bookActivityError = _.rod(null);
+const bookActivityFilter = _.rod('all');
 const blockReviews = _.rod([]);
 const blockReviewsStatus = _.rod('idle');
 const blockReviewsContextKey = _.rod(null);
@@ -109,6 +115,7 @@ let loadBlockReviews = () => { };
 let createBlockReview = () => { };
 let applyBlockReview = () => { };
 let rejectBlockReview = () => { };
+let loadBookActivity = () => { };
 let loadBlockComments = () => { };
 let loadBookCommentsQueue = () => { };
 let createBlockComment = () => { };
@@ -156,6 +163,7 @@ const rightWorkspaceTools = [
     { id: 'audio', icon: 'graphic_eq', label: 'Audio' },
     { id: 'translate', icon: 'translate', label: 'Translate' },
     { id: 'versions', icon: 'history', label: 'Versions' },
+    { id: 'activity', icon: 'fact_check', label: 'Activity' },
     { id: 'settings', icon: 'tune', label: 'Settings' },
 ];
 
@@ -212,6 +220,13 @@ const commentAnchorFilterOptions = [
     { label: 'Lost anchor', value: 'stale' },
 ];
 
+const activityFilterOptions = [
+    { label: 'All', value: 'all' },
+    { label: 'Action', value: 'action' },
+    { label: 'Review', value: 'review' },
+    { label: 'Stale', value: 'stale' },
+];
+
 function readEditorPreferences() {
     try {
         return JSON.parse(globalThis.localStorage?.getItem(EDITOR_PREFERENCES_KEY) || '{}');
@@ -245,6 +260,7 @@ function restoreEditorPreferences() {
     if (versionFilterOptions.some((option) => option.value === preferences.versionFilter)) versionFilter.value = preferences.versionFilter;
     if (versionSortOptions.some((option) => option.value === preferences.versionSortOrder)) versionSortOrder.value = preferences.versionSortOrder;
     if (typeof preferences.versionSearch === 'string') versionSearch.value = preferences.versionSearch;
+    if (activityFilterOptions.some((option) => option.value === preferences.bookActivityFilter)) bookActivityFilter.value = preferences.bookActivityFilter;
     if (commentFilterOptions.some((option) => option.value === preferences.blockCommentFilter)) blockCommentFilter.value = preferences.blockCommentFilter;
     if (commentAnchorFilterOptions.some((option) => option.value === preferences.blockCommentAnchorFilter)) blockCommentAnchorFilter.value = preferences.blockCommentAnchorFilter;
     if (Array.isArray(preferences.hiddenVersionExplanationIds)) {
@@ -812,6 +828,11 @@ function setVersionSearch(search) {
     writeEditorPreference('versionSearch', search);
 }
 
+function setBookActivityFilter(filter) {
+    bookActivityFilter.value = filter;
+    writeEditorPreference('bookActivityFilter', filter);
+}
+
 function setBlockCommentFilter(filter) {
     blockCommentFilter.value = filter;
     writeEditorPreference('blockCommentFilter', filter);
@@ -961,6 +982,42 @@ function bookCommentSummaryCounts() {
     }, { all: 0, open: 0, resolved: 0, stale: 0 });
 }
 
+function bookActivityCounts() {
+    const summary = bookActivitySummary.value || {};
+
+    return {
+        all: Number(summary.all || 0),
+        action: Number(summary.action || 0),
+        review: Number(summary.review || 0),
+        stale: Number(summary.stale || 0),
+    };
+}
+
+function visibleBookActivityItems() {
+    const items = bookActivityItems.value || [];
+    if (bookActivityFilter.value === 'all') return items;
+
+    return items.filter((item) => item.severity === bookActivityFilter.value);
+}
+
+function openBookActivityItem(item) {
+    if (!item) return;
+
+    if (item.block_uuid) {
+        focusEditorBlock(item.block_uuid);
+    }
+
+    if (item.tool) {
+        setRightWorkspaceTool(item.tool);
+    }
+}
+
+function activityBlockKindLabel(item) {
+    if (item?.block_type === 'heading') return 'Chapter';
+
+    return blockKindLabel(item?.block_type || 'paragraph');
+}
+
 function blockCommentBadge(item) {
     const counts = blockCommentSummaries.value[item.block_uuid]
         || (blockCommentContextBlockUuid() === item.block_uuid ? activeBlockCommentCounts() : null);
@@ -1028,6 +1085,7 @@ function activeServerEvents() {
 
     if (saveStatus.value === 'saving') events.push('Saving document');
     if (aiProviderStatus.value === 'loading') events.push('Loading AI settings');
+    if (bookActivityStatus.value === 'loading') events.push('Loading activity');
     if (blockVersionsStatus.value === 'loading') events.push('Loading versions');
     if (blockVersionActionStatus.value.startsWith('restoring:')) events.push('Restoring version');
     if (blockVersionActionStatus.value.startsWith('explaining:')) events.push('Explaining changes');
@@ -1055,6 +1113,7 @@ function activeServerEvents() {
 function serverHealthStatus() {
     const hasError = [
         blockReviewsStatus.value,
+        bookActivityStatus.value,
         blockCommentsStatus.value,
         bookCommentsQueueStatus.value,
         voiceProfilesStatus.value,
@@ -1182,7 +1241,7 @@ function rightWorkspaceHeader(tool, block, keyBook) {
                 _.Icon ? _.Icon({ name: tool.icon, class: 'at-rightWorkspace-titleIcon' }) : null,
                 _.span(tool.label)
             ),
-            tool.id !== 'settings' ? _.button({
+            !['activity', 'settings'].includes(tool.id) ? _.button({
                 type: 'button',
                 class: 'at-rightWorkspace-toolSettings',
                 title: `${tool.label} AI settings`,
@@ -1235,6 +1294,68 @@ function versionActivityBadges(version) {
             class: `at-versionActivityBadge type-${key}`,
             title: `${activity[key]} ${label}`,
         }, `${label} ${activity[key]}`));
+}
+
+function activityPanel(keyBook) {
+    const counts = bookActivityCounts();
+    const items = visibleBookActivityItems();
+    const status = bookActivityStatus.value;
+
+    return _.div({ class: 'at-rightWorkspace-section at-activitySection' },
+        _.div({ class: 'at-activityHead' },
+            _.h3('Review queue'),
+            _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-action',
+                disabled: status === 'loading',
+                onclick: () => loadBookActivity(keyBook, { force: true }),
+            }, status === 'loading' ? 'Loading...' : 'Refresh')
+        ),
+        _.p('Open the next editorial, correction, translation or audio item that needs attention.'),
+        bookActivityError.value ? _.div({ class: 'at-chatError' }, bookActivityError.value) : null,
+        _.div({ class: 'at-activityStats' },
+            _.div(_.strong(String(counts.action)), _.span('Action')),
+            _.div(_.strong(String(counts.review)), _.span('Review')),
+            _.div(_.strong(String(counts.stale)), _.span('Stale'))
+        ),
+        counts.all ? _.div({ class: 'at-commentFilters' }, activityFilterOptions.map((option) => _.button({
+            type: 'button',
+            class: option.value === bookActivityFilter.value ? 'at-commentFilter is-active' : 'at-commentFilter',
+            onclick: () => setBookActivityFilter(option.value),
+        },
+            _.span(option.label),
+            _.strong(String(counts[option.value] || 0))
+        ))) : null,
+        status === 'loading'
+            ? _.div({ class: 'at-chatNotice' }, 'Loading book activity...')
+            : null,
+        items.length
+            ? _.div({ class: 'at-activityList' }, items.map((item) => {
+                const targetTool = rightWorkspaceTools.find((tool) => tool.id === item.tool);
+
+                return _.button({
+                    type: 'button',
+                    class: `at-activityItem severity-${item.severity || 'review'}`,
+                    onclick: () => openBookActivityItem(item),
+                    title: item.preview || item.title,
+                },
+                    _.span({ class: 'at-activityItemIcon' }, _.Icon ? _.Icon({ name: targetTool?.icon || 'fact_check' }) : null),
+                    _.span({ class: 'at-activityItemMain' },
+                        _.span({ class: 'at-activityItemTitle' },
+                            _.strong(item.title || 'Activity'),
+                            _.em(`${item.count || 1}`)
+                        ),
+                        _.span({ class: 'at-activityItemMeta' }, `${targetTool?.label || item.tool} · ${activityBlockKindLabel(item)}`),
+                        _.span({ class: 'at-activityItemBody' }, item.description || ''),
+                        item.preview ? _.span({ class: 'at-activityItemPreview' }, item.preview) : null
+                    )
+                );
+            }))
+            : _.div({ class: 'at-rightWorkspace-emptyState' },
+                _.strong(counts.all ? 'No activity in this filter' : 'No pending activity'),
+                _.p(counts.all ? 'Switch filter to see other review queue items.' : 'Comments, corrections, translations and audio work will appear here.')
+            )
+    );
 }
 
 function openVersionDiffDialog(block, version, versions) {
@@ -1501,6 +1622,7 @@ function versionListControls(versions) {
         ))),
         _.div({ class: 'at-versionControls-row' },
             _.Select({
+                class: 'at-versionControlField',
                 label: 'Order',
                 icon: 'sort',
                 model: versionSortOrder,
@@ -1508,6 +1630,7 @@ function versionListControls(versions) {
                 onChange: (value) => setVersionSortOrder(selectChangeValue(value, versionSortOrder.value)),
             }),
             _.Input({
+                class: 'at-versionControlField',
                 label: 'Search',
                 icon: 'search',
                 model: versionSearch,
@@ -1548,7 +1671,7 @@ function versionsPanel(block, keyBook) {
     const staleActivityCount = versions.filter((version) => version.has_stale_activity).length;
     const aiSummary = versionsAiSummary();
 
-    return _.div({ class: 'at-rightWorkspace-section at-commentsReviewSection' },
+    return _.div({ class: 'at-rightWorkspace-section at-versionSection' },
         _.h3('Version history'),
         _.div({ class: aiSummary.missingApiKey ? 'at-correctionProvider has-warning' : 'at-correctionProvider' },
             _.div({ class: 'at-correctionProvider-main' },
@@ -2472,6 +2595,11 @@ function rightWorkspaceBody(tool, block, keyBook) {
             body: 'Every manual edit, AI rewrite, correction and restore will be visible here.',
             actions: ['View changes', 'Restore version'],
         },
+        activity: {
+            title: 'Review queue',
+            body: 'Book-wide editorial, correction, translation and audio work queue.',
+            actions: ['Open next item', 'Refresh'],
+        },
         settings: {
             title: 'Tool settings',
             body: 'Workspace preferences, provider options and book-level automation settings.',
@@ -2479,6 +2607,15 @@ function rightWorkspaceBody(tool, block, keyBook) {
         },
     };
     const content = placeholders[tool.id] || placeholders.chat;
+
+    if (tool.id === 'activity') {
+        runUntracked(() => loadBookActivity(keyBook));
+
+        return _.div({ class: 'at-rightWorkspace-body' },
+            blockContextSummary(block),
+            activityPanel(keyBook)
+        );
+    }
 
     if (tool.id === 'versions') {
         loadBlockVersions(block);
@@ -3604,6 +3741,47 @@ function editorText(keyBook) {
             });
     };
 
+    loadBookActivity = (bookKey = keyBook, { force = false } = {}) => {
+        if (!bookKey) {
+            bookActivityItems.value = [];
+            bookActivitySummary.value = { all: 0, action: 0, review: 0, stale: 0 };
+            bookActivityStatus.value = 'idle';
+            bookActivityContextKey.value = null;
+            bookActivityError.value = null;
+            return;
+        }
+
+        const contextKey = `${bookKey}:activity`;
+        if (!force && bookActivityContextKey.value === contextKey && bookActivityStatus.value !== 'error') return;
+
+        bookActivityContextKey.value = contextKey;
+        bookActivityStatus.value = 'loading';
+        bookActivityError.value = null;
+
+        _.http.getJSON(`/dashboard/api/books/${bookKey}/activity?limit=200`)
+            .then((payload) => {
+                if (bookActivityContextKey.value !== contextKey) return;
+
+                const data = normalizeDataPayload(payload);
+                bookActivityItems.value = data.items || [];
+                bookActivitySummary.value = {
+                    all: Number(data.summary?.all || 0),
+                    action: Number(data.summary?.action || 0),
+                    review: Number(data.summary?.review || 0),
+                    stale: Number(data.summary?.stale || 0),
+                };
+                bookActivityStatus.value = 'ready';
+            })
+            .catch((error) => {
+                if (bookActivityContextKey.value !== contextKey) return;
+
+                bookActivityItems.value = [];
+                bookActivitySummary.value = { all: 0, action: 0, review: 0, stale: 0 };
+                bookActivityError.value = requestErrorMessage(error, 'Unable to load book activity.');
+                bookActivityStatus.value = 'error';
+            });
+    };
+
     loadBookCommentsQueue = ({ force = false } = {}) => {
         if (!keyBook) {
             bookCommentsQueue.value = [];
@@ -3769,6 +3947,7 @@ function editorText(keyBook) {
                 upsertCommentInList(data.comment);
                 loadBlockCommentSummaries();
                 loadBookCommentsQueue({ force: true });
+                loadBookActivity(keyBook, { force: true });
                 setRightWorkspaceTool('comments');
             } else {
                 loadBlockComments(block, { force: true });
@@ -3812,6 +3991,7 @@ function editorText(keyBook) {
                     upsertCommentInList(data.comment);
                     loadBlockCommentSummaries();
                     loadBookCommentsQueue({ force: true });
+                    loadBookActivity(keyBook, { force: true });
                     refreshCommentAnchorDecorations();
                 } else {
                     loadBlockComments(block, { force: true });
@@ -3855,6 +4035,7 @@ function editorText(keyBook) {
                     upsertCommentInList(data.comment);
                     loadBlockCommentSummaries();
                     loadBookCommentsQueue({ force: true });
+                    loadBookActivity(keyBook, { force: true });
                     refreshCommentAnchorDecorations();
                 } else {
                     loadBlockComments(block, { force: true });
@@ -3958,6 +4139,7 @@ function editorText(keyBook) {
                     ? String(data.assignment.voice_profile_id)
                     : '';
                 voiceAssignmentStatus.value = 'ready';
+                loadBookActivity(keyBook, { force: true });
             })
             .catch((error) => {
                 if (voiceAssignmentContextKey.value !== contextKey) return;
@@ -4009,6 +4191,7 @@ function editorText(keyBook) {
                 voiceAssignment.value = null;
                 selectedVoiceProfileId.value = '';
                 voiceAssignmentStatus.value = 'ready';
+                loadBookActivity(keyBook, { force: true });
             })
             .catch((error) => {
                 voiceAssignmentError.value = requestErrorMessage(error, 'Unable to clear voice assignment.');
@@ -4082,8 +4265,10 @@ function editorText(keyBook) {
                         ...audioSegments.value.filter((segment) => segment.id !== data.segment.id),
                     ];
                     audioStatus.value = 'ready';
+                    loadBookActivity(keyBook, { force: true });
                 } else {
                     loadBlockAudio(block, { force: true });
+                    loadBookActivity(keyBook, { force: true });
                 }
             })
             .catch((error) => {
@@ -4160,8 +4345,10 @@ function editorText(keyBook) {
 
                 if (data.translation) {
                     upsertTranslationInList(data.translation);
+                    loadBookActivity(keyBook, { force: true });
                 } else {
                     loadBlockTranslations(block, { force: true });
+                    loadBookActivity(keyBook, { force: true });
                 }
             })
             .catch((error) => {
@@ -4187,8 +4374,10 @@ function editorText(keyBook) {
 
                 if (data.translation) {
                     upsertTranslationInList(data.translation);
+                    loadBookActivity(keyBook, { force: true });
                 } else {
                     loadBlockTranslations(block, { force: true });
+                    loadBookActivity(keyBook, { force: true });
                 }
             })
             .catch((error) => {
@@ -4435,9 +4624,11 @@ function editorText(keyBook) {
                 if (review) {
                     blockReviewsContextKey.value = contextKey;
                     upsertReviewInList(review);
+                    loadBookActivity(keyBook, { force: true });
                 } else {
                     blockReviewsContextKey.value = null;
                     loadBlockReviews(block);
+                    loadBookActivity(keyBook, { force: true });
                 }
             })
             .catch((error) => {
@@ -4476,6 +4667,7 @@ function editorText(keyBook) {
                 ...block,
                 current_version_id: updatedBlock?.current_version_id || block.current_version_id || null,
             });
+            loadBookActivity(keyBook, { force: true });
         } catch {
             if (documentSaved) {
                 blockReviewsStatus.value = 'error';
@@ -4498,6 +4690,7 @@ function editorText(keyBook) {
             await patchBlockReview(block, review, {
                 status: 'rejected',
             });
+            loadBookActivity(keyBook, { force: true });
         } catch {
             blockReviewsStatus.value = 'error';
         } finally {
@@ -4692,6 +4885,7 @@ function editorText(keyBook) {
         syncEditorBlocks();
         updateActiveBlock();
         editorReady.value = true;
+        loadBookActivity(keyBook, { force: true });
         loadBlockCommentSummaries();
         loadBookCommentsQueue({ force: true });
         scheduleInlineCommentMarkerRefresh();
@@ -4720,6 +4914,11 @@ function editorText(keyBook) {
         blockVersionsContextKey.value = null;
         blockVersionActionStatus.value = 'idle';
         blockVersionsError.value = null;
+        bookActivityItems.value = [];
+        bookActivitySummary.value = { all: 0, action: 0, review: 0, stale: 0 };
+        bookActivityStatus.value = 'idle';
+        bookActivityContextKey.value = null;
+        bookActivityError.value = null;
         blockReviews.value = [];
         blockReviewsStatus.value = 'idle';
         blockReviewsContextKey.value = null;
@@ -4781,6 +4980,7 @@ function editorText(keyBook) {
         createBlockReview = () => { };
         applyBlockReview = () => { };
         rejectBlockReview = () => { };
+        loadBookActivity = () => { };
         loadBlockComments = () => { };
         loadBookCommentsQueue = () => { };
         createBlockComment = () => { };
@@ -4897,6 +5097,13 @@ function bottomBar() {
                 return counts.all
                     ? `Comments: ${counts.open} open, ${counts.stale} stale`
                     : 'Comments: 0';
+            }),
+            _.span({ class: 'at-bottomBar-item' }, () => {
+                const counts = bookActivityCounts();
+
+                return counts.all
+                    ? `Activity: ${counts.action} action, ${counts.stale} stale`
+                    : 'Activity: 0';
             }),
             _.span({ class: 'at-bottomBar-item' }, () => {
                 const block = activeOutlineItem();

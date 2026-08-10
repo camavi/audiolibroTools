@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AiChatMessage;
 use App\Models\AiChatThread;
 use App\Models\Book;
+use App\Models\BookBlockVoiceAssignment;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
 use App\Models\BookBlockTranslation;
@@ -1213,6 +1214,96 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.summaries.1.open', 0)
             ->assertJsonPath('data.summaries.1.resolved', 1)
             ->assertJsonPath('data.summaries.1.stale', 0);
+    }
+
+    public function test_dashboard_can_return_book_activity_queue(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $firstBlockUuid = (string) Str::uuid();
+        $secondBlockUuid = (string) Str::uuid();
+
+        $firstBlock = $service->saveBlock($book, [
+            'block_uuid' => $firstBlockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('First activity block.'),
+            'text_plain' => 'First activity block.',
+        ]);
+
+        $secondBlock = $service->saveBlock($book, [
+            'block_uuid' => $secondBlockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 2000,
+            'content_json' => $this->paragraphJson('Second activity block.'),
+            'text_plain' => 'Second activity block.',
+        ]);
+
+        BookBlockReview::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $firstBlock['block']->id,
+            'book_block_version_id' => $firstBlock['version']->id,
+            'type' => 'grammar',
+            'status' => 'draft',
+            'source' => 'ai',
+            'original_text' => 'First activity block.',
+            'suggested_text' => 'First activity block improved.',
+        ]);
+
+        BookBlockComment::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $firstBlock['block']->id,
+            'book_block_version_id' => $firstBlock['version']->id,
+            'block_uuid' => $firstBlockUuid,
+            'status' => 'open',
+            'body' => 'Review this sentence.',
+        ]);
+
+        BookBlockTranslation::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $secondBlock['block']->id,
+            'source_book_block_version_id' => $secondBlock['version']->id,
+            'block_uuid' => $secondBlockUuid,
+            'target_locale' => 'en',
+            'status' => 'draft',
+            'provider_key' => 'mock',
+            'model' => 'mock-translate-v1',
+            'source' => 'mock',
+            'source_text' => 'Second activity block.',
+            'translated_text' => 'Second activity block translated.',
+        ]);
+
+        $voice = BookVoiceProfile::query()->create([
+            'book_id' => $book->id,
+            'name' => 'Narrator',
+            'role' => 'narrator',
+            'voice_provider' => 'mock',
+            'voice_id' => 'narrator-1',
+            'language' => 'it',
+        ]);
+
+        BookBlockVoiceAssignment::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $secondBlock['block']->id,
+            'book_block_version_id' => $secondBlock['version']->id,
+            'book_voice_profile_id' => $voice->id,
+            'block_uuid' => $secondBlockUuid,
+            'source' => 'manual',
+        ]);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/activity")
+            ->assertOk()
+            ->assertJsonPath('data.summary.all', 4)
+            ->assertJsonPath('data.summary.action', 3)
+            ->assertJsonPath('data.summary.review', 1)
+            ->assertJsonPath('data.items.0.type', 'draft_reviews')
+            ->assertJsonPath('data.items.0.tool', 'correct')
+            ->assertJsonPath('data.items.1.type', 'draft_translations')
+            ->assertJsonPath('data.items.1.tool', 'translate')
+            ->assertJsonPath('data.items.2.type', 'audio_missing')
+            ->assertJsonPath('data.items.2.tool', 'audio')
+            ->assertJsonPath('data.items.3.type', 'comments')
+            ->assertJsonPath('data.items.3.tool', 'comments');
     }
 
     public function test_dashboard_can_create_and_return_book_voice_profiles(): void

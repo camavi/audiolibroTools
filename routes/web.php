@@ -47,6 +47,7 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::post('/books/{keyBook}/voices', [DashboardBookController::class, 'storeVoiceProfile'])->name('books.voices.store');
     Route::get('/books/{keyBook}/ai/chat', [DashboardBookController::class, 'aiChatThread'])->name('books.ai.chat.thread');
     Route::post('/books/{keyBook}/ai/chat', [DashboardBookController::class, 'aiChat'])->name('books.ai.chat');
+    Route::get('/books/{keyBook}/activity', [DashboardBookController::class, 'bookActivity'])->name('books.activity');
     Route::get('/books/{keyBook}/comments', [DashboardBookController::class, 'bookComments'])->name('books.comments');
     Route::get('/books/{keyBook}/comments/summary', [DashboardBookController::class, 'blockCommentSummary'])->name('books.comments.summary');
     Route::get('/books/{keyBook}/blocks/{blockUuid}/versions', [DashboardBookController::class, 'blockVersions'])->name('books.blocks.versions');

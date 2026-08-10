@@ -76,3 +76,5 @@
 - Aggiunte azioni sui commenti ancorati: click sull'highlight apre Comments, seleziona la card e `Update anchor` conferma il reanchor sulla versione corrente.
 - Migliorato pannello Comments come revisione: navigazione Previous/Next, filtro anchor Anchored/Reanchored/Stale e conteggi commenti nella bottom bar.
 - Aggiunta queue globale Comments per libro: endpoint API lista commenti, navigazione Previous/Next tra blocchi diversi e sincronizzazione dopo create/resolve/reanchor.
+- Avviata queue unificata Activity: nuovo tool nel Right Workspace, endpoint aggregato per commenti/correzioni/traduzioni/audio e apertura rapida del blocco nel tool corretto.
+- Corretto layout del pannello Versions nel Right Workspace stretto: filtri su righe leggibili e Order/Search senza sovrapporsi alle card versione.

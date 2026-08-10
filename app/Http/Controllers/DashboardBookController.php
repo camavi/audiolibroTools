@@ -426,6 +426,175 @@ class DashboardBookController extends Controller
         ]);
     }
 
+    public function bookActivity(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate([
+            'limit' => ['nullable', 'integer', 'min:1', 'max:300'],
+        ]);
+
+        $book = Book::query()
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $limit = (int) ($validated['limit'] ?? 180);
+        $items = collect();
+
+        $blocks = $book->blocks()
+            ->with('currentVersion')
+            ->where('status', '!=', 'deleted')
+            ->withCount([
+                'comments as open_comments_count' => fn ($query) => $query
+                    ->where('status', 'open')
+                    ->whereColumn('book_block_comments.book_block_version_id', 'book_blocks.current_version_id'),
+                'comments as stale_comments_count' => fn ($query) => $query
+                    ->whereColumn('book_block_comments.book_block_version_id', '!=', 'book_blocks.current_version_id'),
+                'reviews as draft_reviews_count' => fn ($query) => $query
+                    ->where('status', 'draft')
+                    ->whereColumn('book_block_reviews.book_block_version_id', 'book_blocks.current_version_id'),
+                'reviews as stale_reviews_count' => fn ($query) => $query
+                    ->whereColumn('book_block_reviews.book_block_version_id', '!=', 'book_blocks.current_version_id'),
+                'translations as draft_translations_count' => fn ($query) => $query
+                    ->where('status', 'draft')
+                    ->whereColumn('book_block_translations.source_book_block_version_id', 'book_blocks.current_version_id'),
+                'translations as stale_translations_count' => fn ($query) => $query
+                    ->whereColumn('book_block_translations.source_book_block_version_id', '!=', 'book_blocks.current_version_id'),
+                'voiceAssignments as current_voice_assignments_count' => fn ($query) => $query
+                    ->whereColumn('book_block_voice_assignments.book_block_version_id', 'book_blocks.current_version_id'),
+                'audioSegments as current_audio_segments_count' => fn ($query) => $query
+                    ->whereColumn('book_audio_segments.book_block_version_id', 'book_blocks.current_version_id'),
+            ])
+            ->get();
+
+        foreach ($blocks as $block) {
+            $preview = Str::of($block->text_plain ?: $block->type)->squish()->limit(140)->toString();
+            $base = [
+                'block_uuid' => $block->block_uuid,
+                'block_type' => $block->type,
+                'block_sort_order' => $block->sort_order,
+                'block_text_plain' => $block->text_plain,
+                'block_version_id' => $block->current_version_id,
+                'version_number' => $block->currentVersion?->version_number,
+                'preview' => $preview,
+            ];
+
+            if ($block->open_comments_count) {
+                $items->push([
+                    ...$base,
+                    'id' => "comments-open-{$block->block_uuid}",
+                    'type' => 'comments',
+                    'tool' => 'comments',
+                    'severity' => 'review',
+                    'title' => 'Open comments',
+                    'count' => (int) $block->open_comments_count,
+                    'description' => "{$block->open_comments_count} open comment".($block->open_comments_count === 1 ? '' : 's').' need review.',
+                ]);
+            }
+
+            if ($block->stale_comments_count) {
+                $items->push([
+                    ...$base,
+                    'id' => "comments-stale-{$block->block_uuid}",
+                    'type' => 'stale_comments',
+                    'tool' => 'comments',
+                    'severity' => 'stale',
+                    'title' => 'Stale comments',
+                    'count' => (int) $block->stale_comments_count,
+                    'description' => 'Comments are linked to older text and may need reanchoring.',
+                ]);
+            }
+
+            if ($block->draft_reviews_count) {
+                $items->push([
+                    ...$base,
+                    'id' => "reviews-draft-{$block->block_uuid}",
+                    'type' => 'draft_reviews',
+                    'tool' => 'correct',
+                    'severity' => 'action',
+                    'title' => 'Draft corrections',
+                    'count' => (int) $block->draft_reviews_count,
+                    'description' => 'AI corrections are waiting for apply or reject.',
+                ]);
+            }
+
+            if ($block->stale_reviews_count) {
+                $items->push([
+                    ...$base,
+                    'id' => "reviews-stale-{$block->block_uuid}",
+                    'type' => 'stale_reviews',
+                    'tool' => 'versions',
+                    'severity' => 'stale',
+                    'title' => 'Stale corrections',
+                    'count' => (int) $block->stale_reviews_count,
+                    'description' => 'Corrections are linked to an older block version.',
+                ]);
+            }
+
+            if ($block->draft_translations_count) {
+                $items->push([
+                    ...$base,
+                    'id' => "translations-draft-{$block->block_uuid}",
+                    'type' => 'draft_translations',
+                    'tool' => 'translate',
+                    'severity' => 'action',
+                    'title' => 'Draft translations',
+                    'count' => (int) $block->draft_translations_count,
+                    'description' => 'Translations are waiting for approval or rejection.',
+                ]);
+            }
+
+            if ($block->stale_translations_count) {
+                $items->push([
+                    ...$base,
+                    'id' => "translations-stale-{$block->block_uuid}",
+                    'type' => 'stale_translations',
+                    'tool' => 'versions',
+                    'severity' => 'stale',
+                    'title' => 'Stale translations',
+                    'count' => (int) $block->stale_translations_count,
+                    'description' => 'Translations are linked to older source text.',
+                ]);
+            }
+
+            if ($block->current_voice_assignments_count && ! $block->current_audio_segments_count) {
+                $items->push([
+                    ...$base,
+                    'id' => "audio-missing-{$block->block_uuid}",
+                    'type' => 'audio_missing',
+                    'tool' => 'audio',
+                    'severity' => 'action',
+                    'title' => 'Audio not generated',
+                    'count' => 1,
+                    'description' => 'A voice is assigned but the current version has no audio segment.',
+                ]);
+            }
+        }
+
+        $severityOrder = ['action' => 0, 'review' => 1, 'stale' => 2];
+        $orderedItems = $items
+            ->sort(function (array $a, array $b) use ($severityOrder) {
+                $severityComparison = ($severityOrder[$a['severity']] ?? 9) <=> ($severityOrder[$b['severity']] ?? 9);
+                if ($severityComparison !== 0) {
+                    return $severityComparison;
+                }
+
+                return $a['block_sort_order'] <=> $b['block_sort_order'];
+            })
+            ->take($limit)
+            ->values();
+
+        return response()->json([
+            'data' => [
+                'items' => $orderedItems,
+                'summary' => [
+                    'all' => $items->count(),
+                    'action' => $items->where('severity', 'action')->count(),
+                    'review' => $items->where('severity', 'review')->count(),
+                    'stale' => $items->where('severity', 'stale')->count(),
+                ],
+            ],
+        ]);
+    }
+
     public function bookComments(Request $request, string $keyBook): JsonResponse
     {
         $validated = $request->validate([
