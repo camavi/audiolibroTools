@@ -1119,6 +1119,23 @@
     white-space: nowrap;
 }
 
+.at-activityFeedback {
+    display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+    border-radius: 4px;
+    padding: 4px 7px;
+    background: #ecfdf5;
+    color: #047857;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.at-activityFeedback.is-error {
+    background: #fef2f2;
+    color: #b91c1c;
+}
+
 .at-activityItemActions {
     display: flex;
     flex-wrap: wrap;
@@ -1155,6 +1172,36 @@
 .at-activityItemAction:disabled {
     background: #f8fafc;
     color: #94a3b8;
+}
+
+.at-activityConfirmDialog {
+    display: grid;
+    gap: 12px;
+}
+
+.at-activityConfirmDialog p {
+    margin: 0;
+    color: #334155;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.at-activityConfirmPreview {
+    max-height: 96px;
+    overflow: auto;
+    margin: 0;
+    border-left: 3px solid #bfdbfe;
+    padding: 8px 10px;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.at-activityConfirmActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
 }
 
 .at-commentAnchorPreview {
@@ -2262,6 +2309,35 @@
 
 .at-aiSettingsDialog {
     min-width: 0;
+}
+
+.at-editorSafetyCard {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 9px;
+    border: 1px solid #dbe4ef;
+    border-radius: 4px;
+    background: #ffffff;
+}
+
+.at-editorSafetyCard-main {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.at-editorSafetyCard-main strong {
+    color: #0f172a;
+    font-size: 12px;
+}
+
+.at-editorSafetyCard-main small {
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.35;
 }
 
 .at-aiSettings-providerCard {

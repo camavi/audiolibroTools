@@ -11,6 +11,7 @@
 - La dashboard deve essere densa e gestionale, non una landing page.
 - Tutto il testo visibile deve passare da sistema multilingua.
 - `ai/ai.md` deve restare solo indice, non documentazione monolitica.
+- Il Settings generale dell'editor deve includere la preferenza `Confirm panel actions`: Activity conferma sempre, mentre i pannelli dedicati possono rendere le conferme opzionali.
 
 ## Decisioni da Prendere
 

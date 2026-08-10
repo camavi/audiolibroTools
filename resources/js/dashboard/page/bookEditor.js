@@ -14,6 +14,7 @@ const editorUiTick = _.rod(0);
 const editorPageFormat = _.rod('book');
 const editorStatus = _.rod(null);
 const saveStatus = _.rod('idle');
+const confirmPanelActions = _.rod(true);
 const editorBook = _.rod(null);
 const editorOutline = _.rod([]);
 const activeEditorBlockId = _.rod(null);
@@ -35,6 +36,7 @@ const bookActivityError = _.rod(null);
 const bookActivityFilter = _.rod('all');
 const activeBookActivityItemId = _.rod(null);
 const bookActivityActionStatus = _.rod('idle');
+const bookActivityFeedback = _.rod(null);
 const blockReviews = _.rod([]);
 const blockReviewsStatus = _.rod('idle');
 const blockReviewsContextKey = _.rod(null);
@@ -143,6 +145,7 @@ let loadAiProviders = () => { };
 let saveAiProviderSetting = () => { };
 let openCustomProviderDialog = () => { };
 let openToolAiSettingsDialog = () => { };
+let bookActivityFeedbackTimer = null;
 let openSystemPromptDialog = () => { };
 
 const AUTOSAVE_DELAY = 1200;
@@ -257,6 +260,7 @@ function restoreEditorPreferences() {
 
     if (typeof preferences.indexView === 'boolean') indexView.value = preferences.indexView;
     if (typeof preferences.commandView === 'boolean') commandView.value = preferences.commandView;
+    if (typeof preferences.confirmPanelActions === 'boolean') confirmPanelActions.value = preferences.confirmPanelActions;
     if (pageFormats.has(preferences.pageFormat)) editorPageFormat.value = preferences.pageFormat;
     if (tools.has(preferences.rightWorkspaceTool)) rightWorkspaceTool.value = preferences.rightWorkspaceTool;
     if (locales.has(preferences.translationTargetLocale)) translationTargetLocale.value = preferences.translationTargetLocale;
@@ -846,6 +850,11 @@ function setBlockCommentAnchorFilter(filter) {
     writeEditorPreference('blockCommentAnchorFilter', filter);
 }
 
+function setConfirmPanelActions(enabled) {
+    confirmPanelActions.value = Boolean(enabled);
+    writeEditorPreference('confirmPanelActions', confirmPanelActions.value);
+}
+
 function cssSelectorEscape(value) {
     const stringValue = String(value || '');
 
@@ -1090,6 +1099,134 @@ function activityDirectActions(item) {
     return [];
 }
 
+function activityActionConfirmCopy(item, action) {
+    const copies = {
+        generate_audio: {
+            title: 'Generate audio?',
+            body: 'This will create an audio segment for the current block version using the configured Audio provider.',
+            confirm: 'Generate audio',
+        },
+        apply_review: {
+            title: 'Apply correction?',
+            body: 'This will replace the selected block text, save the document, and mark this correction as applied.',
+            confirm: 'Apply correction',
+        },
+        reject_review: {
+            title: 'Reject correction?',
+            body: 'This will mark the correction as rejected without changing the book text.',
+            confirm: 'Reject correction',
+        },
+        approve_translation: {
+            title: 'Approve translation?',
+            body: 'This will approve this translation draft for the current block version.',
+            confirm: 'Approve translation',
+        },
+        reject_translation: {
+            title: 'Reject translation?',
+            body: 'This will reject this translation draft without changing the book text.',
+            confirm: 'Reject translation',
+        },
+    };
+
+    return copies[action] || {
+        title: 'Run activity action?',
+        body: item?.title || 'This will update the selected activity item.',
+        confirm: 'Run action',
+    };
+}
+
+function activityActionFeedbackMessage(action) {
+    const messages = {
+        generate_audio: 'Audio generated',
+        apply_review: 'Correction applied',
+        reject_review: 'Correction rejected',
+        approve_translation: 'Translation approved',
+        reject_translation: 'Translation rejected',
+    };
+
+    return messages[action] || 'Activity updated';
+}
+
+function setBookActivityFeedback(item, message, type = 'success') {
+    if (bookActivityFeedbackTimer) clearTimeout(bookActivityFeedbackTimer);
+
+    bookActivityFeedback.value = {
+        itemId: item?.id || null,
+        message,
+        type,
+    };
+
+    bookActivityFeedbackTimer = setTimeout(() => {
+        bookActivityFeedback.value = null;
+        bookActivityFeedbackTimer = null;
+    }, 4500);
+}
+
+function openBookActivityActionConfirm(item, keyBook, directAction) {
+    const copy = activityActionConfirmCopy(item, directAction.action);
+
+    _.Dialog({
+        size: 'sm',
+        stickyActions: true,
+        slots: {
+            header: _.div(
+                _.h3(copy.title),
+                _.span({ class: 'text-muted' }, item?.title || 'Activity action'),
+            ),
+            content: ({ close }) => _.div({ class: 'at-activityConfirmDialog' },
+                _.p(copy.body),
+                item?.preview ? _.blockquote({ class: 'at-activityConfirmPreview' }, item.preview) : null,
+                _.div({ class: 'at-activityConfirmActions' },
+                    _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Cancel'),
+                    _.Btn({
+                        type: 'button',
+                        color: directAction.primary ? 'primary' : 'secondary',
+                        onClick: () => {
+                            close();
+                            runBookActivityItemAction(item, keyBook, directAction.action);
+                        },
+                    }, copy.confirm)
+                )
+            ),
+        },
+    }).open();
+}
+
+function runPanelAction(action, options = {}, callback = () => { }) {
+    if (!confirmPanelActions.value) {
+        callback();
+        return;
+    }
+
+    const copy = activityActionConfirmCopy(null, action);
+
+    _.Dialog({
+        size: 'sm',
+        stickyActions: true,
+        slots: {
+            header: _.div(
+                _.h3(copy.title),
+                _.span({ class: 'text-muted' }, options.context || 'Panel action'),
+            ),
+            content: ({ close }) => _.div({ class: 'at-activityConfirmDialog' },
+                _.p(copy.body),
+                options.preview ? _.blockquote({ class: 'at-activityConfirmPreview' }, options.preview) : null,
+                _.div({ class: 'at-activityConfirmActions' },
+                    _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Cancel'),
+                    _.Btn({
+                        type: 'button',
+                        color: options.primary === false ? 'secondary' : 'primary',
+                        onClick: () => {
+                            close();
+                            callback();
+                        },
+                    }, copy.confirm)
+                )
+            ),
+        },
+    }).open();
+}
+
 function activityActionStatusForItem(item, action = 'run') {
     return item?.id ? `activity:${item.id}:${action}` : 'idle';
 }
@@ -1157,10 +1294,12 @@ function generateActivityAudio(item, keyBook, action = 'generate_audio') {
                 audioStatus.value = 'ready';
             }
 
+            setBookActivityFeedback(item, activityActionFeedbackMessage(action));
             loadBookActivity(keyBook, { force: true });
         })
         .catch((error) => {
             bookActivityError.value = requestErrorMessage(error, 'Unable to run activity action.');
+            setBookActivityFeedback(item, 'Activity action failed', 'error');
         })
         .finally(() => {
             if (bookActivityActionStatus.value === statusKey) {
@@ -1185,21 +1324,28 @@ async function updateActivityReview(item, action) {
     bookActivityError.value = null;
 
     try {
+        let updated = false;
+
         if (action === 'apply_review') {
-            await applyBlockReview(block, {
+            updated = await applyBlockReview(block, {
                 ...review,
                 status: 'draft',
                 is_current_version: true,
             });
         } else {
-            await rejectBlockReview(block, {
+            updated = await rejectBlockReview(block, {
                 ...review,
                 status: 'draft',
                 is_current_version: true,
             });
         }
+
+        if (updated) {
+            setBookActivityFeedback(item, activityActionFeedbackMessage(action));
+        }
     } catch (error) {
         bookActivityError.value = requestErrorMessage(error, 'Unable to update correction from Activity.');
+        setBookActivityFeedback(item, 'Activity action failed', 'error');
     } finally {
         if (bookActivityActionStatus.value === statusKey) {
             bookActivityActionStatus.value = 'idle';
@@ -1238,9 +1384,11 @@ function updateActivityTranslation(item, keyBook, action) {
             }
 
             loadBookActivity(keyBook, { force: true });
+            setBookActivityFeedback(item, activityActionFeedbackMessage(action));
         })
         .catch((error) => {
             bookActivityError.value = requestErrorMessage(error, 'Unable to update translation from Activity.');
+            setBookActivityFeedback(item, 'Activity action failed', 'error');
         })
         .finally(() => {
             if (bookActivityActionStatus.value === statusKey) {
@@ -1608,7 +1756,7 @@ function activityPanel(keyBook) {
                             disabled: () => !canRunActivityDirectAction(item, directAction.action),
                             onclick: (event) => {
                                 event.stopPropagation();
-                                runBookActivityItemAction(item, keyBook, directAction.action);
+                                openBookActivityActionConfirm(item, keyBook, directAction);
                             },
                         }, () => isActivityItemActionBusy(item, directAction.action) ? `${directAction.label}...` : directAction.label)),
                         _.button({
@@ -1652,6 +1800,11 @@ function activityPanel(keyBook) {
                             _.span({ class: 'at-activityItemMeta' }, `${targetTool?.label || item.tool} · ${activityBlockKindLabel(item)}`),
                             _.span({ class: 'at-activityItemBody' }, item.description || ''),
                             item.preview ? _.span({ class: 'at-activityItemPreview' }, item.preview) : null,
+                            () => bookActivityFeedback.value?.itemId === item.id
+                                ? _.span({
+                                    class: `at-activityFeedback is-${bookActivityFeedback.value.type || 'success'}`,
+                                }, bookActivityFeedback.value.message)
+                                : null,
                             _.span({ class: 'at-activityItemActions' }, ...actionButtons)
                         )
                     );
@@ -2505,7 +2658,10 @@ function audioPanel(block, keyBook) {
                     || !voiceAssignment.value
                     || audioAiSummary().missingApiKey
                     || audioActionStatus.value !== 'idle',
-                onclick: () => generateBlockAudio(block),
+                onclick: () => runPanelAction('generate_audio', {
+                    context: block.label || 'Selected block',
+                    preview: block.label,
+                }, () => generateBlockAudio(block)),
             }, isGenerating ? `Generating with ${aiSummary.providerName}...` : 'Generate block audio'),
             _.button({
                 type: 'button',
@@ -2631,13 +2787,20 @@ function translatePanel(block, keyBook) {
                             type: 'button',
                             class: 'at-reviewItem-action is-apply',
                             disabled: !canResolve || blockTranslationActionStatus.value !== 'idle',
-                            onclick: () => updateBlockTranslationStatus(block, translation, 'approved'),
+                            onclick: () => runPanelAction('approve_translation', {
+                                context: `Translate · ${translation.target_locale || 'draft'}`,
+                                preview: translation.translated_text || translation.source_text || '',
+                            }, () => updateBlockTranslationStatus(block, translation, 'approved')),
                         }, isBusy ? 'Saving...' : 'Approve'),
                         _.button({
                             type: 'button',
                             class: 'at-reviewItem-action',
                             disabled: !canResolve || blockTranslationActionStatus.value !== 'idle',
-                            onclick: () => updateBlockTranslationStatus(block, translation, 'rejected'),
+                            onclick: () => runPanelAction('reject_translation', {
+                                context: `Translate · ${translation.target_locale || 'draft'}`,
+                                preview: translation.translated_text || translation.source_text || '',
+                                primary: false,
+                            }, () => updateBlockTranslationStatus(block, translation, 'rejected')),
                         }, isBusy ? 'Saving...' : 'Reject')
                     ) : null
                 );
@@ -2732,13 +2895,20 @@ function correctionPanel(block, keyBook) {
                             type: 'button',
                             class: 'at-reviewItem-action is-apply',
                             disabled: !canResolve || isBusy,
-                            onclick: () => applyBlockReview(block, review),
+                            onclick: () => runPanelAction('apply_review', {
+                                context: `${review.type || 'Correction'} · v${review.version_number || ''}`,
+                                preview: review.suggested_text || review.original_text || '',
+                            }, () => applyBlockReview(block, review)),
                         }, isApplying ? 'Applying...' : 'Apply'),
                         _.button({
                             type: 'button',
                             class: 'at-reviewItem-action',
                             disabled: !canResolve || isBusy,
-                            onclick: () => rejectBlockReview(block, review),
+                            onclick: () => runPanelAction('reject_review', {
+                                context: `${review.type || 'Correction'} · v${review.version_number || ''}`,
+                                preview: review.original_text || review.suggested_text || '',
+                                primary: false,
+                            }, () => rejectBlockReview(block, review)),
                         }, isRejecting ? 'Rejecting...' : 'Reject')
                     ) : null
                 );
@@ -2788,6 +2958,17 @@ function aiSettingsPanel(keyBook, options = {}) {
             }, _.Icon ? _.Icon({ name: 'terminal', class: 'at-aiSettings-promptIcon' }) : 'Prompt')
         ),
         _.div({ class: 'at-aiSettings' },
+            !serviceLocked ? _.div({ class: 'at-editorSafetyCard' },
+                _.div({ class: 'at-editorSafetyCard-main' },
+                    _.strong('Confirm panel actions'),
+                    _.small('Correct, Translate and Audio will ask before changing content or status. Activity always confirms.')
+                ),
+                _.Toggle({
+                    label: () => confirmPanelActions.value ? 'On' : 'Off',
+                    model: confirmPanelActions,
+                    onChange: (value) => setConfirmPanelActions(Boolean(value)),
+                })
+            ) : null,
             serviceLocked ? _.div({ class: 'at-aiSettings-providerCard' },
                 _.span('Service'),
                 _.strong(aiServices.value.find((service) => service.key === aiProviderSetting.value.service)?.label || options.serviceLabel || aiProviderSetting.value.service),
@@ -5016,8 +5197,8 @@ function editorText(keyBook) {
     };
 
     applyBlockReview = async (block, review) => {
-        if (!keyBook || !block?.block_uuid || !review?.id || blockReviewActionStatus.value !== 'idle') return;
-        if (block.dirty || !review.is_current_version || review.status !== 'draft') return;
+        if (!keyBook || !block?.block_uuid || !review?.id || blockReviewActionStatus.value !== 'idle') return false;
+        if (block.dirty || !review.is_current_version || review.status !== 'draft') return false;
 
         blockReviewActionStatus.value = `applying:${review.id}`;
         let documentSaved = false;
@@ -5043,12 +5224,14 @@ function editorText(keyBook) {
                 current_version_id: updatedBlock?.current_version_id || block.current_version_id || null,
             });
             loadBookActivity(keyBook, { force: true });
+            return true;
         } catch {
             if (documentSaved) {
                 blockReviewsStatus.value = 'error';
             } else {
                 setSaveStatus('error');
             }
+            return false;
         } finally {
             blockReviewActionStatus.value = 'idle';
             refreshEditorUi();
@@ -5056,8 +5239,8 @@ function editorText(keyBook) {
     };
 
     rejectBlockReview = async (block, review) => {
-        if (!keyBook || !block?.block_uuid || !review?.id || blockReviewActionStatus.value !== 'idle') return;
-        if (block.dirty || !review.is_current_version || review.status !== 'draft') return;
+        if (!keyBook || !block?.block_uuid || !review?.id || blockReviewActionStatus.value !== 'idle') return false;
+        if (block.dirty || !review.is_current_version || review.status !== 'draft') return false;
 
         blockReviewActionStatus.value = `rejecting:${review.id}`;
 
@@ -5066,8 +5249,10 @@ function editorText(keyBook) {
                 status: 'rejected',
             });
             loadBookActivity(keyBook, { force: true });
+            return true;
         } catch {
             blockReviewsStatus.value = 'error';
+            return false;
         } finally {
             blockReviewActionStatus.value = 'idle';
             refreshEditorUi();
@@ -5296,6 +5481,12 @@ function editorText(keyBook) {
         bookActivityContextKey.value = null;
         bookActivityError.value = null;
         activeBookActivityItemId.value = null;
+        bookActivityActionStatus.value = 'idle';
+        bookActivityFeedback.value = null;
+        if (bookActivityFeedbackTimer) {
+            clearTimeout(bookActivityFeedbackTimer);
+            bookActivityFeedbackTimer = null;
+        }
         blockReviews.value = [];
         blockReviewsStatus.value = 'idle';
         blockReviewsContextKey.value = null;
@@ -5479,6 +5670,9 @@ function bottomBar() {
             _.span({ class: 'at-bottomBar-item' }, () => {
                 const counts = bookActivityCounts();
                 const item = activeBookActivityItem();
+                const feedback = bookActivityFeedback.value;
+
+                if (feedback?.message) return `Activity: ${feedback.message}`;
 
                 if (item) return `Activity: ${activitySummaryLabel(item)}`;
 

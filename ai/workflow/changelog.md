@@ -88,3 +88,5 @@
 - Migliorata priorita' Activity: label editoriali piu' chiare, ordinamento deterministico per severita'/blocco/tipo e badge sorgente per ogni item.
 - Avviate azioni dirette Activity: gli item `Audio not generated` possono generare audio dalla coda senza aprire il pannello Audio.
 - Estese le azioni dirette Activity a draft singoli: correzioni con `Apply/Reject` e traduzioni con `Approve/Reject`, mentre i gruppi multipli restano nel tool dedicato.
+- Aggiunte conferme e feedback alle azioni dirette Activity, con messaggi temporanei in card e bottom bar dopo apply/reject/approve/audio.
+- Aggiunta preferenza locale `Confirm panel actions`: i pannelli Correct, Translate e Audio possono disattivare le conferme, mentre Activity le mantiene obbligatorie.
