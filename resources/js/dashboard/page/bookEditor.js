@@ -1002,18 +1002,85 @@ function visibleBookActivityItems() {
     return items.filter((item) => item.severity === bookActivityFilter.value);
 }
 
-function openBookActivityItem(item, { openTool = true } = {}) {
+function activeBookActivityItem() {
+    const activeId = activeBookActivityItemId.value;
+    if (!activeId) return null;
+
+    return (bookActivityItems.value || []).find((item) => item.id === activeId) || null;
+}
+
+function activityScrollerElement() {
+    return document.querySelector('.at-activityScroller');
+}
+
+function preserveActivityScroll(callback) {
+    const scroller = activityScrollerElement();
+    const scrollTop = scroller?.scrollTop ?? null;
+
+    callback();
+
+    if (scrollTop === null) return;
+
+    requestAnimationFrame(() => {
+        const nextScroller = activityScrollerElement();
+        if (nextScroller) nextScroller.scrollTop = scrollTop;
+    });
+}
+
+function openBookActivityItem(item, { openTool = true, preserveScroll = !openTool } = {}) {
     if (!item) return;
 
-    activeBookActivityItemId.value = item.id || null;
+    const applySelection = () => {
+        activeBookActivityItemId.value = item.id || null;
 
-    if (item.block_uuid) {
-        focusEditorBlock(item.block_uuid);
+        if (item.block_uuid) {
+            focusEditorBlock(item.block_uuid);
+        }
+
+        if (openTool && item.tool) {
+            setRightWorkspaceTool(item.tool);
+        }
+    };
+
+    if (preserveScroll && rightWorkspaceTool.value === 'activity') {
+        preserveActivityScroll(applySelection);
+        return;
     }
 
-    if (openTool && item.tool) {
-        setRightWorkspaceTool(item.tool);
-    }
+    applySelection();
+}
+
+function activityOpenActionLabel(item) {
+    const labels = {
+        comments: 'Open Comments',
+        correct: 'Open Correct',
+        versions: 'Open Versions',
+        voices: 'Open Voices',
+        audio: 'Open Audio',
+        translate: 'Open Translate',
+    };
+
+    return labels[item?.tool] || 'Open';
+}
+
+function activitySummaryLabel(item) {
+    if (!item) return null;
+
+    const targetTool = rightWorkspaceTools.find((tool) => tool.id === item.tool);
+    const blockKind = activityBlockKindLabel(item);
+    const title = item.title || 'Activity';
+
+    return `${targetTool?.label || item.tool}: ${title} on ${blockKind}`;
+}
+
+function activitySourceBadge(item) {
+    const targetTool = rightWorkspaceTools.find((tool) => tool.id === item?.tool);
+    const label = targetTool?.label || item?.tool || 'Activity';
+
+    return _.span({
+        class: `at-activitySourceBadge source-${item?.tool || 'activity'}`,
+        title: `Source: ${label}`,
+    }, label);
 }
 
 function activityBlockKindLabel(item) {
@@ -1339,26 +1406,54 @@ function activityPanel(keyBook) {
                 ? _.div({ class: 'at-activityList' }, items.map((item) => {
                     const targetTool = rightWorkspaceTools.find((tool) => tool.id === item.tool);
 
-                    return _.button({
-                        type: 'button',
+                    return _.div({
+                        role: 'button',
+                        tabindex: '0',
                         class: [
                             'at-activityItem',
                             `severity-${item.severity || 'review'}`,
                             item.id === activeBookActivityItemId.value ? 'is-active' : '',
                         ].filter(Boolean).join(' '),
                         'data-activity-item-id': String(item.id || ''),
-                        onclick: () => openBookActivityItem(item),
+                        onclick: () => openBookActivityItem(item, { openTool: false }),
+                        onkeydown: (event) => {
+                            if (!['Enter', ' '].includes(event.key)) return;
+
+                            event.preventDefault();
+                            openBookActivityItem(item, { openTool: false });
+                        },
                         title: item.preview || item.title,
                     },
                         _.span({ class: 'at-activityItemIcon' }, _.Icon ? _.Icon({ name: targetTool?.icon || 'fact_check' }) : null),
                         _.span({ class: 'at-activityItemMain' },
                             _.span({ class: 'at-activityItemTitle' },
                                 _.strong(item.title || 'Activity'),
-                                _.em(`${item.count || 1}`)
+                                _.span({ class: 'at-activityItemTitleMeta' },
+                                    activitySourceBadge(item),
+                                    _.em(`${item.count || 1}`)
+                                )
                             ),
                             _.span({ class: 'at-activityItemMeta' }, `${targetTool?.label || item.tool} · ${activityBlockKindLabel(item)}`),
                             _.span({ class: 'at-activityItemBody' }, item.description || ''),
-                            item.preview ? _.span({ class: 'at-activityItemPreview' }, item.preview) : null
+                            item.preview ? _.span({ class: 'at-activityItemPreview' }, item.preview) : null,
+                            _.span({ class: 'at-activityItemActions' },
+                                _.button({
+                                    type: 'button',
+                                    class: 'at-activityItemAction',
+                                    onclick: (event) => {
+                                        event.stopPropagation();
+                                        openBookActivityItem(item, { openTool: false });
+                                    },
+                                }, 'Focus'),
+                                _.button({
+                                    type: 'button',
+                                    class: 'at-activityItemAction',
+                                    onclick: (event) => {
+                                        event.stopPropagation();
+                                        openBookActivityItem(item, { openTool: true });
+                                    },
+                                }, activityOpenActionLabel(item))
+                            )
                         )
                     );
                 }))
@@ -3854,7 +3949,7 @@ function editorText(keyBook) {
         const normalizedIndex = (nextIndex + items.length) % items.length;
         const nextItem = items[normalizedIndex];
 
-        openBookActivityItem(nextItem, { openTool: false });
+        openBookActivityItem(nextItem, { openTool: false, preserveScroll: false });
 
         requestAnimationFrame(() => {
             document
@@ -5184,6 +5279,9 @@ function bottomBar() {
             }),
             _.span({ class: 'at-bottomBar-item' }, () => {
                 const counts = bookActivityCounts();
+                const item = activeBookActivityItem();
+
+                if (item) return `Activity: ${activitySummaryLabel(item)}`;
 
                 return counts.all
                     ? `Activity: ${counts.action} action, ${counts.stale} stale`

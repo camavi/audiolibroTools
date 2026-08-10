@@ -1298,12 +1298,16 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.summary.review', 1)
             ->assertJsonPath('data.items.0.type', 'draft_reviews')
             ->assertJsonPath('data.items.0.tool', 'correct')
+            ->assertJsonPath('data.items.0.title', 'Correction draft ready')
             ->assertJsonPath('data.items.1.type', 'draft_translations')
             ->assertJsonPath('data.items.1.tool', 'translate')
+            ->assertJsonPath('data.items.1.title', 'Translation draft ready')
             ->assertJsonPath('data.items.2.type', 'audio_missing')
             ->assertJsonPath('data.items.2.tool', 'audio')
+            ->assertJsonPath('data.items.2.title', 'Audio not generated')
             ->assertJsonPath('data.items.3.type', 'comments')
-            ->assertJsonPath('data.items.3.tool', 'comments');
+            ->assertJsonPath('data.items.3.tool', 'comments')
+            ->assertJsonPath('data.items.3.title', 'Comments need review');
     }
 
     public function test_dashboard_can_create_and_return_book_voice_profiles(): void

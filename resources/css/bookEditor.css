@@ -967,15 +967,17 @@
     color: #172033;
     font: inherit;
     text-align: left;
-}
-
-.at-activityItem:not(:disabled) {
     cursor: pointer;
 }
 
 .at-activityItem:hover {
     border-color: #8fb3ff;
     background: #f8fbff;
+}
+
+.at-activityItem:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
 }
 
 .at-activityItem.is-active {
@@ -1033,6 +1035,54 @@
     white-space: nowrap;
 }
 
+.at-activityItemTitleMeta {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.at-activitySourceBadge {
+    max-width: 86px;
+    overflow: hidden;
+    border-radius: 4px;
+    padding: 3px 6px;
+    background: #eef2ff;
+    color: #334155;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.at-activitySourceBadge.source-correct {
+    background: #ecfeff;
+    color: #155e75;
+}
+
+.at-activitySourceBadge.source-comments {
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.at-activitySourceBadge.source-translate {
+    background: #f5f3ff;
+    color: #6d28d9;
+}
+
+.at-activitySourceBadge.source-audio {
+    background: #ecfdf5;
+    color: #047857;
+}
+
+.at-activitySourceBadge.source-versions {
+    background: #fff7ed;
+    color: #c2410c;
+}
+
 .at-activityItemTitle em {
     min-width: 22px;
     border-radius: 999px;
@@ -1067,6 +1117,32 @@
     color: #52657d;
     font-size: 12px;
     white-space: nowrap;
+}
+
+.at-activityItemActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.at-activityItemAction {
+    min-height: 28px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 0 12px;
+    background: #ffffff;
+    color: #334155;
+    font: inherit;
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.at-activityItemAction:hover {
+    border-color: #2563eb;
+    color: #1d4ed8;
+    cursor: pointer;
 }
 
 .at-commentAnchorPreview {

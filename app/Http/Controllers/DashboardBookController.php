@@ -484,7 +484,7 @@ class DashboardBookController extends Controller
                     'type' => 'comments',
                     'tool' => 'comments',
                     'severity' => 'review',
-                    'title' => 'Open comments',
+                    'title' => 'Comments need review',
                     'count' => (int) $block->open_comments_count,
                     'description' => "{$block->open_comments_count} open comment".($block->open_comments_count === 1 ? '' : 's').' need review.',
                 ]);
@@ -497,7 +497,7 @@ class DashboardBookController extends Controller
                     'type' => 'stale_comments',
                     'tool' => 'comments',
                     'severity' => 'stale',
-                    'title' => 'Stale comments',
+                    'title' => 'Comments may be outdated',
                     'count' => (int) $block->stale_comments_count,
                     'description' => 'Comments are linked to older text and may need reanchoring.',
                 ]);
@@ -510,7 +510,7 @@ class DashboardBookController extends Controller
                     'type' => 'draft_reviews',
                     'tool' => 'correct',
                     'severity' => 'action',
-                    'title' => 'Draft corrections',
+                    'title' => 'Correction draft ready',
                     'count' => (int) $block->draft_reviews_count,
                     'description' => 'AI corrections are waiting for apply or reject.',
                 ]);
@@ -523,7 +523,7 @@ class DashboardBookController extends Controller
                     'type' => 'stale_reviews',
                     'tool' => 'versions',
                     'severity' => 'stale',
-                    'title' => 'Stale corrections',
+                    'title' => 'Correction linked to older text',
                     'count' => (int) $block->stale_reviews_count,
                     'description' => 'Corrections are linked to an older block version.',
                 ]);
@@ -536,7 +536,7 @@ class DashboardBookController extends Controller
                     'type' => 'draft_translations',
                     'tool' => 'translate',
                     'severity' => 'action',
-                    'title' => 'Draft translations',
+                    'title' => 'Translation draft ready',
                     'count' => (int) $block->draft_translations_count,
                     'description' => 'Translations are waiting for approval or rejection.',
                 ]);
@@ -549,7 +549,7 @@ class DashboardBookController extends Controller
                     'type' => 'stale_translations',
                     'tool' => 'versions',
                     'severity' => 'stale',
-                    'title' => 'Stale translations',
+                    'title' => 'Translation may be outdated',
                     'count' => (int) $block->stale_translations_count,
                     'description' => 'Translations are linked to older source text.',
                 ]);
@@ -570,14 +570,28 @@ class DashboardBookController extends Controller
         }
 
         $severityOrder = ['action' => 0, 'review' => 1, 'stale' => 2];
+        $typeOrder = [
+            'draft_reviews' => 0,
+            'draft_translations' => 1,
+            'audio_missing' => 2,
+            'comments' => 3,
+            'stale_comments' => 4,
+            'stale_reviews' => 5,
+            'stale_translations' => 6,
+        ];
         $orderedItems = $items
-            ->sort(function (array $a, array $b) use ($severityOrder) {
+            ->sort(function (array $a, array $b) use ($severityOrder, $typeOrder) {
                 $severityComparison = ($severityOrder[$a['severity']] ?? 9) <=> ($severityOrder[$b['severity']] ?? 9);
                 if ($severityComparison !== 0) {
                     return $severityComparison;
                 }
 
-                return $a['block_sort_order'] <=> $b['block_sort_order'];
+                $blockComparison = $a['block_sort_order'] <=> $b['block_sort_order'];
+                if ($blockComparison !== 0) {
+                    return $blockComparison;
+                }
+
+                return ($typeOrder[$a['type']] ?? 99) <=> ($typeOrder[$b['type']] ?? 99);
             })
             ->take($limit)
             ->values();

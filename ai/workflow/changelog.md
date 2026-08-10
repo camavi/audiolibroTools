@@ -82,3 +82,7 @@
 - Spostata la navigazione Activity nel bottom del pannello con layout assoluto e area lista scrollabile, allineata al comportamento di Comments.
 - Corretto Previous/Next Activity: naviga e mette a fuoco il blocco restando nel tool Activity; solo il click sulla card apre il tool collegato.
 - Aggiunto highlight editor per Activity: il blocco dell'item attivo viene evidenziato nel documento senza interferire con i marker Comments.
+- Aggiunte azioni rapide Activity: click sulla card seleziona/focalizza restando in Activity, mentre `Open` apre esplicitamente il tool collegato.
+- Migliorata Activity inbox: ogni item ha azioni `Focus` e `Open`, e la bottom bar mostra il contesto dell'activity selezionata.
+- Corretto scroll Activity: `Focus` e click sulla card mantengono la posizione della lista, mentre `Previous/Next` continua a centrare l'item attivo.
+- Migliorata priorita' Activity: label editoriali piu' chiare, ordinamento deterministico per severita'/blocco/tipo e badge sorgente per ogni item.
