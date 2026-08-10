@@ -78,3 +78,6 @@
 - Aggiunta queue globale Comments per libro: endpoint API lista commenti, navigazione Previous/Next tra blocchi diversi e sincronizzazione dopo create/resolve/reanchor.
 - Avviata queue unificata Activity: nuovo tool nel Right Workspace, endpoint aggregato per commenti/correzioni/traduzioni/audio e apertura rapida del blocco nel tool corretto.
 - Corretto layout del pannello Versions nel Right Workspace stretto: filtri su righe leggibili e Order/Search senza sovrapporsi alle card versione.
+- Aggiunta navigazione Previous/Next alla queue Activity: item attivo evidenziato, focus automatico del blocco e apertura del tool collegato.
+- Spostata la navigazione Activity nel bottom del pannello con layout assoluto e area lista scrollabile, allineata al comportamento di Comments.
+- Corretto Previous/Next Activity: naviga e mette a fuoco il blocco restando nel tool Activity; solo il click sulla card apre il tool collegato.

@@ -473,7 +473,17 @@
     flex-direction: column;
 }
 
+.at-rightWorkspace-body.is-activityReview {
+    display: flex;
+    overflow: hidden;
+    flex-direction: column;
+}
+
 .at-rightWorkspace-body.is-commentsReview .at-rightWorkspace-summary {
+    flex: 0 0 auto;
+}
+
+.at-rightWorkspace-body.is-activityReview .at-rightWorkspace-summary {
     flex: 0 0 auto;
 }
 
@@ -840,8 +850,20 @@
 }
 
 .at-activitySection {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.at-activityScroller {
     display: grid;
+    flex: 1 1 auto;
     gap: 10px;
+    min-height: 0;
+    overflow: auto;
+    padding-bottom: 66px;
 }
 
 .at-activityHead {
@@ -892,6 +914,46 @@
     gap: 8px;
 }
 
+.at-activityNav {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 6px;
+    align-items: center;
+    padding: 8px 0 0;
+    border-top: 1px solid #e2e8f0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), #ffffff 42%);
+}
+
+.at-activityNav span {
+    min-width: 46px;
+    color: #475569;
+    font-size: 11px;
+    text-align: center;
+}
+
+.at-activityNavBtn {
+    min-height: 30px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #334155;
+    font: inherit;
+    font-size: 12px;
+}
+
+.at-activityNavBtn:not(:disabled) {
+    cursor: pointer;
+}
+
+.at-activityNavBtn:disabled {
+    background: #f8fafc;
+    color: #94a3b8;
+}
+
 .at-activityItem {
     display: grid;
     grid-template-columns: 32px minmax(0, 1fr);
@@ -914,6 +976,12 @@
 .at-activityItem:hover {
     border-color: #8fb3ff;
     background: #f8fbff;
+}
+
+.at-activityItem.is-active {
+    border-color: #2563eb;
+    background: #eff6ff;
+    box-shadow: inset 0 0 0 1px #2563eb;
 }
 
 .at-activityItem.severity-action {

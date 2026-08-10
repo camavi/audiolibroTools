@@ -33,6 +33,7 @@ const bookActivityStatus = _.rod('idle');
 const bookActivityContextKey = _.rod(null);
 const bookActivityError = _.rod(null);
 const bookActivityFilter = _.rod('all');
+const activeBookActivityItemId = _.rod(null);
 const blockReviews = _.rod([]);
 const blockReviewsStatus = _.rod('idle');
 const blockReviewsContextKey = _.rod(null);
@@ -116,6 +117,7 @@ let createBlockReview = () => { };
 let applyBlockReview = () => { };
 let rejectBlockReview = () => { };
 let loadBookActivity = () => { };
+let navigateBookActivityItem = () => { };
 let loadBlockComments = () => { };
 let loadBookCommentsQueue = () => { };
 let createBlockComment = () => { };
@@ -1000,14 +1002,16 @@ function visibleBookActivityItems() {
     return items.filter((item) => item.severity === bookActivityFilter.value);
 }
 
-function openBookActivityItem(item) {
+function openBookActivityItem(item, { openTool = true } = {}) {
     if (!item) return;
+
+    activeBookActivityItemId.value = item.id || null;
 
     if (item.block_uuid) {
         focusEditorBlock(item.block_uuid);
     }
 
-    if (item.tool) {
+    if (openTool && item.tool) {
         setRightWorkspaceTool(item.tool);
     }
 }
@@ -1300,61 +1304,82 @@ function activityPanel(keyBook) {
     const counts = bookActivityCounts();
     const items = visibleBookActivityItems();
     const status = bookActivityStatus.value;
+    const activeItemIndex = items.findIndex((item) => item.id === activeBookActivityItemId.value);
 
     return _.div({ class: 'at-rightWorkspace-section at-activitySection' },
-        _.div({ class: 'at-activityHead' },
-            _.h3('Review queue'),
+        _.div({ class: 'at-activityScroller' },
+            _.div({ class: 'at-activityHead' },
+                _.h3('Review queue'),
+                _.button({
+                    type: 'button',
+                    class: 'at-rightWorkspace-action',
+                    disabled: status === 'loading',
+                    onclick: () => loadBookActivity(keyBook, { force: true }),
+                }, status === 'loading' ? 'Loading...' : 'Refresh')
+            ),
+            _.p('Open the next editorial, correction, translation or audio item that needs attention.'),
+            bookActivityError.value ? _.div({ class: 'at-chatError' }, bookActivityError.value) : null,
+            _.div({ class: 'at-activityStats' },
+                _.div(_.strong(String(counts.action)), _.span('Action')),
+                _.div(_.strong(String(counts.review)), _.span('Review')),
+                _.div(_.strong(String(counts.stale)), _.span('Stale'))
+            ),
+            counts.all ? _.div({ class: 'at-commentFilters' }, activityFilterOptions.map((option) => _.button({
+                type: 'button',
+                class: option.value === bookActivityFilter.value ? 'at-commentFilter is-active' : 'at-commentFilter',
+                onclick: () => setBookActivityFilter(option.value),
+            },
+                _.span(option.label),
+                _.strong(String(counts[option.value] || 0))
+            ))) : null,
+            status === 'loading'
+                ? _.div({ class: 'at-chatNotice' }, 'Loading book activity...')
+                : null,
+            items.length
+                ? _.div({ class: 'at-activityList' }, items.map((item) => {
+                    const targetTool = rightWorkspaceTools.find((tool) => tool.id === item.tool);
+
+                    return _.button({
+                        type: 'button',
+                        class: [
+                            'at-activityItem',
+                            `severity-${item.severity || 'review'}`,
+                            item.id === activeBookActivityItemId.value ? 'is-active' : '',
+                        ].filter(Boolean).join(' '),
+                        'data-activity-item-id': String(item.id || ''),
+                        onclick: () => openBookActivityItem(item),
+                        title: item.preview || item.title,
+                    },
+                        _.span({ class: 'at-activityItemIcon' }, _.Icon ? _.Icon({ name: targetTool?.icon || 'fact_check' }) : null),
+                        _.span({ class: 'at-activityItemMain' },
+                            _.span({ class: 'at-activityItemTitle' },
+                                _.strong(item.title || 'Activity'),
+                                _.em(`${item.count || 1}`)
+                            ),
+                            _.span({ class: 'at-activityItemMeta' }, `${targetTool?.label || item.tool} · ${activityBlockKindLabel(item)}`),
+                            _.span({ class: 'at-activityItemBody' }, item.description || ''),
+                            item.preview ? _.span({ class: 'at-activityItemPreview' }, item.preview) : null
+                        )
+                    );
+                }))
+                : _.div({ class: 'at-rightWorkspace-emptyState' },
+                    _.strong(counts.all ? 'No activity in this filter' : 'No pending activity'),
+                    _.p(counts.all ? 'Switch filter to see other review queue items.' : 'Comments, corrections, translations and audio work will appear here.')
+                )
+        ),
+        items.length ? _.div({ class: 'at-activityNav' },
             _.button({
                 type: 'button',
-                class: 'at-rightWorkspace-action',
-                disabled: status === 'loading',
-                onclick: () => loadBookActivity(keyBook, { force: true }),
-            }, status === 'loading' ? 'Loading...' : 'Refresh')
-        ),
-        _.p('Open the next editorial, correction, translation or audio item that needs attention.'),
-        bookActivityError.value ? _.div({ class: 'at-chatError' }, bookActivityError.value) : null,
-        _.div({ class: 'at-activityStats' },
-            _.div(_.strong(String(counts.action)), _.span('Action')),
-            _.div(_.strong(String(counts.review)), _.span('Review')),
-            _.div(_.strong(String(counts.stale)), _.span('Stale'))
-        ),
-        counts.all ? _.div({ class: 'at-commentFilters' }, activityFilterOptions.map((option) => _.button({
-            type: 'button',
-            class: option.value === bookActivityFilter.value ? 'at-commentFilter is-active' : 'at-commentFilter',
-            onclick: () => setBookActivityFilter(option.value),
-        },
-            _.span(option.label),
-            _.strong(String(counts[option.value] || 0))
-        ))) : null,
-        status === 'loading'
-            ? _.div({ class: 'at-chatNotice' }, 'Loading book activity...')
-            : null,
-        items.length
-            ? _.div({ class: 'at-activityList' }, items.map((item) => {
-                const targetTool = rightWorkspaceTools.find((tool) => tool.id === item.tool);
-
-                return _.button({
-                    type: 'button',
-                    class: `at-activityItem severity-${item.severity || 'review'}`,
-                    onclick: () => openBookActivityItem(item),
-                    title: item.preview || item.title,
-                },
-                    _.span({ class: 'at-activityItemIcon' }, _.Icon ? _.Icon({ name: targetTool?.icon || 'fact_check' }) : null),
-                    _.span({ class: 'at-activityItemMain' },
-                        _.span({ class: 'at-activityItemTitle' },
-                            _.strong(item.title || 'Activity'),
-                            _.em(`${item.count || 1}`)
-                        ),
-                        _.span({ class: 'at-activityItemMeta' }, `${targetTool?.label || item.tool} · ${activityBlockKindLabel(item)}`),
-                        _.span({ class: 'at-activityItemBody' }, item.description || ''),
-                        item.preview ? _.span({ class: 'at-activityItemPreview' }, item.preview) : null
-                    )
-                );
-            }))
-            : _.div({ class: 'at-rightWorkspace-emptyState' },
-                _.strong(counts.all ? 'No activity in this filter' : 'No pending activity'),
-                _.p(counts.all ? 'Switch filter to see other review queue items.' : 'Comments, corrections, translations and audio work will appear here.')
-            )
+                class: 'at-activityNavBtn',
+                onclick: () => navigateBookActivityItem(-1),
+            }, 'Previous'),
+            _.span(`${Math.max(activeItemIndex, 0) + 1} / ${items.length}`),
+            _.button({
+                type: 'button',
+                class: 'at-activityNavBtn',
+                onclick: () => navigateBookActivityItem(1),
+            }, 'Next')
+        ) : null
     );
 }
 
@@ -2611,7 +2636,7 @@ function rightWorkspaceBody(tool, block, keyBook) {
     if (tool.id === 'activity') {
         runUntracked(() => loadBookActivity(keyBook));
 
-        return _.div({ class: 'at-rightWorkspace-body' },
+        return _.div({ class: 'at-rightWorkspace-body is-activityReview' },
             blockContextSummary(block),
             activityPanel(keyBook)
         );
@@ -3748,6 +3773,7 @@ function editorText(keyBook) {
             bookActivityStatus.value = 'idle';
             bookActivityContextKey.value = null;
             bookActivityError.value = null;
+            activeBookActivityItemId.value = null;
             return;
         }
 
@@ -3764,6 +3790,9 @@ function editorText(keyBook) {
 
                 const data = normalizeDataPayload(payload);
                 bookActivityItems.value = data.items || [];
+                if (activeBookActivityItemId.value && !bookActivityItems.value.some((item) => item.id === activeBookActivityItemId.value)) {
+                    activeBookActivityItemId.value = null;
+                }
                 bookActivitySummary.value = {
                     all: Number(data.summary?.all || 0),
                     action: Number(data.summary?.action || 0),
@@ -3777,9 +3806,29 @@ function editorText(keyBook) {
 
                 bookActivityItems.value = [];
                 bookActivitySummary.value = { all: 0, action: 0, review: 0, stale: 0 };
+                activeBookActivityItemId.value = null;
                 bookActivityError.value = requestErrorMessage(error, 'Unable to load book activity.');
                 bookActivityStatus.value = 'error';
             });
+    };
+
+    navigateBookActivityItem = (direction = 1) => {
+        const items = visibleBookActivityItems();
+        if (!items.length) return;
+
+        const currentIndex = items.findIndex((item) => item.id === activeBookActivityItemId.value);
+        const fallbackIndex = direction > 0 ? -1 : 0;
+        const nextIndex = (currentIndex >= 0 ? currentIndex : fallbackIndex) + direction;
+        const normalizedIndex = (nextIndex + items.length) % items.length;
+        const nextItem = items[normalizedIndex];
+
+        openBookActivityItem(nextItem, { openTool: false });
+
+        requestAnimationFrame(() => {
+            document
+                .querySelector(`[data-activity-item-id="${cssSelectorEscape(nextItem.id)}"]`)
+                ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        });
     };
 
     loadBookCommentsQueue = ({ force = false } = {}) => {
@@ -4919,6 +4968,7 @@ function editorText(keyBook) {
         bookActivityStatus.value = 'idle';
         bookActivityContextKey.value = null;
         bookActivityError.value = null;
+        activeBookActivityItemId.value = null;
         blockReviews.value = [];
         blockReviewsStatus.value = 'idle';
         blockReviewsContextKey.value = null;
@@ -4981,6 +5031,7 @@ function editorText(keyBook) {
         applyBlockReview = () => { };
         rejectBlockReview = () => { };
         loadBookActivity = () => { };
+        navigateBookActivityItem = () => { };
         loadBlockComments = () => { };
         loadBookCommentsQueue = () => { };
         createBlockComment = () => { };
