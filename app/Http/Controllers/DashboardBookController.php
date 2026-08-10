@@ -36,6 +36,66 @@ class DashboardBookController extends Controller
         return response()->json(['data' => $categories]);
     }
 
+    public function index(): JsonResponse
+    {
+        $books = Book::query()
+            ->where('account_id', auth()->id())
+            ->latest('updated_at')
+            ->get([
+                'id',
+                'key_book',
+                'name',
+                'description',
+                'categories',
+                'lang',
+                'cover_img',
+                'updated_at',
+            ]);
+
+        return response()->json([
+            'data' => $books->map(fn (Book $book) => [
+                'id' => $book->id,
+                'key_book' => $book->key_book,
+                'name' => $book->name,
+                'description' => $book->description,
+                'categories_count' => count($book->categories ?? []),
+                'lang' => $book->lang,
+                'cover_img' => $book->cover_img,
+                'updated_at' => $book->updated_at?->toIso8601String(),
+            ])->values(),
+        ]);
+    }
+
+    public function show(string $keyBook): JsonResponse
+    {
+        $book = Book::query()
+            ->where('account_id', auth()->id())
+            ->where('key_book', $keyBook)
+            ->firstOrFail([
+                'id',
+                'key_book',
+                'name',
+                'description',
+                'categories',
+                'lang',
+                'cover_img',
+                'updated_at',
+            ]);
+
+        return response()->json([
+            'data' => [
+                'id' => $book->id,
+                'key_book' => $book->key_book,
+                'name' => $book->name,
+                'description' => $book->description,
+                'categories_count' => count($book->categories ?? []),
+                'lang' => $book->lang,
+                'cover_img' => $book->cover_img,
+                'updated_at' => $book->updated_at?->toIso8601String(),
+            ],
+        ]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([

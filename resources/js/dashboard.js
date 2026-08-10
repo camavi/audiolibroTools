@@ -2,6 +2,8 @@ import 'cmswift';
 import newBookStartPage from './dashboard/page/newBookStart.js';
 import bookEditorPage from './dashboard/page/bookEditor.js';
 import settingPage from './dashboard/page/setting.js';
+import booksPage from './dashboard/page/books.js';
+import bookPanelPage from './dashboard/page/bookPanel.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
@@ -15,7 +17,7 @@ const navGroups = [
         expanded: true,
         items: [
             { label: 'New book', key: 'new-book', icon: 'add', link: '/dashboard/new-book' },
-            { label: 'List of books', key: 'books-list', icon: 'format_list_bulleted' },
+            { label: 'List of books', key: 'books-list', icon: 'format_list_bulleted', link: '/dashboard/books' },
         ],
     },
     { label: 'Activity book', key: 'activity-book', icon: 'pie_chart' },
@@ -127,5 +129,7 @@ _.router.setOutlet(contentPage);
 _.router.add('/dashboard', pageDashboard);
 _.router.add('/dashboard/new-book', newBookStart);
 _.router.add('/dashboard/book/:key_book/edit', bookEditor);
+_.router.add('/dashboard/book/:key_book/panel', bookPanelPage);
 _.router.add('/dashboard/setting', settingPage);
+_.router.add('/dashboard/books', booksPage);
 _.router.start();

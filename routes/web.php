@@ -41,7 +41,9 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::post('/ai/providers', [DashboardAiController::class, 'storeProvider'])->name('ai.providers.store');
     Route::patch('/ai/settings', [DashboardAiController::class, 'updateSetting'])->name('ai.settings.update');
     Route::get('/book-categories', [DashboardBookController::class, 'categories'])->name('book-categories');
+    Route::get('/books', [DashboardBookController::class, 'index'])->name('books.index');
     Route::post('/books', [DashboardBookController::class, 'store'])->name('books.store');
+    Route::get('/books/{keyBook}', [DashboardBookController::class, 'show'])->name('books.show');
     Route::get('/books/{keyBook}/editor', [DashboardBookController::class, 'editor'])->name('books.editor');
     Route::get('/books/{keyBook}/voices', [DashboardBookController::class, 'voiceProfiles'])->name('books.voices');
     Route::post('/books/{keyBook}/voices', [DashboardBookController::class, 'storeVoiceProfile'])->name('books.voices.store');
