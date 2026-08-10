@@ -24,17 +24,9 @@ const navGroups = [
     { label: 'Team', key: 'team', icon: 'diversity_3' },
     { label: 'Profile', key: 'profile', icon: 'person' },
     { label: 'Organization', key: 'organization', icon: 'hub' },
-    {
-        label: 'Admin',
-        key: 'admin',
-        icon: 'settings',
-        expanded: true,
-        items: [
-            { label: 'Test Audio', key: 'test-audio', icon: 'graphic_eq' },
-            { label: 'Upload audio', key: 'upload-audio', icon: 'upload_file' },
-            { label: 'Prompts AI', key: 'prompts-ai', icon: 'psychology' },
-        ],
-    },
+    { label: 'Settings', key: 'setting', icon: 'settings' },
+    { label: 'Prompts AI', key: 'prompts-ai', icon: 'psychology' },
+    { label: 'Upload audio', key: 'upload-audio', icon: 'upload_file' },
     { label: 'Logout', key: 'logout', icon: 'logout' },
 ];
 
