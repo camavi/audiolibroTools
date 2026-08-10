@@ -2311,35 +2311,6 @@
     min-width: 0;
 }
 
-.at-editorSafetyCard {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-    padding: 9px;
-    border: 1px solid #dbe4ef;
-    border-radius: 4px;
-    background: #ffffff;
-}
-
-.at-editorSafetyCard-main {
-    display: grid;
-    gap: 4px;
-    min-width: 0;
-}
-
-.at-editorSafetyCard-main strong {
-    color: #0f172a;
-    font-size: 12px;
-}
-
-.at-editorSafetyCard-main small {
-    color: #64748b;
-    font-size: 11px;
-    line-height: 1.35;
-}
-
 .at-aiSettings-providerCard {
     display: grid;
     gap: 4px;

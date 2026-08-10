@@ -2958,17 +2958,6 @@ function aiSettingsPanel(keyBook, options = {}) {
             }, _.Icon ? _.Icon({ name: 'terminal', class: 'at-aiSettings-promptIcon' }) : 'Prompt')
         ),
         _.div({ class: 'at-aiSettings' },
-            !serviceLocked ? _.div({ class: 'at-editorSafetyCard' },
-                _.div({ class: 'at-editorSafetyCard-main' },
-                    _.strong('Confirm panel actions'),
-                    _.small('Correct, Translate and Audio will ask before changing content or status. Activity always confirms.')
-                ),
-                _.Toggle({
-                    label: () => confirmPanelActions.value ? 'On' : 'Off',
-                    model: confirmPanelActions,
-                    onChange: (value) => setConfirmPanelActions(Boolean(value)),
-                })
-            ) : null,
             serviceLocked ? _.div({ class: 'at-aiSettings-providerCard' },
                 _.span('Service'),
                 _.strong(aiServices.value.find((service) => service.key === aiProviderSetting.value.service)?.label || options.serviceLabel || aiProviderSetting.value.service),

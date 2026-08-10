@@ -90,3 +90,5 @@
 - Estese le azioni dirette Activity a draft singoli: correzioni con `Apply/Reject` e traduzioni con `Approve/Reject`, mentre i gruppi multipli restano nel tool dedicato.
 - Aggiunte conferme e feedback alle azioni dirette Activity, con messaggi temporanei in card e bottom bar dopo apply/reject/approve/audio.
 - Aggiunta preferenza locale `Confirm panel actions`: i pannelli Correct, Translate e Audio possono disattivare le conferme, mentre Activity le mantiene obbligatorie.
+- Avviata pagina `/dashboard/setting` con Settings generale CMSwift per preferenze editor locali, inclusa `Confirm panel actions`, rimuovendo il toggle temporaneo dal book editor.
+- Estesa pagina Settings con preferenze editor locali: visibilita' pannelli, tool destro predefinito, formato pagina, filtri Activity/Comments/Versions e lingua target traduzione.
