@@ -2400,6 +2400,13 @@
     color: #15803d;
 }
 
+.at-tiptap-editor .tiptap [data-block-id].has-active-activity {
+    border-radius: 4px;
+    outline: 2px solid #2563eb66;
+    outline-offset: 6px;
+    background: linear-gradient(90deg, #eff6ff 0, rgba(239, 246, 255, 0.42) 46%, transparent 100%);
+}
+
 .at-commentAnchorHighlight {
     border-radius: 2px;
     background: #fef3c7;

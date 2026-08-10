@@ -2794,6 +2794,35 @@ function editorText(keyBook) {
         });
     };
 
+    const clearActiveActivityMarker = () => {
+        editorMount.querySelectorAll('[data-activity-marker="1"]').forEach((element) => {
+            element.classList.remove('has-active-activity');
+            delete element.dataset.activityMarker;
+        });
+    };
+
+    const activeBookActivityItem = () => {
+        const activeId = activeBookActivityItemId.value;
+        if (!activeId) return null;
+
+        return (bookActivityItems.value || []).find((item) => item.id === activeId) || null;
+    };
+
+    const refreshActiveActivityMarker = () => {
+        clearActiveActivityMarker();
+
+        if (!editor?.view?.dom) return;
+
+        const activeItem = activeBookActivityItem();
+        if (!activeItem?.block_uuid) return;
+
+        const blockElement = editor.view.dom.querySelector(`[data-block-id="${cssSelectorEscape(activeItem.block_uuid)}"]`);
+        if (!blockElement) return;
+
+        blockElement.classList.add('has-active-activity');
+        blockElement.dataset.activityMarker = '1';
+    };
+
     const refreshCurrentInlineCommentMarkers = () => {
         clearInlineCommentMarkers();
 
@@ -3247,6 +3276,7 @@ function editorText(keyBook) {
         blockElement?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 
         activeEditorBlockId.value = blockUuid;
+        refreshActiveActivityMarker();
         refreshEditorUi();
     };
 
@@ -3793,6 +3823,7 @@ function editorText(keyBook) {
                 if (activeBookActivityItemId.value && !bookActivityItems.value.some((item) => item.id === activeBookActivityItemId.value)) {
                     activeBookActivityItemId.value = null;
                 }
+                refreshActiveActivityMarker();
                 bookActivitySummary.value = {
                     all: Number(data.summary?.all || 0),
                     action: Number(data.summary?.action || 0),
@@ -3807,6 +3838,7 @@ function editorText(keyBook) {
                 bookActivityItems.value = [];
                 bookActivitySummary.value = { all: 0, action: 0, review: 0, stale: 0 };
                 activeBookActivityItemId.value = null;
+                refreshActiveActivityMarker();
                 bookActivityError.value = requestErrorMessage(error, 'Unable to load book activity.');
                 bookActivityStatus.value = 'error';
             });
@@ -4948,6 +4980,7 @@ function editorText(keyBook) {
         }
         editorMount.removeEventListener('click', handleInlineCommentMarkerClick);
         clearInlineCommentMarkers();
+        clearActiveActivityMarker();
         editorReady.value = false;
         editorUiTick.value += 1;
         editorStatus.value = null;

@@ -81,3 +81,4 @@
 - Aggiunta navigazione Previous/Next alla queue Activity: item attivo evidenziato, focus automatico del blocco e apertura del tool collegato.
 - Spostata la navigazione Activity nel bottom del pannello con layout assoluto e area lista scrollabile, allineata al comportamento di Comments.
 - Corretto Previous/Next Activity: naviga e mette a fuoco il blocco restando nel tool Activity; solo il click sulla card apre il tool collegato.
+- Aggiunto highlight editor per Activity: il blocco dell'item attivo viene evidenziato nel documento senza interferire con i marker Comments.
