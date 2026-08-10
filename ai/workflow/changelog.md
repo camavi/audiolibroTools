@@ -92,3 +92,4 @@
 - Aggiunta preferenza locale `Confirm panel actions`: i pannelli Correct, Translate e Audio possono disattivare le conferme, mentre Activity le mantiene obbligatorie.
 - Avviata pagina `/dashboard/setting` con Settings generale CMSwift per preferenze editor locali, inclusa `Confirm panel actions`, rimuovendo il toggle temporaneo dal book editor.
 - Estesa pagina Settings con preferenze editor locali: visibilita' pannelli, tool destro predefinito, formato pagina, filtri Activity/Comments/Versions e lingua target traduzione.
+- Aggiunti AI defaults globali nella pagina Settings e fallback backend: i libri senza override specifico ereditano provider, modello e system prompt globali per servizio.

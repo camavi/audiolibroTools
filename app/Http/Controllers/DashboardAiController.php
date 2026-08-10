@@ -172,6 +172,14 @@ class DashboardAiController extends Controller
             ->where('service', $service)
             ->first();
 
+        if (! $setting && $book) {
+            $setting = AiServiceSetting::query()
+                ->where('account_id', $accountId)
+                ->whereNull('book_id')
+                ->where('service', $service)
+                ->first();
+        }
+
         if ($setting) {
             return $this->serializeSetting($setting);
         }

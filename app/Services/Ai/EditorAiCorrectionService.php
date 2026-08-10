@@ -36,6 +36,14 @@ class EditorAiCorrectionService
             ->where('service', 'correction')
             ->first();
 
+        if (! $setting) {
+            $setting = AiServiceSetting::query()
+                ->where('account_id', $accountId)
+                ->whereNull('book_id')
+                ->where('service', 'correction')
+                ->first();
+        }
+
         $resolvedProviderKey = $providerKey ?: ($setting?->provider_key ?: 'mock');
         $resolvedModel = $model ?: ($setting?->model ?: 'mock-correction-v1');
         $provider = $this->providerConfig($accountId, $resolvedProviderKey);

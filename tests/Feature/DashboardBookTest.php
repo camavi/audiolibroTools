@@ -354,6 +354,31 @@ class DashboardBookTest extends TestCase
         $this->assertSame('local-secret-key-updated', Crypt::decryptString($encryptedKey));
     }
 
+    public function test_dashboard_book_ai_provider_settings_fall_back_to_global_default(): void
+    {
+        $book = $this->createBook();
+
+        $this->patchJson('/dashboard/api/ai/settings', [
+            'service' => 'chat',
+            'provider_key' => 'openai',
+            'model' => 'gpt-5-mini',
+            'api_key' => 'sk-global-chat',
+            'system_prompt' => 'Use the global chat default.',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.setting.service', 'chat')
+            ->assertJsonPath('data.setting.provider_key', 'openai')
+            ->assertJsonPath('data.setting.model', 'gpt-5-mini')
+            ->assertJsonPath('data.setting.system_prompt', 'Use the global chat default.');
+
+        $this->getJson("/dashboard/api/ai/providers?service=chat&key_book={$book->key_book}")
+            ->assertOk()
+            ->assertJsonPath('data.setting.service', 'chat')
+            ->assertJsonPath('data.setting.provider_key', 'openai')
+            ->assertJsonPath('data.setting.model', 'gpt-5-mini')
+            ->assertJsonPath('data.setting.system_prompt', 'Use the global chat default.');
+    }
+
     public function test_dashboard_can_ask_mock_ai_chat_about_selected_block(): void
     {
         $book = $this->createBook();

@@ -13,6 +13,17 @@ const bookActivityFilter = _.rod('all');
 const blockCommentFilter = _.rod('open');
 const blockCommentAnchorFilter = _.rod('all');
 const settingsStatus = _.rod(null);
+const aiProviders = _.rod([]);
+const aiServices = _.rod([]);
+const aiSettingsByService = _.rod({});
+const aiSelectedService = _.rod('chat');
+const aiProviderModel = _.rod('mock');
+const aiModelModel = _.rod('mock-correction-v1');
+const aiApiKey = _.rod('');
+const aiSystemPrompt = _.rod('');
+const aiDefaultsStatus = _.rod('idle');
+const aiDefaultsContextKey = _.rod(null);
+const savingAiDefault = _.rod(false);
 
 const pageFormatOptions = [
     { label: 'Book - Novel', value: 'book' },
@@ -141,6 +152,140 @@ function inputChangeValue(value, fallback = '') {
     if (typeof value === 'string') return value;
 
     return fallback;
+}
+
+function normalizeDataPayload(payload) {
+    return payload?.data || payload || {};
+}
+
+function selectedAiProvider() {
+    return aiProviders.value.find((provider) => provider.provider_key === aiProviderModel.value)
+        || aiProviders.value[0]
+        || null;
+}
+
+function selectedAiModelOptions() {
+    return selectedAiProvider()?.models || [];
+}
+
+function providerNeedsApiKey(providerKey) {
+    return providerKey && !['mock', 'ollama'].includes(providerKey);
+}
+
+function applyAiDefaultPayload(payload, service) {
+    const data = normalizeDataPayload(payload);
+    const setting = data.setting || {
+        service,
+        provider_key: 'mock',
+        model: 'mock-correction-v1',
+        system_prompt: '',
+    };
+
+    aiProviders.value = data.providers || [];
+    aiServices.value = data.services || [];
+    aiSettingsByService.value = {
+        ...aiSettingsByService.value,
+        [service]: setting,
+    };
+    aiProviderModel.value = setting.provider_key || 'mock';
+    aiModelModel.value = setting.model || selectedAiProvider()?.default_model || 'mock-correction-v1';
+    aiSystemPrompt.value = setting.system_prompt || '';
+    aiApiKey.value = '';
+    aiDefaultsStatus.value = 'ready';
+}
+
+function loadAiDefaults(service = aiSelectedService.value, { force = false } = {}) {
+    const contextKey = `global:${service}`;
+
+    if (!force && aiDefaultsContextKey.value === contextKey && aiDefaultsStatus.value === 'loading') return;
+    if (!force && aiDefaultsContextKey.value === contextKey && aiDefaultsStatus.value !== 'error') return;
+
+    aiDefaultsContextKey.value = contextKey;
+    aiDefaultsStatus.value = 'loading';
+
+    const params = new URLSearchParams({ service });
+
+    _.http.getJSON(`/dashboard/api/ai/providers?${params.toString()}`)
+        .then((payload) => applyAiDefaultPayload(payload, service))
+        .catch(() => {
+            aiDefaultsStatus.value = 'error';
+        });
+}
+
+function setAiSelectedService(value) {
+    const service = inputChangeValue(value, aiSelectedService.value);
+
+    if (aiSelectedService.value !== service) {
+        aiSelectedService.value = service;
+    }
+
+    loadAiDefaults(service, { force: true });
+}
+
+function setAiProvider(value) {
+    const providerKey = inputChangeValue(value, aiProviderModel.value);
+    const provider = aiProviders.value.find((item) => item.provider_key === providerKey) || null;
+    const nextModel = provider?.models?.includes(aiModelModel.value)
+        ? aiModelModel.value
+        : (provider?.default_model || provider?.models?.[0] || '');
+
+    aiProviderModel.value = providerKey;
+    aiModelModel.value = nextModel;
+}
+
+function setAiModel(value) {
+    aiModelModel.value = inputChangeValue(value, aiModelModel.value);
+}
+
+function setAiSystemPrompt(value) {
+    aiSystemPrompt.value = inputChangeValue(value, aiSystemPrompt.value);
+}
+
+function setAiApiKey(value) {
+    aiApiKey.value = inputChangeValue(value, aiApiKey.value);
+}
+
+async function saveAiDefaultSetting() {
+    if (savingAiDefault.value) return;
+
+    savingAiDefault.value = true;
+
+    try {
+        const payload = await _.http.patchJSON('/dashboard/api/ai/settings', {
+            service: aiSelectedService.value,
+            provider_key: aiProviderModel.value,
+            model: aiModelModel.value,
+            api_key: aiApiKey.value.trim() || null,
+            system_prompt: aiSystemPrompt.value.trim(),
+        });
+        const data = normalizeDataPayload(payload);
+
+        if (data.setting) {
+            aiSettingsByService.value = {
+                ...aiSettingsByService.value,
+                [data.setting.service]: data.setting,
+            };
+            aiProviderModel.value = data.setting.provider_key;
+            aiModelModel.value = data.setting.model;
+            aiSystemPrompt.value = data.setting.system_prompt || '';
+        }
+
+        aiApiKey.value = '';
+        settingsStatus.value = {
+            type: 'success',
+            title: 'AI default saved',
+            message: 'The selected AI service default was updated.',
+        };
+        loadAiDefaults(aiSelectedService.value, { force: true });
+    } catch {
+        settingsStatus.value = {
+            type: 'danger',
+            title: 'AI default not saved',
+            message: 'Check provider, model and API key, then try again.',
+        };
+    } finally {
+        savingAiDefault.value = false;
+    }
 }
 
 function updatePreference(key, value) {
@@ -348,8 +493,136 @@ function panelDefaultsCard() {
     });
 }
 
+function aiDefaultSummaryCards() {
+    const services = aiServices.value.length ? aiServices.value : [
+        { key: 'chat', label: 'AI Chat' },
+        { key: 'comments', label: 'Comments' },
+        { key: 'correction', label: 'Correct' },
+        { key: 'voices', label: 'Voices' },
+        { key: 'audio', label: 'Audio' },
+        { key: 'translate', label: 'Translate' },
+        { key: 'versions', label: 'Versions' },
+    ];
+
+    return _.Grid({ gap: 'sm' },
+        services
+            .filter((service) => service.key !== 'rewrite')
+            .map((service) => {
+                const setting = aiSettingsByService.value[service.key];
+                const provider = aiProviders.value.find((item) => item.provider_key === setting?.provider_key);
+                const label = provider?.name || setting?.provider_key || 'Default';
+                const model = setting?.model || provider?.default_model || 'Not loaded';
+
+                return _.GridCol({ span: 6, mobile: { span: 12 } },
+                    _.Alert({
+                        type: service.key === aiSelectedService.value ? 'info' : 'light',
+                        title: service.label,
+                        message: `${label} - ${model}`,
+                    })
+                );
+            })
+    );
+}
+
+function aiDefaultsCard() {
+    const provider = selectedAiProvider();
+    const modelOptions = selectedAiModelOptions().map((model) => ({ label: model, value: model }));
+    const providerOptions = aiProviders.value.map((item) => ({ label: item.name, value: item.provider_key }));
+    const serviceOptions = aiServices.value
+        .filter((service) => service.key !== 'rewrite')
+        .map((service) => ({ label: service.label, value: service.key }));
+
+    return _.Card({
+        icon: 'psychology',
+        title: 'AI defaults',
+        subtitle: 'Global provider and model used when a book or tool has no specific override.',
+        body: _.Grid({ gap: 'md' },
+            aiDefaultsStatus.value === 'loading' ? _.GridCol({ span: 12 },
+                _.Alert({
+                    type: 'info',
+                    title: 'Loading AI providers',
+                    message: 'Provider and model options are loading.',
+                })
+            ) : null,
+            aiDefaultsStatus.value === 'error' ? _.GridCol({ span: 12 },
+                _.Alert({
+                    type: 'danger',
+                    title: 'AI providers unavailable',
+                    message: 'Unable to load provider settings.',
+                })
+            ) : null,
+            _.GridCol({ span: 6, mobile: { span: 12 } },
+                _.Select({
+                    label: 'Service',
+                    icon: 'category',
+                    model: aiSelectedService,
+                    options: serviceOptions,
+                    onChange: setAiSelectedService,
+                })
+            ),
+            _.GridCol({ span: 6, mobile: { span: 12 } },
+                _.Select({
+                    label: 'Provider',
+                    icon: 'hub',
+                    model: aiProviderModel,
+                    options: providerOptions,
+                    onChange: setAiProvider,
+                })
+            ),
+            _.GridCol({ span: 6, mobile: { span: 12 } },
+                _.Select({
+                    label: 'Model',
+                    icon: 'memory',
+                    model: aiModelModel,
+                    options: modelOptions,
+                    onChange: setAiModel,
+                })
+            ),
+            _.GridCol({ span: 6, mobile: { span: 12 } },
+                _.Input({
+                    label: 'API key',
+                    icon: 'key',
+                    model: aiApiKey,
+                    type: 'password',
+                    placeholder: providerNeedsApiKey(aiProviderModel.value) ? 'Paste provider API key' : 'No API key required',
+                    onInput: setAiApiKey,
+                })
+            ),
+            _.GridCol({ span: 12 },
+                _.Textarea({
+                    label: 'System prompt',
+                    icon: 'terminal',
+                    rows: 5,
+                    model: aiSystemPrompt,
+                    placeholder: 'Prompt used by this service when no book override exists',
+                    onInput: setAiSystemPrompt,
+                })
+            ),
+            provider ? _.GridCol({ span: 12 },
+                _.Alert({
+                    type: 'light',
+                    title: 'Hosting',
+                    message: provider.base_url || 'Internal mock provider',
+                })
+            ) : null,
+            _.GridCol({ span: 12 },
+                _.Btn({
+                    type: 'button',
+                    color: 'primary',
+                    icon: 'save',
+                    loading: savingAiDefault,
+                    disabled: aiDefaultsStatus.value === 'loading' || !aiProviderModel.value || !aiModelModel.value,
+                    onClick: saveAiDefaultSetting,
+                }, savingAiDefault.value ? 'Saving AI default...' : 'Save AI default')
+            ),
+            _.GridCol({ span: 12 }, aiDefaultSummaryCards())
+        ),
+    });
+}
+
 export default function setting() {
     loadSettingsPreferences();
+    loadAiDefaults();
 
     return [
         _.Card({
@@ -360,6 +633,7 @@ export default function setting() {
                 _.GridCol({ span: 24, mobile: { span: 12 } }, editorSafetyCard()),
                 _.GridCol({ span: 24, mobile: { span: 12 } }, workspacePreferencesCard()),
                 _.GridCol({ span: 24 }, panelDefaultsCard()),
+                _.GridCol({ span: 24 }, aiDefaultsCard()),
                 _.GridCol({ span: 12 }, () => settingsStatus.value ? statusAlert() : null),
             ),
         }),

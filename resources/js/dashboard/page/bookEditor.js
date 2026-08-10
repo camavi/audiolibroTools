@@ -2164,74 +2164,74 @@ function versionsPanel(block, keyBook) {
         versions.length
             ? filteredVersions.length
                 ? _.div({ class: 'at-versionList' }, filteredVersions.map((version) => {
-                const activityBadges = versionActivityBadges(version);
-                const classes = ['at-versionItem'];
-                if (version.is_current) classes.push('is-current');
-                if (version.has_stale_activity) classes.push('has-staleActivity');
-                const explanationHidden = isVersionExplanationHidden(version);
+                    const activityBadges = versionActivityBadges(version);
+                    const classes = ['at-versionItem'];
+                    if (version.is_current) classes.push('is-current');
+                    if (version.has_stale_activity) classes.push('has-staleActivity');
+                    const explanationHidden = isVersionExplanationHidden(version);
 
-                return _.div({
-                    class: classes.join(' '),
-                },
-                    _.div({ class: 'at-versionItem-head' },
-                        _.strong(`v${version.version_number}`),
-                        _.span(version.source || 'manual'),
-                        version.is_current ? _.span({ class: 'at-versionBadge' }, 'Current') : null,
-                        version.has_stale_activity ? _.span({ class: 'at-versionBadge is-stale' }, 'Stale links') : null
-                    ),
-                    _.div({ class: 'at-versionItem-date' }, version.created_at
-                        ? new Date(version.created_at).toLocaleString()
-                        : ''
-                    ),
-                    activityBadges.length ? _.div({ class: 'at-versionActivity' }, activityBadges) : null,
-                    _.div({ class: 'at-versionItem-preview' }, version.text_plain || 'Empty block'),
-                    version.explanation ? _.div({ class: 'at-versionExplanationToggle' },
-                        _.button({
-                            type: 'button',
-                            class: 'at-versionExplanationToggleButton',
-                            onclick: () => toggleVersionExplanation(version),
-                        }, explanationHidden ? 'Show explanation' : 'Hide explanation')
-                    ) : null,
-                    version.explanation && !explanationHidden ? _.div({ class: 'at-versionExplanation' },
-                        _.div({ class: 'at-versionExplanation-head' },
-                            _.strong(version.explanation.provider_name || 'AI'),
-                            _.span(version.explanation.model || '')
+                    return _.div({
+                        class: classes.join(' '),
+                    },
+                        _.div({ class: 'at-versionItem-head' },
+                            _.strong(`v${version.version_number}`),
+                            _.span(version.source || 'manual'),
+                            version.is_current ? _.span({ class: 'at-versionBadge' }, 'Current') : null,
+                            version.has_stale_activity ? _.span({ class: 'at-versionBadge is-stale' }, 'Stale links') : null
                         ),
-                        _.p(version.explanation.answer || ''),
-                        _.div({ class: 'at-versionExplanation-actions' },
+                        _.div({ class: 'at-versionItem-date' }, version.created_at
+                            ? new Date(version.created_at).toLocaleString()
+                            : ''
+                        ),
+                        activityBadges.length ? _.div({ class: 'at-versionActivity' }, activityBadges) : null,
+                        _.div({ class: 'at-versionItem-preview' }, version.text_plain || 'Empty block'),
+                        version.explanation ? _.div({ class: 'at-versionExplanationToggle' },
                             _.button({
                                 type: 'button',
-                                class: 'at-versionExplanation-action',
-                                disabled: () => !block?.current_version_id
-                                    || block?.dirty
-                                    || blockCommentActionStatus.value !== 'idle',
-                                onclick: () => createBlockCommentFromSource(block, version.explanation.answer || '', version.id),
-                            }, () => blockCommentActionStatus.value === 'creating' ? 'Adding...' : 'Add comment')
+                                class: 'at-versionExplanationToggleButton',
+                                onclick: () => toggleVersionExplanation(version),
+                            }, explanationHidden ? 'Show explanation' : 'Hide explanation')
+                        ) : null,
+                        version.explanation && !explanationHidden ? _.div({ class: 'at-versionExplanation' },
+                            _.div({ class: 'at-versionExplanation-head' },
+                                _.strong(version.explanation.provider_name || 'AI'),
+                                _.span(version.explanation.model || '')
+                            ),
+                            _.p(version.explanation.answer || ''),
+                            _.div({ class: 'at-versionExplanation-actions' },
+                                _.button({
+                                    type: 'button',
+                                    class: 'at-versionExplanation-action',
+                                    disabled: () => !block?.current_version_id
+                                        || block?.dirty
+                                        || blockCommentActionStatus.value !== 'idle',
+                                    onclick: () => createBlockCommentFromSource(block, version.explanation.answer || '', version.id),
+                                }, () => blockCommentActionStatus.value === 'creating' ? 'Adding...' : 'Add comment')
+                            )
+                        ) : null,
+                        _.div({ class: 'at-versionItem-actions' },
+                            _.button({
+                                type: 'button',
+                                class: 'at-rightWorkspace-action',
+                                onclick: () => openVersionDiffDialog(block, version, versions),
+                            }, 'View changes'),
+                            _.button({
+                                type: 'button',
+                                class: 'at-rightWorkspace-action',
+                                disabled: () => versions.length < 2
+                                    || blockVersionActionStatus.value !== 'idle'
+                                    || versionsAiSummary().missingApiKey,
+                                onclick: () => explainBlockVersion(block, version),
+                            }, () => blockVersionActionStatus.value === `explaining:${version.id}` ? 'Explaining...' : 'Explain'),
+                            _.button({
+                                type: 'button',
+                                class: 'at-rightWorkspace-action',
+                                disabled: () => version.is_current || blockVersionActionStatus.value !== 'idle',
+                                onclick: () => restoreBlockVersion(block, version),
+                            }, () => blockVersionActionStatus.value === `restoring:${version.id}` ? 'Restoring...' : 'Restore')
                         )
-                    ) : null,
-                    _.div({ class: 'at-versionItem-actions' },
-                        _.button({
-                            type: 'button',
-                            class: 'at-rightWorkspace-action',
-                            onclick: () => openVersionDiffDialog(block, version, versions),
-                        }, 'View changes'),
-                        _.button({
-                            type: 'button',
-                            class: 'at-rightWorkspace-action',
-                            disabled: () => versions.length < 2
-                                || blockVersionActionStatus.value !== 'idle'
-                                || versionsAiSummary().missingApiKey,
-                            onclick: () => explainBlockVersion(block, version),
-                        }, () => blockVersionActionStatus.value === `explaining:${version.id}` ? 'Explaining...' : 'Explain'),
-                        _.button({
-                            type: 'button',
-                            class: 'at-rightWorkspace-action',
-                            disabled: () => version.is_current || blockVersionActionStatus.value !== 'idle',
-                            onclick: () => restoreBlockVersion(block, version),
-                        }, () => blockVersionActionStatus.value === `restoring:${version.id}` ? 'Restoring...' : 'Restore')
-                    )
-                );
-            }))
+                    );
+                }))
                 : _.div({ class: 'at-rightWorkspace-emptyState' },
                     _.strong('No matching versions'),
                     _.p('Adjust the filter, order or search text.')
@@ -2340,62 +2340,62 @@ function commentsPanel(block) {
     const commentCards = () => comments.length
         ? visibleComments.length
             ? _.div({ class: 'at-commentList' }, visibleComments.map((comment) => {
-            const isOpen = (comment.status || 'open') === 'open';
-            const isBusy = actionStatus === `updating:${comment.id}`;
-            const isUpdatingAnchor = actionStatus === `anchoring:${comment.id}`;
-            const anchor = commentAnchor(comment);
-            const anchorResolution = blockCommentAnchorResolutions.value[comment.id] || null;
-            const isActiveComment = activeBlockCommentId.value === comment.id;
+                const isOpen = (comment.status || 'open') === 'open';
+                const isBusy = actionStatus === `updating:${comment.id}`;
+                const isUpdatingAnchor = actionStatus === `anchoring:${comment.id}`;
+                const anchor = commentAnchor(comment);
+                const anchorResolution = blockCommentAnchorResolutions.value[comment.id] || null;
+                const isActiveComment = activeBlockCommentId.value === comment.id;
 
-            return _.div({
-                class: [
-                    'at-commentItem',
-                    comment.is_current_version ? '' : 'is-stale',
-                    isActiveComment ? 'is-active' : '',
-                ].filter(Boolean).join(' '),
-                'data-comment-item-id': String(comment.id),
-            },
-                _.div({ class: 'at-commentItem-head' },
-                    _.strong(isOpen ? 'Open comment' : 'Resolved comment'),
-                    _.span({ class: `at-commentStatus status-${comment.status}` }, comment.status || 'open')
-                ),
-                _.div({ class: 'at-commentItem-version' }, comment.version_number
-                    ? `v${comment.version_number}${comment.is_current_version ? ' current' : ' stale'}`
-                    : ''
-                ),
-                anchorSnippet(anchor)
-                    ? _.div({ class: `at-commentAnchor ${commentAnchorStateClass(comment)}` },
-                        _.span(commentAnchorStateLabel(comment) || 'Anchor'),
-                        _.strong(anchorSnippet(anchor)),
-                        anchorResolution?.state === 'reanchored'
-                            ? _.em('Matched in current text')
-                            : null
-                    )
-                    : null,
-                _.p({ class: 'at-commentBody' }, comment.body || ''),
-                _.div({ class: 'at-commentItem-actions' },
-                    _.button({
-                        type: 'button',
-                        class: 'at-commentItem-action',
-                        onclick: () => focusEditorBlock(comment.block_uuid || block.block_uuid),
-                    }, 'Focus block'),
-                    anchorResolution?.state === 'reanchored'
-                        ? _.button({
-                            type: 'button',
-                            class: 'at-commentItem-action is-apply',
-                            disabled: isUpdatingAnchor || actionStatus !== 'idle' || !block.current_version_id,
-                            onclick: () => updateBlockCommentAnchor(block, comment, anchorResolution),
-                        }, isUpdatingAnchor ? 'Saving...' : 'Update anchor')
+                return _.div({
+                    class: [
+                        'at-commentItem',
+                        comment.is_current_version ? '' : 'is-stale',
+                        isActiveComment ? 'is-active' : '',
+                    ].filter(Boolean).join(' '),
+                    'data-comment-item-id': String(comment.id),
+                },
+                    _.div({ class: 'at-commentItem-head' },
+                        _.strong(isOpen ? 'Open comment' : 'Resolved comment'),
+                        _.span({ class: `at-commentStatus status-${comment.status}` }, comment.status || 'open')
+                    ),
+                    _.div({ class: 'at-commentItem-version' }, comment.version_number
+                        ? `v${comment.version_number}${comment.is_current_version ? ' current' : ' stale'}`
+                        : ''
+                    ),
+                    anchorSnippet(anchor)
+                        ? _.div({ class: `at-commentAnchor ${commentAnchorStateClass(comment)}` },
+                            _.span(commentAnchorStateLabel(comment) || 'Anchor'),
+                            _.strong(anchorSnippet(anchor)),
+                            anchorResolution?.state === 'reanchored'
+                                ? _.em('Matched in current text')
+                                : null
+                        )
                         : null,
-                    _.button({
-                        type: 'button',
-                        class: isOpen ? 'at-commentItem-action' : 'at-commentItem-action is-apply',
-                        disabled: isBusy || actionStatus !== 'idle',
-                        onclick: () => updateBlockCommentStatus(block, comment, isOpen ? 'resolved' : 'open'),
-                    }, isBusy ? 'Saving...' : (isOpen ? 'Resolve' : 'Reopen'))
-                )
-            );
-        }))
+                    _.p({ class: 'at-commentBody' }, comment.body || ''),
+                    _.div({ class: 'at-commentItem-actions' },
+                        _.button({
+                            type: 'button',
+                            class: 'at-commentItem-action',
+                            onclick: () => focusEditorBlock(comment.block_uuid || block.block_uuid),
+                        }, 'Focus block'),
+                        anchorResolution?.state === 'reanchored'
+                            ? _.button({
+                                type: 'button',
+                                class: 'at-commentItem-action is-apply',
+                                disabled: isUpdatingAnchor || actionStatus !== 'idle' || !block.current_version_id,
+                                onclick: () => updateBlockCommentAnchor(block, comment, anchorResolution),
+                            }, isUpdatingAnchor ? 'Saving...' : 'Update anchor')
+                            : null,
+                        _.button({
+                            type: 'button',
+                            class: isOpen ? 'at-commentItem-action' : 'at-commentItem-action is-apply',
+                            disabled: isBusy || actionStatus !== 'idle',
+                            onclick: () => updateBlockCommentStatus(block, comment, isOpen ? 'resolved' : 'open'),
+                        }, isBusy ? 'Saving...' : (isOpen ? 'Resolve' : 'Reopen'))
+                    )
+                );
+            }))
             : _.div({ class: 'at-rightWorkspace-emptyState' },
                 _.strong('No comments in this filter'),
                 _.p('Switch filter to see other comment states.')
