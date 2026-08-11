@@ -5,6 +5,7 @@ import settingPage from './dashboard/page/setting.js';
 import booksPage from './dashboard/page/books.js';
 import bookPanelPage from './dashboard/page/bookPanel.js';
 import bookTraslatePage from './dashboard/page/bookTraslate.js';
+import audiobookEditPage from './dashboard/page/audiobookEdit.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
@@ -132,6 +133,7 @@ _.router.add('/dashboard/new-book', newBookStart);
 _.router.add('/dashboard/book/:key_book/edit', bookEditor);
 _.router.add('/dashboard/book/:key_book/panel', bookPanelPage);
 _.router.add('/dashboard/book/:key_book/translate', bookTraslatePage);
+_.router.add('/dashboard/book/:key_book/audiobook/edit', audiobookEditPage);
 _.router.add('/dashboard/setting', settingPage);
 _.router.add('/dashboard/books', booksPage);
 _.router.start();

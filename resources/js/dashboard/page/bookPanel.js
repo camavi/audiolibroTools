@@ -24,6 +24,7 @@ const workspaceAreas = [
         icon: 'record_voice_over',
         title: 'Audiobook',
         description: 'Generate, review and export narrated audio.',
+        available: true,
     },
     {
         id: 'design',
@@ -89,6 +90,7 @@ function workspaceArea(area, keyBook) {
     const openArea = () => {
         if (area.id === 'editing') _.router.navigate(`/dashboard/book/${keyBook}/edit`);
         if (area.id === 'translate') _.router.navigate(`/dashboard/book/${keyBook}/translate`);
+        if (area.id === 'audiobook') _.router.navigate(`/dashboard/book/${keyBook}/audiobook/edit`);
     };
 
     return _.button({
