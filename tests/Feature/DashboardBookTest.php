@@ -3,18 +3,22 @@
 namespace Tests\Feature;
 
 use App\Models\AiChatMessage;
+use App\Models\AccountCreditBalance;
 use App\Models\AiChatThread;
 use App\Models\Book;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
 use App\Models\BookBlockTranslation;
+use App\Models\BookTranslationJob;
 use App\Models\BookBlockVoiceAssignment;
 use App\Models\BookCategory;
 use App\Models\BookVoiceProfile;
 use App\Services\BookBlockService;
+use App\Jobs\ProcessBookTranslationJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -33,6 +37,133 @@ class DashboardBookTest extends TestCase
         $this->getJson('/dashboard/api/book-categories')
             ->assertOk()
             ->assertJsonPath('data.0.name', 'Fiction');
+    }
+
+    public function test_dashboard_translation_provider_defaults_to_translation_mock_model(): void
+    {
+        $this->getJson('/dashboard/api/ai/providers?service=translate')
+            ->assertOk()
+            ->assertJsonPath('data.setting.provider_key', 'mock')
+            ->assertJsonPath('data.setting.model', 'mock-translation-v1');
+    }
+
+    public function test_dashboard_exposes_managed_and_personal_provider_modes(): void
+    {
+        $providers = $this->getJson('/dashboard/api/ai/providers?service=translate')
+            ->assertOk()
+            ->json('data.providers');
+
+        $managed = collect($providers)->firstWhere('provider_key', 'at-openai');
+        $personal = collect($providers)->firstWhere('provider_key', 'openai');
+
+        $this->assertSame('AT · OpenAI', $managed['name']);
+        $this->assertSame('managed', $managed['connection_mode']);
+        $this->assertTrue($managed['supports_background_jobs']);
+        $this->assertFalse($managed['is_selectable']);
+        $this->assertSame('Personal · OpenAI', $personal['name']);
+        $this->assertSame('byok', $personal['connection_mode']);
+        $this->assertFalse($personal['supports_background_jobs']);
+    }
+
+    public function test_dashboard_managed_provider_never_saves_a_personal_api_key(): void
+    {
+        config()->set('ai_providers.defaults.1.is_configured', true);
+        config()->set('ai_providers.defaults.1.managed_api_key', 'at-server-openai-key');
+        $book = $this->createBook();
+
+        $this->patchJson('/dashboard/api/ai/settings', [
+            'service' => 'translate',
+            'key_book' => $book->key_book,
+            'provider_key' => 'at-openai',
+            'model' => 'gpt-5-mini',
+            'api_key' => 'must-not-be-stored',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.setting.provider_key', 'at-openai')
+            ->assertJsonPath('data.setting.connection_mode', 'managed')
+            ->assertJsonPath('data.setting.supports_background_jobs', true);
+
+        $this->assertDatabaseMissing('ai_provider_credentials', [
+            'provider_key' => 'at-openai',
+        ]);
+    }
+
+    public function test_dashboard_starts_a_background_batch_only_for_configured_at_openai(): void
+    {
+        config()->set('ai_providers.defaults.1.is_configured', true);
+        config()->set('ai_providers.defaults.1.managed_api_key', 'at-server-openai-key');
+        Queue::fake();
+        AccountCreditBalance::query()->create(['account_id' => null, 'available_credits' => 100]);
+        $book = $this->createBook();
+        app(BookBlockService::class)->saveBlock($book, [
+            'block_uuid' => (string) Str::uuid(),
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('A saved source block.'),
+            'text_plain' => 'A saved source block.',
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/translation-jobs", [
+            'target_locale' => 'en',
+            'provider_key' => 'at-openai',
+            'model' => 'gpt-5-mini',
+            'confirmed' => true,
+        ])
+            ->assertStatus(202)
+            ->assertJsonPath('data.created', true)
+            ->assertJsonPath('data.job.status', 'queued')
+            ->assertJsonPath('data.job.total_blocks', 1);
+
+        Queue::assertPushed(ProcessBookTranslationJob::class);
+        $this->assertDatabaseHas('book_translation_jobs', [
+            'book_id' => $book->id,
+            'provider_key' => 'at-openai',
+            'status' => 'queued',
+        ]);
+    }
+
+    public function test_dashboard_background_batch_uses_the_managed_server_credential(): void
+    {
+        config()->set('ai_providers.defaults.1.is_configured', true);
+        config()->set('ai_providers.defaults.1.managed_api_key', 'at-server-openai-key');
+        $book = $this->createBook();
+        $saved = app(BookBlockService::class)->saveBlock($book, [
+            'block_uuid' => (string) Str::uuid(),
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Translate this line.'),
+            'text_plain' => 'Translate this line.',
+        ]);
+        $job = BookTranslationJob::query()->create([
+            'book_id' => $book->id,
+            'target_locale' => 'it',
+            'status' => 'queued',
+            'provider_key' => 'at-openai',
+            'model' => 'gpt-5-mini',
+            'total_blocks' => 1,
+        ]);
+        Http::fake([
+            'https://api.openai.com/v1/responses' => Http::response([
+                'id' => 'resp_managed_batch',
+                'output_text' => 'Traduci questa riga.',
+            ]),
+        ]);
+
+        (new ProcessBookTranslationJob($job->id))->handle(
+            app(\App\Services\Ai\EditorAiTranslationService::class),
+            app(\App\Services\Credits\TranslationCreditService::class),
+        );
+
+        $job->refresh();
+        $this->assertSame('completed', $job->status);
+        $this->assertSame(1, $job->completed_blocks);
+        $this->assertDatabaseHas('book_block_translations', [
+            'book_id' => $book->id,
+            'block_uuid' => $saved['block']->block_uuid,
+            'provider_key' => 'at-openai',
+            'translated_text' => 'Traduci questa riga.',
+        ]);
+        Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer at-server-openai-key'));
     }
 
     public function test_dashboard_can_create_blank_book(): void
@@ -61,6 +192,48 @@ class DashboardBookTest extends TestCase
         $this->assertSame([$category->id], $book->categories);
 
         Storage::disk('local')->assertExists("bookEdit/guest/{$book->key_book}.json");
+    }
+
+    public function test_dashboard_returns_translation_progress_for_current_block_versions(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $firstBlock = $service->saveBlock($book, [
+            'block_uuid' => (string) Str::uuid(),
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Approved source.'),
+            'text_plain' => 'Approved source.',
+        ]);
+        $secondBlock = $service->saveBlock($book, [
+            'block_uuid' => (string) Str::uuid(),
+            'type' => 'paragraph',
+            'sort_order' => 2000,
+            'content_json' => $this->paragraphJson('Missing source.'),
+            'text_plain' => 'Missing source.',
+        ]);
+
+        BookBlockTranslation::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $firstBlock['block']->id,
+            'source_book_block_version_id' => $firstBlock['version']->id,
+            'block_uuid' => $firstBlock['block']->block_uuid,
+            'target_locale' => 'it',
+            'status' => 'approved',
+            'provider_key' => 'mock',
+            'model' => 'mock-translation-v1',
+            'source' => 'mock',
+            'source_text' => 'Approved source.',
+            'translated_text' => 'Sorgente approvata.',
+        ]);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/translation-progress?target_locale=it")
+            ->assertOk()
+            ->assertJsonPath('data.counts.all', 2)
+            ->assertJsonPath('data.counts.approved', 1)
+            ->assertJsonPath('data.counts.missing', 1)
+            ->assertJsonPath("data.states.{$firstBlock['block']->block_uuid}", 'approved')
+            ->assertJsonPath("data.states.{$secondBlock['block']->block_uuid}", 'missing');
     }
 
     public function test_dashboard_editor_returns_book_document_and_blocks(): void
@@ -814,6 +987,59 @@ class DashboardBookTest extends TestCase
             && $request['model'] === 'gpt-5-mini'
             && $request['store'] === false
             && $request['input'][0]['content'][0]['text'] === 'Correct like a careful Italian book editor.');
+    }
+
+    public function test_dashboard_can_create_openai_translation_with_book_glossary(): void
+    {
+        Http::fake([
+            'https://api.openai.com/v1/responses' => Http::response([
+                'id' => 'resp_translation_123',
+                'output_text' => 'Liora entrò nel Bosco di Mezzanotte.',
+            ]),
+        ]);
+
+        $book = $this->createBook();
+        $book->update(['lang' => 'en']);
+        $book->translationTerms()->create([
+            'source_term' => 'Midnight Wood',
+            'target_term' => 'Bosco di Mezzanotte',
+            'target_locale' => 'it',
+            'notes' => 'Official place name',
+        ]);
+        $blockUuid = (string) Str::uuid();
+        app(BookBlockService::class)->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Liora entered the Midnight Wood.'),
+            'text_plain' => 'Liora entered the Midnight Wood.',
+        ]);
+
+        $this->patchJson('/dashboard/api/ai/settings', [
+            'service' => 'translate',
+            'key_book' => $book->key_book,
+            'provider_key' => 'openai',
+            'model' => 'gpt-5-mini',
+            'api_key' => 'sk-translation-openai',
+            'system_prompt' => 'Translate literary text only.',
+        ])->assertOk();
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/translations", [
+            'target_locale' => 'it',
+            'provider_key' => 'openai',
+            'model' => 'gpt-5-mini',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.translation.source', 'ai')
+            ->assertJsonPath('data.translation.translated_text', 'Liora entrò nel Bosco di Mezzanotte.')
+            ->assertJsonPath('data.translation.notes_json.provider_key', 'openai')
+            ->assertJsonPath('data.translation.notes_json.glossary_terms_count', 1);
+
+        Http::assertSent(fn ($request) => $request->url() === 'https://api.openai.com/v1/responses'
+            && $request->hasHeader('Authorization', 'Bearer sk-translation-openai')
+            && $request['model'] === 'gpt-5-mini'
+            && $request['store'] === false
+            && str_contains($request['input'][1]['content'][0]['text'], 'Midnight Wood → Bosco di Mezzanotte'));
     }
 
     public function test_dashboard_requires_api_key_for_openai_editor_block_review(): void

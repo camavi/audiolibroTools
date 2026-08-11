@@ -17,6 +17,7 @@ const workspaceAreas = [
         icon: 'translate',
         title: 'Translate',
         description: 'Create and manage translated editions.',
+        available: true,
     },
     {
         id: 'audiobook',
@@ -87,6 +88,7 @@ function bookArtwork(book) {
 function workspaceArea(area, keyBook) {
     const openArea = () => {
         if (area.id === 'editing') _.router.navigate(`/dashboard/book/${keyBook}/edit`);
+        if (area.id === 'translate') _.router.navigate(`/dashboard/book/${keyBook}/translate`);
     };
 
     return _.button({

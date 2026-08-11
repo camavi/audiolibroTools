@@ -168,10 +168,6 @@ function selectedAiModelOptions() {
     return selectedAiProvider()?.models || [];
 }
 
-function providerNeedsApiKey(providerKey) {
-    return providerKey && !['mock', 'ollama'].includes(providerKey);
-}
-
 function applyAiDefaultPayload(payload, service) {
     const data = normalizeDataPayload(payload);
     const setting = data.setting || {
@@ -527,7 +523,9 @@ function aiDefaultSummaryCards() {
 function aiDefaultsCard() {
     const provider = selectedAiProvider();
     const modelOptions = selectedAiModelOptions().map((model) => ({ label: model, value: model }));
-    const providerOptions = aiProviders.value.map((item) => ({ label: item.name, value: item.provider_key }));
+    const providerOptions = aiProviders.value
+        .filter((item) => item.is_selectable !== false)
+        .map((item) => ({ label: item.name, value: item.provider_key }));
     const serviceOptions = aiServices.value
         .filter((service) => service.key !== 'rewrite')
         .map((service) => ({ label: service.label, value: service.key }));
@@ -578,16 +576,16 @@ function aiDefaultsCard() {
                     onChange: setAiModel,
                 })
             ),
-            _.GridCol({ span: 6, mobile: { span: 12 } },
+            provider?.connection_mode !== 'managed' ? _.GridCol({ span: 6, mobile: { span: 12 } },
                 _.Input({
                     label: 'API key',
                     icon: 'key',
                     model: aiApiKey,
                     type: 'password',
-                    placeholder: providerNeedsApiKey(aiProviderModel.value) ? 'Paste provider API key' : 'No API key required',
+                    placeholder: provider?.has_api_key ? 'Leave empty to keep the saved key' : 'Paste provider API key',
                     onInput: setAiApiKey,
                 })
-            ),
+            ) : null,
             _.GridCol({ span: 12 },
                 _.Textarea({
                     label: 'System prompt',
@@ -600,9 +598,13 @@ function aiDefaultsCard() {
             ),
             provider ? _.GridCol({ span: 12 },
                 _.Alert({
-                    type: 'light',
-                    title: 'Hosting',
-                    message: provider.base_url || 'Internal mock provider',
+                    type: provider.connection_mode === 'managed' && !provider.is_configured ? 'warning' : 'light',
+                    title: provider.name,
+                    message: provider.connection_mode === 'managed'
+                        ? provider.is_configured
+                            ? `${provider.billing_label}. ${provider.privacy_label}`
+                            : 'This Audiobook Tools provider is coming soon and cannot be selected yet.'
+                        : `${provider.billing_label || 'Your provider'}. ${provider.privacy_label || provider.base_url || 'Provider endpoint'}`,
                 })
             ) : null,
             _.GridCol({ span: 12 },
@@ -611,7 +613,7 @@ function aiDefaultsCard() {
                     color: 'primary',
                     icon: 'save',
                     loading: savingAiDefault,
-                    disabled: aiDefaultsStatus.value === 'loading' || !aiProviderModel.value || !aiModelModel.value,
+                    disabled: aiDefaultsStatus.value === 'loading' || !aiProviderModel.value || !aiModelModel.value || provider?.is_selectable === false,
                     onClick: saveAiDefaultSetting,
                 }, savingAiDefault.value ? 'Saving AI default...' : 'Save AI default')
             ),

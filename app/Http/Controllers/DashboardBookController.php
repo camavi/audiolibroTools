@@ -14,11 +14,16 @@ use App\Models\BookBlockReview;
 use App\Models\BookBlockTranslation;
 use App\Models\BookBlockVoiceAssignment;
 use App\Models\BookCategory;
+use App\Models\BookTranslationTerm;
+use App\Models\BookTranslationJob;
 use App\Models\BookVoiceProfile;
+use App\Jobs\ProcessBookTranslationJob;
 use App\Services\Ai\EditorAiChatService;
 use App\Services\Ai\EditorAiCorrectionService;
+use App\Services\Ai\EditorAiTranslationService;
 use App\Services\Ai\EditorAiVersionService;
 use App\Services\BookBlockService;
+use App\Services\Credits\TranslationCreditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -126,6 +131,195 @@ class DashboardBookController extends Controller
                 'name' => $book->name,
             ],
         ], 201);
+    }
+
+    public function translationTerms(Request $request, string $keyBook): JsonResponse
+    {
+        $targetLocale = strtolower((string) $request->query('target_locale', ''));
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+
+        $terms = $book->translationTerms()
+            ->when($targetLocale !== '', fn ($query) => $query->where('target_locale', $targetLocale))
+            ->orderBy('source_term')
+            ->get()
+            ->map(fn (BookTranslationTerm $term) => $this->serializeTranslationTerm($term))
+            ->values();
+
+        return response()->json(['data' => ['terms' => $terms]]);
+    }
+
+    public function translationProgress(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate([
+            'target_locale' => ['required', 'string', 'max:20'],
+        ]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $targetLocale = strtolower($validated['target_locale']);
+        $blocks = $book->blocks()
+            ->where('status', '!=', 'deleted')
+            ->whereNotNull('current_version_id')
+            ->get(['id', 'block_uuid', 'current_version_id']);
+        $currentVersionIds = $blocks->pluck('current_version_id')->all();
+
+        $latestTranslations = BookBlockTranslation::query()
+            ->where('book_id', $book->id)
+            ->where('target_locale', $targetLocale)
+            ->whereIn('source_book_block_version_id', $currentVersionIds)
+            ->latest('updated_at')
+            ->latest('id')
+            ->get(['book_block_id', 'source_book_block_version_id', 'status'])
+            ->groupBy('book_block_id')
+            ->map(fn ($translations) => $translations->first());
+
+        $states = $blocks->mapWithKeys(function (BookBlock $block) use ($latestTranslations) {
+            $translation = $latestTranslations->get($block->id);
+
+            return [$block->block_uuid => $translation?->status ?? 'missing'];
+        });
+        $counts = [
+            'all' => $blocks->count(),
+            'missing' => $states->filter(fn (string $status) => $status === 'missing')->count(),
+            'draft' => $states->filter(fn (string $status) => $status === 'draft')->count(),
+            'approved' => $states->filter(fn (string $status) => $status === 'approved')->count(),
+            'rejected' => $states->filter(fn (string $status) => $status === 'rejected')->count(),
+        ];
+
+        return response()->json([
+            'data' => [
+                'target_locale' => $targetLocale,
+                'counts' => $counts,
+                'states' => $states,
+            ],
+        ]);
+    }
+
+    public function translationJob(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate([
+            'target_locale' => ['required', 'string', 'max:20'],
+        ]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $job = $book->translationJobs()
+            ->where('target_locale', strtolower($validated['target_locale']))
+            ->latest('id')
+            ->first();
+
+        return response()->json([
+            'data' => [
+                'job' => $job ? $this->serializeTranslationJob($job) : null,
+            ],
+        ]);
+    }
+
+    public function startTranslationJob(Request $request, string $keyBook, TranslationCreditService $credits): JsonResponse
+    {
+        $validated = $request->validate([
+            'target_locale' => ['required', 'string', 'max:20'],
+            'provider_key' => ['required', 'in:at-openai'],
+            'model' => ['required', 'string', 'max:120'],
+            'confirmed' => ['accepted'],
+        ]);
+        $provider = collect(config('ai_providers.defaults', []))->firstWhere('provider_key', 'at-openai');
+        abort_unless($provider && ($provider['is_configured'] ?? false), 422, 'AT · OpenAI is not configured yet.');
+        abort_unless(in_array($validated['model'], $provider['models'] ?? [], true), 422, 'The selected AT · OpenAI model is not available.');
+
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $targetLocale = strtolower($validated['target_locale']);
+        $activeJob = $book->translationJobs()
+            ->where('target_locale', $targetLocale)
+            ->whereIn('status', ['queued', 'running'])
+            ->latest('id')
+            ->first();
+
+        if ($activeJob) {
+            return response()->json([
+                'data' => [
+                    'job' => $this->serializeTranslationJob($activeJob),
+                    'created' => false,
+                ],
+            ]);
+        }
+
+        $blocks = $book->blocks()
+            ->where('status', '!=', 'deleted')
+            ->whereNotNull('current_version_id')
+            ->get(['id', 'block_uuid', 'text_plain']);
+        abort_if($blocks->isEmpty(), 422, 'Save at least one text block before starting a translation batch.');
+        $estimatedCredits = $blocks->sum(fn (BookBlock $block) => $credits->quote($validated['model'], str_word_count($block->text_plain ?: '')));
+
+        $job = BookTranslationJob::query()->create([
+            'book_id' => $book->id,
+            'target_locale' => $targetLocale,
+            'status' => 'queued',
+            'provider_key' => 'at-openai',
+            'model' => $validated['model'],
+            'total_blocks' => $blocks->count(),
+            'request_json' => [
+                'source_locale' => $book->lang,
+                'estimated_source_words' => $blocks->sum(fn (BookBlock $block) => str_word_count($block->text_plain ?: '')),
+                'estimated_credits' => $estimatedCredits,
+            ],
+            'created_by' => auth()->id(),
+        ]);
+        $job->setRelation('book', $book);
+        $credits->reserve($job, $estimatedCredits);
+
+        ProcessBookTranslationJob::dispatch($job->id);
+
+        return response()->json([
+            'data' => [
+                'job' => $this->serializeTranslationJob($job),
+                'created' => true,
+            ],
+        ], 202);
+    }
+
+    public function cancelTranslationJob(string $keyBook, BookTranslationJob $job, TranslationCreditService $credits): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        abort_unless($job->book_id === $book->id, 404);
+        abort_unless(in_array($job->status, ['queued', 'running'], true), 422, 'Only active translation batches can be cancelled.');
+
+        $job->setRelation('book', $book);
+        $remainingCredits = max(0, $job->reserved_credits - $job->consumed_credits - $job->released_credits);
+        $credits->release($job, $remainingCredits, 'batch_cancelled');
+        $job->forceFill([
+            'status' => 'cancelled',
+            'current_block_uuid' => null,
+            'completed_at' => now(),
+        ])->save();
+
+        return response()->json(['data' => ['job' => $this->serializeTranslationJob($job)]]);
+    }
+
+    public function storeTranslationTerm(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate([
+            'source_term' => ['required', 'string', 'max:180'],
+            'target_term' => ['required', 'string', 'max:180'],
+            'target_locale' => ['required', 'string', 'max:20'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+
+        $term = $book->translationTerms()->updateOrCreate([
+            'source_term' => trim($validated['source_term']),
+            'target_locale' => strtolower(trim($validated['target_locale'])),
+        ], [
+            'target_term' => trim($validated['target_term']),
+            'notes' => filled($validated['notes'] ?? null) ? trim($validated['notes']) : null,
+        ]);
+
+        return response()->json(['data' => ['term' => $this->serializeTranslationTerm($term)]], 201);
+    }
+
+    public function deleteTranslationTerm(string $keyBook, BookTranslationTerm $term): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        abort_unless($term->book_id === $book->id, 404);
+        $term->delete();
+
+        return response()->json(['data' => ['deleted' => true]]);
     }
 
     public function editor(string $keyBook): JsonResponse
@@ -1260,12 +1454,18 @@ class DashboardBookController extends Controller
         ], 201);
     }
 
-    public function storeBlockTranslation(Request $request, string $keyBook, string $blockUuid): JsonResponse
+    public function storeBlockTranslation(
+        Request $request,
+        string $keyBook,
+        string $blockUuid,
+        EditorAiTranslationService $translations,
+    ): JsonResponse
     {
         $validated = $request->validate([
             'target_locale' => ['required', 'string', 'max:20'],
             'provider_key' => ['nullable', 'string', 'max:80'],
             'model' => ['nullable', 'string', 'max:120'],
+            'translated_text' => ['nullable', 'string', 'max:100000'],
         ]);
 
         $book = Book::query()
@@ -1289,6 +1489,8 @@ class DashboardBookController extends Controller
         $targetLocale = strtolower(trim($validated['target_locale']));
         $providerKey = $validated['provider_key'] ?? 'mock';
         $model = $validated['model'] ?? 'mock-translation-v1';
+        $isManualTranslation = array_key_exists('translated_text', $validated);
+        $translatedText = $isManualTranslation ? trim((string) $validated['translated_text']) : null;
         $existingTranslation = $block->translations()
             ->with('sourceBlockVersion:id,version_number')
             ->where('source_book_block_version_id', $block->currentVersion->id)
@@ -1300,6 +1502,18 @@ class DashboardBookController extends Controller
             ->first();
 
         if ($existingTranslation) {
+            if ($isManualTranslation) {
+                $existingTranslation->forceFill([
+                    'translated_text' => $translatedText,
+                    'source' => 'manual',
+                    'notes_json' => [
+                        'source_locale' => $book->lang,
+                        'target_locale' => $targetLocale,
+                        'manual' => true,
+                    ],
+                ])->save();
+            }
+
             return response()->json([
                 'data' => [
                     'translation' => $this->serializeBlockTranslation($existingTranslation, $block),
@@ -1309,6 +1523,14 @@ class DashboardBookController extends Controller
         }
 
         $sourceText = $block->currentVersion->text_plain ?: $block->text_plain ?: '';
+        $generated = $isManualTranslation
+            ? [
+                'source' => 'manual',
+                'translated_text' => $translatedText,
+                'notes_json' => ['manual' => true],
+            ]
+            : $translations->generate($book, $block, $targetLocale, $providerKey, $model);
+
         $translation = BookBlockTranslation::query()->create([
             'book_id' => $book->id,
             'book_block_id' => $block->id,
@@ -1318,13 +1540,13 @@ class DashboardBookController extends Controller
             'status' => 'draft',
             'provider_key' => $providerKey,
             'model' => $model,
-            'source' => 'mock',
+            'source' => $generated['source'],
             'source_text' => $sourceText,
-            'translated_text' => "[{$targetLocale}] {$sourceText}",
+            'translated_text' => $generated['translated_text'],
             'notes_json' => [
-                'mock' => true,
                 'source_locale' => $book->lang,
                 'target_locale' => $targetLocale,
+                ...($generated['notes_json'] ?? []),
             ],
             'created_by' => auth()->id(),
         ]);
@@ -1670,6 +1892,45 @@ class DashboardBookController extends Controller
             'resolved_at' => $translation->resolved_at?->toISOString(),
             'created_at' => $translation->created_at?->toISOString(),
             'updated_at' => $translation->updated_at?->toISOString(),
+        ];
+    }
+
+    private function serializeTranslationJob(BookTranslationJob $job): array
+    {
+        $total = max(0, $job->total_blocks);
+
+        return [
+            'id' => $job->id,
+            'target_locale' => $job->target_locale,
+            'status' => $job->status,
+            'provider_key' => $job->provider_key,
+            'model' => $job->model,
+            'total_blocks' => $total,
+            'completed_blocks' => $job->completed_blocks,
+            'skipped_blocks' => $job->skipped_blocks,
+            'failed_blocks' => $job->failed_blocks,
+            'reserved_credits' => $job->reserved_credits,
+            'consumed_credits' => $job->consumed_credits,
+            'released_credits' => $job->released_credits,
+            'current_block_uuid' => $job->current_block_uuid,
+            'progress_percent' => $total ? (int) round(($job->completed_blocks / $total) * 100) : 0,
+            'request_json' => $job->request_json,
+            'error_message' => $job->error_message,
+            'started_at' => $job->started_at?->toISOString(),
+            'completed_at' => $job->completed_at?->toISOString(),
+            'created_at' => $job->created_at?->toISOString(),
+        ];
+    }
+
+    private function serializeTranslationTerm(BookTranslationTerm $term): array
+    {
+        return [
+            'id' => $term->id,
+            'source_term' => $term->source_term,
+            'target_term' => $term->target_term,
+            'target_locale' => $term->target_locale,
+            'notes' => $term->notes,
+            'updated_at' => $term->updated_at?->toISOString(),
         ];
     }
 

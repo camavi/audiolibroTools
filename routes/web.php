@@ -38,6 +38,7 @@ Route::get('/dashboard', function () {
 })->where('any', '.*');
 Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::get('/ai/providers', [DashboardAiController::class, 'providers'])->name('ai.providers');
+    Route::get('/ai/credits', [DashboardAiController::class, 'credits'])->name('ai.credits');
     Route::post('/ai/providers', [DashboardAiController::class, 'storeProvider'])->name('ai.providers.store');
     Route::patch('/ai/settings', [DashboardAiController::class, 'updateSetting'])->name('ai.settings.update');
     Route::get('/book-categories', [DashboardBookController::class, 'categories'])->name('book-categories');
@@ -47,6 +48,13 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::get('/books/{keyBook}/editor', [DashboardBookController::class, 'editor'])->name('books.editor');
     Route::get('/books/{keyBook}/voices', [DashboardBookController::class, 'voiceProfiles'])->name('books.voices');
     Route::post('/books/{keyBook}/voices', [DashboardBookController::class, 'storeVoiceProfile'])->name('books.voices.store');
+    Route::get('/books/{keyBook}/translation-terms', [DashboardBookController::class, 'translationTerms'])->name('books.translation-terms');
+    Route::post('/books/{keyBook}/translation-terms', [DashboardBookController::class, 'storeTranslationTerm'])->name('books.translation-terms.store');
+    Route::delete('/books/{keyBook}/translation-terms/{term}', [DashboardBookController::class, 'deleteTranslationTerm'])->name('books.translation-terms.delete');
+    Route::get('/books/{keyBook}/translation-progress', [DashboardBookController::class, 'translationProgress'])->name('books.translation-progress');
+    Route::get('/books/{keyBook}/translation-jobs/current', [DashboardBookController::class, 'translationJob'])->name('books.translation-jobs.current');
+    Route::post('/books/{keyBook}/translation-jobs', [DashboardBookController::class, 'startTranslationJob'])->name('books.translation-jobs.store');
+    Route::patch('/books/{keyBook}/translation-jobs/{job}/cancel', [DashboardBookController::class, 'cancelTranslationJob'])->name('books.translation-jobs.cancel');
     Route::get('/books/{keyBook}/ai/chat', [DashboardBookController::class, 'aiChatThread'])->name('books.ai.chat.thread');
     Route::post('/books/{keyBook}/ai/chat', [DashboardBookController::class, 'aiChat'])->name('books.ai.chat');
     Route::get('/books/{keyBook}/activity', [DashboardBookController::class, 'bookActivity'])->name('books.activity');

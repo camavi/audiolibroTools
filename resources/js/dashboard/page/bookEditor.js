@@ -3,6 +3,12 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 import { buildVersionTextDiff, findApproximateTextMatch, summarizeVersionTextDiff } from '../editorDiff';
+import {
+    createAiBookBlockTranslation,
+    loadBookBlockTranslations,
+    resolveBookBlockTranslation,
+    translationLocaleOptions,
+} from '../shared/bookTranslations';
 
 
 const EDITOR_PREFERENCES_KEY = 'audiobookTools.editor.preferences';
@@ -178,25 +184,6 @@ const voiceRoleOptions = [
     { label: 'Narrator', value: 'narrator' },
     { label: 'Ambient', value: 'ambient' },
     { label: 'System', value: 'system' },
-];
-
-const translationLocaleOptions = [
-    { label: 'English', value: 'en' },
-    { label: 'Italian', value: 'it' },
-    { label: 'Spanish', value: 'es' },
-    { label: 'French', value: 'fr' },
-    { label: 'German', value: 'de' },
-    { label: 'Portuguese', value: 'pt' },
-    { label: 'Polish', value: 'pl' },
-    { label: 'Turkish', value: 'tr' },
-    { label: 'Russian', value: 'ru' },
-    { label: 'Dutch', value: 'nl' },
-    { label: 'Czech', value: 'cs' },
-    { label: 'Arabic', value: 'ar' },
-    { label: 'Chinese', value: 'zh' },
-    { label: 'Japanese', value: 'ja' },
-    { label: 'Hungarian', value: 'hu' },
-    { label: 'Korean', value: 'ko' },
 ];
 
 const versionFilterOptions = [
@@ -2981,7 +2968,7 @@ function aiSettingsPanel(keyBook, options = {}) {
                 label: 'Provider',
                 icon: 'hub',
                 model: aiProviderModel,
-                options: () => aiProviders.value.map((item) => ({
+                options: () => aiProviders.value.filter((item) => item.is_selectable !== false).map((item) => ({
                     label: item.is_custom ? `${item.name} · Custom` : item.name,
                     value: item.provider_key,
                 })),
@@ -3016,25 +3003,29 @@ function aiSettingsPanel(keyBook, options = {}) {
                     });
                 },
             }),
-            _.Input({
+            provider?.connection_mode !== 'managed' ? _.Input({
                 label: provider?.has_api_key ? 'API key saved' : 'API key',
                 icon: 'key',
                 model: aiProviderApiKey,
                 type: 'password',
                 placeholder: provider?.has_api_key ? 'Leave empty to keep current key' : 'Paste provider API key',
                 autocomplete: 'off',
-            }),
+            }) : null,
             _.div({ class: 'at-aiSettings-providerCard' },
                 _.span('Hosting'),
                 _.strong(provider?.base_url || 'Internal mock provider'),
-                _.small(provider?.has_api_key ? 'Credential stored' : 'No credential stored'),
-                _.small(provider?.is_custom ? 'Custom provider' : 'Built-in provider')
+                _.small(provider?.connection_mode === 'managed'
+                    ? provider?.is_configured ? 'Managed by Audiobook Tools · no personal key required' : 'Managed provider coming soon'
+                    : provider?.has_api_key ? 'Credential stored' : 'No credential stored'),
+                _.small(provider?.connection_mode === 'managed'
+                    ? (provider?.supports_background_jobs ? 'Background workflows supported' : 'Interactive workflow only')
+                    : provider?.is_custom ? 'Custom provider' : 'Personal provider')
             ),
             _.div({ class: 'at-rightWorkspace-actions is-inline' },
                 _.button({
                     type: 'button',
                     class: 'at-rightWorkspace-action is-primary',
-                    disabled: savingAiSetting.value || !aiProviderSetting.value.provider_key || !aiProviderSetting.value.model,
+                    disabled: savingAiSetting.value || !aiProviderSetting.value.provider_key || !aiProviderSetting.value.model || provider?.is_selectable === false,
                     onclick: () => saveAiProviderSetting(keyBook),
                 }, savingAiSetting.value ? 'Saving...' : 'Save provider setting'),
                 _.button({
@@ -4842,12 +4833,11 @@ function editorText(keyBook) {
         blockTranslationsStatus.value = 'loading';
         blockTranslationsError.value = null;
 
-        _.http.getJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/translations`)
+        loadBookBlockTranslations(keyBook, block.block_uuid)
             .then((payload) => {
                 if (blockTranslationsContextKey.value !== contextKey) return;
 
-                const data = normalizeDataPayload(payload);
-                blockTranslations.value = data.translations || [];
+                blockTranslations.value = payload.translations || [];
                 blockTranslationsStatus.value = 'ready';
             })
             .catch((error) => {
@@ -4880,13 +4870,13 @@ function editorText(keyBook) {
         blockTranslationActionStatus.value = 'translating';
         blockTranslationsError.value = null;
 
-        _.http.postJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/translations`, {
-            target_locale: translationTargetLocale.value,
-            provider_key: translateSetting.provider_key,
+        createAiBookBlockTranslation(keyBook, block.block_uuid, {
+            targetLocale: translationTargetLocale.value,
+            providerKey: translateSetting.provider_key,
             model: translateSetting.model,
         })
             .then((payload) => {
-                const data = normalizeDataPayload(payload);
+                const data = payload;
 
                 if (data.translation) {
                     upsertTranslationInList(data.translation);
@@ -4911,11 +4901,9 @@ function editorText(keyBook) {
         blockTranslationActionStatus.value = `updating:${translation.id}`;
         blockTranslationsError.value = null;
 
-        _.http.patchJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/translations/${translation.id}`, {
-            status,
-        })
+        resolveBookBlockTranslation(keyBook, block.block_uuid, translation.id, status)
             .then((payload) => {
-                const data = normalizeDataPayload(payload);
+                const data = payload;
 
                 if (data.translation) {
                     upsertTranslationInList(data.translation);

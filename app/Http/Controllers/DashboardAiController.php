@@ -6,6 +6,7 @@ use App\Models\AiProvider;
 use App\Models\AiProviderCredential;
 use App\Models\AiServiceSetting;
 use App\Models\Book;
+use App\Services\Credits\TranslationCreditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -30,6 +31,19 @@ class DashboardAiController extends Controller
                 'providers' => $providers,
                 'setting' => $setting,
                 'services' => $this->services(),
+            ],
+        ]);
+    }
+
+    public function credits(TranslationCreditService $credits): JsonResponse
+    {
+        $balance = $credits->balance(auth()->id());
+
+        return response()->json([
+            'data' => [
+                'available_credits' => $balance->available_credits,
+                'reserved_credits' => $balance->reserved_credits,
+                'consumed_credits' => $balance->consumed_credits,
             ],
         ]);
     }
@@ -88,6 +102,7 @@ class DashboardAiController extends Controller
         $provider = collect($providers)->firstWhere('provider_key', $validated['provider_key']);
 
         abort_unless($provider, 422);
+        abort_unless($provider['is_selectable'], 422, 'This managed provider is not available yet.');
         abort_unless(in_array($validated['model'], $provider['models'], true), 422);
 
         $existingSetting = AiServiceSetting::query()
@@ -110,11 +125,15 @@ class DashboardAiController extends Controller
             'options_json' => [
                 'provider_name' => $provider['name'],
                 'base_url' => $provider['base_url'],
+                'connection_mode' => $provider['connection_mode'],
+                'supports_background_jobs' => $provider['supports_background_jobs'],
                 'system_prompt' => $systemPrompt,
             ],
         ]);
 
-        $this->storeCredential($accountId, $provider['provider_key'], $validated['api_key'] ?? null);
+        if ($provider['connection_mode'] !== 'managed') {
+            $this->storeCredential($accountId, $provider['provider_key'], $validated['api_key'] ?? null);
+        }
 
         return response()->json([
             'data' => [
@@ -150,7 +169,17 @@ class DashboardAiController extends Controller
                     'default_model' => $provider['default_model'] ?? ($provider['models'][0] ?? null),
                     'is_custom' => false,
                     'custom_id' => null,
-                    'has_api_key' => $credentials[$providerKey] ?? false,
+                    'connection_mode' => $provider['connection_mode'] ?? 'byok',
+                    'api_provider' => $provider['api_provider'] ?? $providerKey,
+                    'supports_background_jobs' => (bool) ($provider['supports_background_jobs'] ?? false),
+                    'is_configured' => (bool) ($provider['is_configured'] ?? true),
+                    'is_selectable' => ($provider['connection_mode'] ?? 'byok') !== 'managed' || (bool) ($provider['is_configured'] ?? false),
+                    'billing_label' => $provider['billing_label'] ?? null,
+                    'privacy_label' => $provider['privacy_label'] ?? null,
+                    'translation_credits_per_1000_words' => $provider['translation_credits_per_1000_words'] ?? [],
+                    'has_api_key' => ($provider['connection_mode'] ?? 'byok') === 'managed'
+                        ? (bool) ($provider['is_configured'] ?? false)
+                        : ($credentials[$providerKey] ?? false),
                 ];
             });
 
@@ -185,11 +214,14 @@ class DashboardAiController extends Controller
         }
 
         $defaultProvider = collect($providers)->firstWhere('provider_key', 'mock') ?? $providers[0] ?? null;
+        $defaultModel = $service === 'translate' && ($defaultProvider['provider_key'] ?? null) === 'mock'
+            ? 'mock-translation-v1'
+            : ($defaultProvider['default_model'] ?? 'mock-correction-v1');
 
         return [
             'service' => $service,
             'provider_key' => $defaultProvider['provider_key'] ?? 'mock',
-            'model' => $defaultProvider['default_model'] ?? 'mock-correction-v1',
+            'model' => $defaultModel,
             'system_prompt' => $this->defaultSystemPrompt($service),
         ];
     }
@@ -205,6 +237,13 @@ class DashboardAiController extends Controller
             'is_custom' => $provider->is_custom,
             'custom_id' => $provider->id,
             'has_api_key' => $credentials[$provider->provider_key] ?? false,
+            'connection_mode' => 'local',
+            'api_provider' => 'custom',
+            'supports_background_jobs' => false,
+            'is_configured' => true,
+            'is_selectable' => true,
+            'billing_label' => 'Your infrastructure',
+            'privacy_label' => 'Interactive requests only. Background processing is not available.',
         ];
     }
 
@@ -214,6 +253,8 @@ class DashboardAiController extends Controller
             'service' => $setting->service,
             'provider_key' => $setting->provider_key,
             'model' => $setting->model,
+            'connection_mode' => $setting->options_json['connection_mode'] ?? 'byok',
+            'supports_background_jobs' => (bool) ($setting->options_json['supports_background_jobs'] ?? false),
             'system_prompt' => $setting->options_json['system_prompt'] ?? $this->defaultSystemPrompt($setting->service),
         ];
     }

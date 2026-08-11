@@ -65,6 +65,16 @@ class Book extends Model
         return $this->hasMany(BookBlockTranslation::class);
     }
 
+    public function translationTerms(): HasMany
+    {
+        return $this->hasMany(BookTranslationTerm::class);
+    }
+
+    public function translationJobs(): HasMany
+    {
+        return $this->hasMany(BookTranslationJob::class);
+    }
+
     public function aiChatThreads(): HasMany
     {
         return $this->hasMany(AiChatThread::class);
