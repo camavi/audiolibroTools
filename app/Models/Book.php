@@ -60,6 +60,11 @@ class Book extends Model
         return $this->hasMany(BookAudioSegment::class);
     }
 
+    public function audioTimelineItems(): HasMany
+    {
+        return $this->hasMany(BookAudioTimelineItem::class);
+    }
+
     public function blockTranslations(): HasMany
     {
         return $this->hasMany(BookBlockTranslation::class);

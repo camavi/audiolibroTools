@@ -16,7 +16,7 @@
                 themeList: ['light', 'dark'],
                 http: {
                 //baseURL: "https://cmswift.com/api",
-                timeout: 10000,
+                timeout: 900000,
                 credentials: "include",
                 headers: {
                 "Accept": "application/json",

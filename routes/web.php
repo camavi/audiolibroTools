@@ -47,6 +47,8 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::get('/books/{keyBook}', [DashboardBookController::class, 'show'])->name('books.show');
     Route::get('/books/{keyBook}/editor', [DashboardBookController::class, 'editor'])->name('books.editor');
     Route::get('/books/{keyBook}/voices', [DashboardBookController::class, 'voiceProfiles'])->name('books.voices');
+    Route::get('/books/{keyBook}/audio-timeline', [DashboardBookController::class, 'audioTimeline'])->name('books.audio-timeline');
+    Route::put('/books/{keyBook}/audio-timeline', [DashboardBookController::class, 'saveAudioTimeline'])->name('books.audio-timeline.save');
     Route::post('/books/{keyBook}/voices', [DashboardBookController::class, 'storeVoiceProfile'])->name('books.voices.store');
     Route::get('/books/{keyBook}/translation-terms', [DashboardBookController::class, 'translationTerms'])->name('books.translation-terms');
     Route::post('/books/{keyBook}/translation-terms', [DashboardBookController::class, 'storeTranslationTerm'])->name('books.translation-terms.store');

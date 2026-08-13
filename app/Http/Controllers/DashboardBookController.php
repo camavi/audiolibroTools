@@ -8,6 +8,7 @@ use App\Models\AiChatThread;
 use App\Models\Book;
 use App\Models\BookAudioJob;
 use App\Models\BookAudioSegment;
+use App\Models\BookAudioTimelineItem;
 use App\Models\BookBlock;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
@@ -23,6 +24,7 @@ use App\Services\Ai\EditorAiCorrectionService;
 use App\Services\Ai\EditorAiTranslationService;
 use App\Services\Ai\EditorAiVersionService;
 use App\Services\BookBlockService;
+use App\Services\CoquiTtsService;
 use App\Services\Credits\TranslationCreditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -1086,6 +1088,34 @@ class DashboardBookController extends Controller
         ]);
     }
 
+    public function audioTimeline(string $keyBook): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $items = $book->audioTimelineItems()
+            ->with('audioSegment:id,audio_path,duration_ms,status')
+            ->orderBy('track')
+            ->orderBy('sort_order')
+            ->get()
+            ->map(function (BookAudioTimelineItem $item): array {
+                $data = $item->toArray();
+                $data['audio_path'] = $item->audioSegment?->audio_path;
+                unset($data['audio_segment']);
+
+                return $data;
+            });
+
+        return response()->json(['data' => ['items' => $items]]);
+    }
+
+    public function saveAudioTimeline(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate(['items' => ['required','array','max:300'], 'items.*.id'=>['nullable','integer'], 'items.*.track'=>['required','in:voice,music,fx'], 'items.*.label'=>['required','string','max:160'], 'items.*.start_ms'=>['required','integer','min:0'], 'items.*.duration_ms'=>['required','integer','min:100'], 'items.*.trim_start_ms'=>['nullable','integer','min:0'], 'items.*.trim_end_ms'=>['nullable','integer','min:0'], 'items.*.fade_in_ms'=>['nullable','integer','min:0'], 'items.*.fade_out_ms'=>['nullable','integer','min:0'], 'items.*.volume'=>['nullable','integer','min:0','max:100'], 'items.*.muted'=>['nullable','boolean'], 'items.*.book_audio_segment_id'=>['nullable','integer']]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $saved=[];
+        foreach ($validated['items'] as $index => $item) { $record = isset($item['id']) ? $book->audioTimelineItems()->whereKey($item['id'])->firstOrFail() : new BookAudioTimelineItem(['book_id'=>$book->id]); $record->fill([...$item,'sort_order'=>$index]); $record->save(); $saved[]=$record; }
+        return $this->audioTimeline($keyBook);
+    }
+
     public function blockTranslations(string $keyBook, string $blockUuid): JsonResponse
     {
         $book = Book::query()
@@ -1353,10 +1383,10 @@ class DashboardBookController extends Controller
         ]);
     }
 
-    public function generateBlockAudio(Request $request, string $keyBook, string $blockUuid): JsonResponse
+    public function generateBlockAudio(Request $request, string $keyBook, string $blockUuid, CoquiTtsService $coqui): JsonResponse
     {
         $validated = $request->validate([
-            'provider_key' => ['nullable', 'string', 'max:80'],
+            'provider_key' => ['nullable', 'in:mock,coqui-local'],
             'model' => ['nullable', 'string', 'max:120'],
         ]);
 
@@ -1394,9 +1424,29 @@ class DashboardBookController extends Controller
         }
 
         $providerKey = $validated['provider_key'] ?? 'mock';
-        $model = $validated['model'] ?? 'mock-tts-v1';
+        $model = $validated['model'] ?? ($providerKey === 'coqui-local' ? config('tts.coqui.model') : 'mock-tts-v1');
         $text = $block->currentVersion->text_plain ?: $block->text_plain ?: '';
         $durationMs = max(700, mb_strlen($text) * 45);
+        $audioPath = "mock://books/{$book->key_book}/blocks/{$block->block_uuid}/audio";
+        $source = 'mock';
+        $result = ['mock' => true, 'duration_ms' => $durationMs];
+
+        if ($providerKey === 'coqui-local') {
+            try {
+                $bookLocale = strtolower(str_replace('_', '-', (string) ($book->lang ?: config('app.locale', 'en'))));
+                $localeKey = explode('-', $bookLocale)[0] ?: 'en';
+                $language = config("audiobook.locales.{$localeKey}.tts_code") ?: $localeKey;
+                $result = $coqui->synthesize($text, $language, $assignment->voiceProfile->voice_id);
+                $audioPath = "audiobooks/{$book->key_book}/segments/".Str::uuid().'.wav';
+                Storage::disk('public')->put($audioPath, $coqui->download($result['audio_url']));
+                $durationMs = (int) ($result['duration_ms'] ?? $durationMs);
+                $source = 'coqui';
+            } catch (\Throwable $exception) {
+                return response()->json([
+                    'message' => 'Coqui TTS generation failed: '.$exception->getMessage(),
+                ], 502);
+            }
+        }
 
         $job = BookAudioJob::query()->create([
             'book_id' => $book->id,
@@ -1407,16 +1457,13 @@ class DashboardBookController extends Controller
             'status' => 'completed',
             'provider_key' => $providerKey,
             'model' => $model,
-            'source' => 'mock',
+            'source' => $source,
             'request_json' => [
                 'text_plain' => $text,
                 'voice_profile_id' => $assignment->book_voice_profile_id,
                 'voice_id' => $assignment->voiceProfile->voice_id,
             ],
-            'result_json' => [
-                'mock' => true,
-                'duration_ms' => $durationMs,
-            ],
+            'result_json' => $result,
             'started_at' => now(),
             'completed_at' => now(),
             'created_by' => auth()->id(),
@@ -1433,12 +1480,12 @@ class DashboardBookController extends Controller
             'provider_key' => $providerKey,
             'model' => $model,
             'voice_id' => $assignment->voiceProfile->voice_id,
-            'audio_path' => "mock://books/{$book->key_book}/blocks/{$block->block_uuid}/audio/{$job->id}",
+            'audio_path' => $audioPath,
             'duration_ms' => $durationMs,
             'text_plain' => $text,
             'content_hash' => $block->currentVersion->content_hash,
             'metadata_json' => [
-                'source' => 'mock',
+                'source' => $source,
                 'voice_profile_name' => $assignment->voiceProfile->name,
                 'voice_provider' => $assignment->voiceProfile->voice_provider,
             ],

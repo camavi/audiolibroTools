@@ -1,0 +1,5 @@
+<?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+return new class extends Migration { public function up(): void { Schema::create('book_audio_timeline_items', function (Blueprint $table) { $table->id(); $table->foreignId('book_id')->constrained()->cascadeOnDelete(); $table->foreignId('book_audio_segment_id')->nullable()->constrained()->nullOnDelete(); $table->string('track', 20); $table->string('label', 160); $table->unsignedInteger('start_ms')->default(0); $table->unsignedInteger('duration_ms')->default(1000); $table->unsignedInteger('trim_start_ms')->default(0); $table->unsignedInteger('trim_end_ms')->default(0); $table->unsignedTinyInteger('volume')->default(100); $table->boolean('muted')->default(false); $table->unsignedInteger('sort_order')->default(0); $table->timestamps(); $table->index(['book_id','track','sort_order']); }); } public function down(): void { Schema::dropIfExists('book_audio_timeline_items'); } };

@@ -1,0 +1,367 @@
+.at-audiobookPage {
+    max-width: 1540px;
+    margin: 0 auto;
+    padding: clamp(.5rem, 1vw, .75rem);
+    color: #182033
+}
+
+.at-audiobookTopbar,
+.at-audiobookWorkspace,
+.at-audioTimelineCard {
+    border: 1px solid #dbe3ee;
+    background: #f8fafc;
+    box-shadow: 0 14px 32px rgb(15 23 42 / 7%)
+}
+
+.at-audiobookTopbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.2rem;
+    border-radius: 1rem 1rem 0 0
+}
+
+.at-audiobookEyebrow {
+    display: block;
+    color: #2563eb;
+    font-size: .7rem;
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-transform: uppercase
+}
+
+.at-audiobookTopbar h2 {
+    margin: .18rem 0 0;
+    font-size: 1.35rem
+}
+
+.at-audiobookTopbarActions,
+.at-audioTimelineActions {
+    display: flex;
+    gap: .35rem
+}
+
+
+.at-audiobookWorkspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(310px, .8fr);
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: 0 0 1rem 1rem
+}
+
+.at-audioEditorCard,
+.at-audioPreviewCard {
+    min-width: 0;
+    border: 1px solid #dbe3ee;
+    border-radius: .8rem;
+    background: #fff;
+    overflow: hidden
+}
+
+.at-audioTabs {
+    display: flex;
+    border-bottom: 1px solid #dbe3ee;
+    background: #f8fafc
+}
+
+.at-audioTabs button {
+    padding: .75rem .9rem;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: #64748b;
+    font: inherit;
+    font-size: .8rem;
+    cursor: pointer
+}
+
+.at-audioTabs button.is-active {
+    border-bottom-color: #2563eb;
+    color: #1e293b;
+    font-weight: 750;
+    background: #fff
+}
+
+.at-audioEditorBody {
+    padding: 1rem
+}
+
+.at-audioBlockMeta {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    color: #64748b;
+    font-size: .75rem
+}
+
+.at-audioBlockMeta strong {
+    color: #1e293b
+}
+
+.at-audioForm {
+    display: grid;
+    gap: .9rem
+}
+
+.at-audioForm--compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr))
+}
+
+.at-audioForm--compact .at-audioHint {
+    grid-column: 1/-1
+}
+
+.at-audioHint {
+    padding: .75rem;
+    border-radius: .5rem;
+    background: #eff6ff;
+    color: #475569;
+    font-size: .78rem;
+    line-height: 1.45
+}
+
+.at-audioCostGrid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: .6rem
+}
+
+.at-audioCostGrid div {
+    padding: .75rem;
+    border: 1px solid #dbe3ee;
+    border-radius: .55rem;
+    background: #f8fafc
+}
+
+.at-audioCostGrid span {
+    display: block;
+    color: #64748b;
+    font-size: .7rem
+}
+
+.at-audioCostGrid strong {
+    font-size: .9rem
+}
+
+.at-audioCreate {
+    display: grid;
+    gap: 1rem
+}
+
+.at-audioPreviewCard {
+    background: #fff
+}
+
+.at-audioReading {
+    height: 100%;
+    min-height: 388px;
+    max-height: 400px;
+    padding: 4px 10px;
+    overflow: auto
+}
+
+.at-audioReadingBlock {
+    display: block;
+    width: 100%;
+    margin: 0 0 1rem;
+    padding: .3rem .4rem;
+    border: 0;
+    border-left: 2px solid transparent;
+    border-radius: .25rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    text-align: left;
+    white-space: pre-wrap;
+    cursor: pointer;
+    transition: background .16s ease, border-color .16s ease
+}
+
+.at-audioReadingBlock:hover {
+    background: #f1f5f9
+}
+
+.at-audioReadingBlock.is-selected {
+    border-left-color: #2563eb;
+    background: #eff6ff
+}
+
+.at-audioReadingBlock.is-heading {
+    margin-bottom: 1.25rem;
+    font-size: 1.35em;
+    font-weight: 750;
+    line-height: 1.2
+}
+
+.at-audioReadingEmpty {
+    color: #64748b
+}
+
+.at-audioBlockStrip {
+    display: flex;
+    gap: .45rem;
+    overflow: auto;
+    margin: 1rem 0;
+    padding: .15rem
+}
+
+.at-audioBlockStrip button {
+    border: 1px solid #dbe3ee;
+    border-radius: .45rem;
+    padding: .45rem .6rem;
+    background: #fff;
+    color: #64748b;
+    font-size: .72rem;
+    white-space: nowrap;
+    cursor: pointer
+}
+
+.at-audioBlockStrip button.is-active {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8
+}
+
+.at-audioTimelineCard {
+    margin-top: 1rem;
+    border-radius: .9rem;
+    overflow: hidden
+}
+
+.at-audioTimelineToolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 1rem;
+    padding: .8rem 1rem
+}
+
+.at-audioTimelineTransport {
+    display: flex;
+    gap: .35rem
+}
+
+.at-audioTimelineActions {
+    margin-left: auto
+}
+
+.at-audioPreviewCard.is-developer {
+    outline: 2px solid rgb(37 99 235 / 60%);
+    outline-offset: -2px
+}
+
+.at-audioTimecode {
+    align-self: center;
+    min-width: 84px;
+    padding: 0 .45rem;
+    color: #cbd5e1;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: .78rem;
+    text-align: center
+}
+
+.at-audioTimelineInspector {
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+    min-height: 2.55rem;
+    padding: 0 .9rem;
+    border-top: 1px solid #dbe3ee;
+    color: #64748b;
+    font-size: .72rem
+}
+
+.at-audioInspectorLabel {
+    margin-right: .15rem;
+    color: #334155;
+    font-weight: 750
+}
+
+.at-audioClipControls {
+    display: flex;
+    align-items: center;
+    gap: .2rem;
+    margin-left: auto
+}
+
+.at-audioClipValue {
+    min-width: 3.8rem;
+    margin-left: .35rem;
+    color: #475569;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: .67rem;
+    text-align: center
+}
+
+.at-audioTimelineInspector .cms-btn {
+    margin-left: auto
+}
+
+.at-audioClipControls .cms-btn {
+    margin-left: 0
+}
+
+.at-audioTimelineCanvas {
+    display: block;
+    width: 100%;
+    height: 330px;
+    cursor: crosshair;
+    background: #0f172a
+}
+
+
+@media(max-width:900px) {
+    .at-audiobookWorkspace {
+        grid-template-columns: 1fr
+    }
+
+    .at-audiobookTopbar {
+        align-items: flex-start;
+        flex-direction: column
+    }
+
+    .at-audioTimelineToolbar,
+    .at-audioTimelineInspector {
+        align-items: flex-start;
+        flex-direction: column
+    }
+
+    .at-audioForm--compact {
+        grid-template-columns: 1fr
+    }
+}
+
+@media(max-width:560px) {
+    .at-audioTabs {
+        overflow: auto
+    }
+
+    .at-audioTabs button {
+        white-space: nowrap
+    }
+
+    .at-audioCostGrid {
+        grid-template-columns: 1fr
+    }
+
+    .at-audiobookTopbarActions,
+    .at-audioTimelineActions {
+        flex-wrap: wrap
+    }
+
+    .at-audioTimelineCanvas {
+        height: 270px
+    }
+
+    .at-audioTimelineInspector .cms-btn {
+        margin-left: 0
+    }
+
+    .at-audioClipControls {
+        flex-wrap: wrap;
+        margin-left: 0
+    }
+}
