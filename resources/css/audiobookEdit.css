@@ -521,12 +521,42 @@
     text-align: center
 }
 
-.at-audioTimelineInspector .cms-btn {
+.at-audioTimelineInspector > .cms-btn {
     margin-left: auto
 }
 
 .at-audioClipControls .cms-btn {
     margin-left: 0
+}
+
+.at-audioTimelineSelection {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: .45rem
+}
+
+.at-audioSelectionSummary {
+    display: grid;
+    min-width: 11rem;
+    flex: 1;
+    gap: .08rem
+}
+
+.at-audioSelectionSummary span,
+.at-audioSelectionSummary small {
+    color: #64748b
+}
+
+.at-audioTimelineSelection > .cms-btn {
+    margin-left: 0
+}
+
+.at-audioTimelineEmptySelection {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    color: #64748b
 }
 
 .at-audioTimelineCanvas {

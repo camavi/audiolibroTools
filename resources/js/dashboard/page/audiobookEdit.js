@@ -23,7 +23,9 @@ const timelineZoom = _.rod(1);
 const timelineItems = _.rod([]);
 const timelinePlayhead = _.rod(0);
 const selectedTimelineItemKey = _.rod(null);
+const expandedTimelineGroupKey = _.rod(null);
 const timelineIsPlaying = _.rod(false);
+const timelinePersistence = _.rod('saved');
 const readingPlayback = _.rod(null);
 const trackState = _.rod({ voice: { muted: false, solo: false, locked: false, volume: 80 }, music: { muted: false, solo: false, locked: false, volume: 80 }, fx: { muted: false, solo: false, locked: false, volume: 80 } });
 const timelinePlayers = new Map();
@@ -33,6 +35,7 @@ let timelineAudioContext = null;
 let timelineFrame = null;
 let timelineStartedAt = 0;
 let renderTimeline = null;
+let timelineSaveTimer = null;
 
 function bookKey(ctx) {
     return ctx?.params?.key_book
@@ -110,20 +113,44 @@ async function loadTimeline(keyBook) {
     } catch { }
 }
 async function saveTimeline(keyBook, showStatus = true) {
+    timelinePersistence.value = 'saving';
     try {
         const payload = await _.http.putJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline`, { items: timelineItems.value });
         timelineItems.value = audioData(payload).items || timelineItems.value;
+        timelinePersistence.value = 'saved';
         renderTimeline?.();
         if (showStatus) audioStatus.value = { type: 'success', message: 'Timeline saved.' };
         return true;
     } catch (error) {
+        timelinePersistence.value = 'error';
         audioStatus.value = { type: 'danger', message: error.message || 'Unable to save timeline.' };
         return false;
     }
 }
+function scheduleTimelineSave(keyBook) {
+    if (!keyBook) return;
+    if (timelineSaveTimer) window.clearTimeout(timelineSaveTimer);
+    timelinePersistence.value = 'saving';
+    timelineSaveTimer = window.setTimeout(() => {
+        timelineSaveTimer = null;
+        saveTimeline(keyBook, false);
+    }, 550);
+}
 function timelineItemKey(item) { return String(item.id ?? item.client_key ?? ''); }
 function timelineSnap(seconds) { return Math.round(Math.max(0, seconds) * 4) / 4; }
 function selectedTimelineItem() { return timelineItems.value.find((item) => timelineItemKey(item) === selectedTimelineItemKey.value) || null; }
+function selectTimelineItem(item) {
+    const key = timelineItemKey(item);
+    selectedTimelineItemKey.value = key;
+    const blockIndex = audiobookBlocks.value.findIndex((block) => block.block_uuid === item.block_uuid);
+    if (blockIndex >= 0) activeBlockIndex.value = blockIndex;
+}
+function isTimelineGroupExpanded(item) { return item?.is_group && expandedTimelineGroupKey.value === timelineItemKey(item); }
+function toggleTimelineGroup(item) {
+    if (!item?.is_group) return;
+    const key = timelineItemKey(item);
+    expandedTimelineGroupKey.value = expandedTimelineGroupKey.value === key ? null : key;
+}
 function updateTimelineItem(key, updater) { timelineItems.value = timelineItems.value.map((item) => timelineItemKey(item) === key ? updater(item) : item); }
 function updateSelectedTimelineItem(updater) {
     const item = selectedTimelineItem();
@@ -145,6 +172,26 @@ function timelineAudioParts(item) {
         const output = { ...part, offset_ms: offset };
         offset += Number(part.duration_ms || 0) + Number(part.pause_after_ms || 0);
         return output;
+    });
+}
+function timelineSourceDuration(item) {
+    return Number(item.duration_ms || 0) + Number(item.trim_start_ms || 0) + Number(item.trim_end_ms || 0);
+}
+function timelinePlayableParts(item) {
+    const trimStart = Math.max(0, Number(item.trim_start_ms || 0));
+    const trimEnd = Math.max(trimStart, timelineSourceDuration(item) - Math.max(0, Number(item.trim_end_ms || 0)));
+    return timelineAudioParts(item).flatMap((part) => {
+        const partStart = Number(part.offset_ms || 0);
+        const partEnd = partStart + Number(part.duration_ms || 0);
+        const visibleStart = Math.max(trimStart, partStart);
+        const visibleEnd = Math.min(trimEnd, partEnd);
+        if (visibleEnd <= visibleStart) return [];
+        return [{
+            ...part,
+            media_offset_ms: visibleStart - partStart,
+            timeline_offset_ms: visibleStart - trimStart,
+            playable_duration_ms: visibleEnd - visibleStart,
+        }];
     });
 }
 
@@ -208,10 +255,10 @@ function drawWaveform(ctx, samples, x, y, width, height, tint) {
 }
 
 function drawTimelineClipWaveforms(ctx, item, x, y, width, height) {
-    const parts = timelineAudioParts(item);
+    const parts = timelinePlayableParts(item);
     parts.forEach((part) => {
-        const partX = x + width * (part.offset_ms / Math.max(1, item.duration_ms));
-        const partWidth = width * (Number(part.duration_ms || 0) / Math.max(1, item.duration_ms));
+        const partX = x + width * (part.timeline_offset_ms / Math.max(1, item.duration_ms));
+        const partWidth = width * (Number(part.playable_duration_ms || 0) / Math.max(1, item.duration_ms));
         if (partWidth < 3) return;
         const url = timelineAudioUrl(part);
         const samples = url ? timelineWaveform(url) : null;
@@ -231,25 +278,30 @@ function stopTimelinePlayers() {
 function syncTimelinePlayers(playhead, seek = false) {
     const activeKeys = new Set();
     let nextReading = null;
-    timelineItems.value.filter((item) => item.track === 'voice').forEach((item) => timelineAudioParts(item).forEach((part) => {
+    timelineItems.value.filter((item) => item.track === 'voice').forEach((item) => timelinePlayableParts(item).forEach((part) => {
         const url = timelineAudioUrl(part);
-        const start = (item.start_ms + part.offset_ms) / 1000;
-        const end = start + Number(part.duration_ms || 0) / 1000;
+        const start = (item.start_ms + part.timeline_offset_ms) / 1000;
+        const end = start + Number(part.playable_duration_ms || 0) / 1000;
         const key = `${timelineItemKey(item)}:${part.id || part.offset_ms}`;
         if (!url || item.muted || !trackCanPlay(item.track) || playhead < start || playhead >= end) { timelinePlayers.get(key)?.pause(); return; }
         activeKeys.add(key);
         let audio = timelinePlayers.get(key);
         if (!audio) { audio = new Audio(url); audio.preload = 'auto'; timelinePlayers.set(key, audio); seek = true; }
-        audio.volume = Math.max(0, Math.min(1, ((item.volume ?? 100) / 100) * ((trackState.value[item.track]?.volume ?? 100) / 100)));
+        const elapsedMs = Math.max(0, (playhead - item.start_ms / 1000) * 1000);
+        const remainingMs = Math.max(0, Number(item.duration_ms || 0) - elapsedMs);
+        const fadeInGain = Number(item.fade_in_ms || 0) > 0 ? Math.min(1, elapsedMs / Number(item.fade_in_ms)) : 1;
+        const fadeOutGain = Number(item.fade_out_ms || 0) > 0 ? Math.min(1, remainingMs / Number(item.fade_out_ms)) : 1;
+        audio.volume = Math.max(0, Math.min(1, ((item.volume ?? 100) / 100) * ((trackState.value[item.track]?.volume ?? 100) / 100) * fadeInGain * fadeOutGain));
         const offset = Math.max(0, playhead - start);
-        const offsetMs = Math.round(offset * 1000);
+        const offsetMs = Math.round(part.media_offset_ms + offset * 1000);
         const word = Array.isArray(part.word_timings)
             ? part.word_timings.find((timing) => offsetMs >= Number(timing.start_ms || 0) && offsetMs < Number(timing.end_ms || 0))
             : null;
         if (word && item.block_uuid && Number.isInteger(Number(word.source_start)) && Number.isInteger(Number(word.source_end))) {
             nextReading = { blockUuid: item.block_uuid, start: Number(word.source_start), end: Number(word.source_end) };
         }
-        if (seek || Math.abs(audio.currentTime - offset) > .35) { try { audio.currentTime = offset; } catch { } }
+        const mediaTime = part.media_offset_ms / 1000 + offset;
+        if (seek || Math.abs(audio.currentTime - mediaTime) > .35) { try { audio.currentTime = mediaTime; } catch { } }
         if (audio.paused) audio.play().catch(() => { });
     }));
     timelinePlayers.forEach((audio, key) => { if (!activeKeys.has(key)) { audio.pause(); timelinePlayers.delete(key); } });
@@ -689,12 +741,31 @@ function drawTimeline(canvas) {
             const x = labelWidth + ((width - labelWidth) * (item.start_ms / 1000) / duration);
             const clipWidth = Math.max(28, ((width - labelWidth) * (item.duration_ms / 1000) / duration));
             const selected = timelineItemKey(item) === selectedTimelineItemKey.value;
-            ctx.fillStyle = item.muted ? '#64748b' : color; ctx.fillRect(x, y + 9, clipWidth, rowHeight - 19);
+            const expanded = isTimelineGroupExpanded(item);
+            const clipY = y + 9;
+            const clipHeight = rowHeight - 19;
+            ctx.fillStyle = item.muted ? '#64748b' : color; ctx.fillRect(x, clipY, clipWidth, clipHeight);
+            if (expanded) {
+                timelinePlayableParts(item).forEach((part, partIndex) => {
+                    const partX = x + clipWidth * (part.timeline_offset_ms / Math.max(1, item.duration_ms));
+                    const partWidth = clipWidth * (Number(part.playable_duration_ms || 0) / Math.max(1, item.duration_ms));
+                    if (partWidth < 3) return;
+                    ctx.fillStyle = item.muted ? '#64748b' : (partIndex % 2 ? '#1d4ed8' : '#2563eb');
+                    ctx.fillRect(partX + 1, clipY + 2, Math.max(1, partWidth - 3), clipHeight - 4);
+                    const partUrl = timelineAudioUrl(part);
+                    drawWaveform(ctx, partUrl ? timelineWaveform(partUrl) : null, partX + 1, clipY + 2, Math.max(1, partWidth - 3), clipHeight - 4, 'rgba(255,255,255,.58)');
+                    if (partWidth > 44) {
+                        ctx.fillStyle = 'rgba(255,255,255,.92)';
+                        ctx.fillText(`${partIndex + 1}`, partX + 6, y + rowHeight / 2);
+                    }
+                });
+            } else {
+                drawTimelineClipWaveforms(ctx, item, x, clipY, clipWidth, clipHeight);
+            }
             if (selected) {
                 ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 10, Math.max(1, clipWidth - 2), rowHeight - 21);
                 ctx.fillStyle = '#f8fafc'; ctx.fillRect(x, y + 9, 5, rowHeight - 19); ctx.fillRect(x + clipWidth - 5, y + 9, 5, rowHeight - 19);
             }
-            drawTimelineClipWaveforms(ctx, item, x, y + 9, clipWidth, rowHeight - 19);
             const fadeInWidth = Math.min(clipWidth / 2, clipWidth * ((item.fade_in_ms || 0) / Math.max(1, item.duration_ms)));
             const fadeOutWidth = Math.min(clipWidth / 2, clipWidth * ((item.fade_out_ms || 0) / Math.max(1, item.duration_ms)));
             if (fadeInWidth || fadeOutWidth) {
@@ -703,16 +774,21 @@ function drawTimeline(canvas) {
                 if (fadeOutWidth) { ctx.moveTo(x + clipWidth - fadeOutWidth, y + 13); ctx.lineTo(x + clipWidth - 2, y + rowHeight - 13); }
                 ctx.stroke();
             }
-            if (item.is_group && Array.isArray(item.group_segments)) {
+            if (!expanded && item.is_group && Array.isArray(item.group_segments)) {
+                const trimStart = Number(item.trim_start_ms || 0);
+                const trimEnd = timelineSourceDuration(item) - Number(item.trim_end_ms || 0);
                 let groupOffset = 0;
                 ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1;
                 item.group_segments.slice(0, -1).forEach((segment) => {
                     groupOffset += Number(segment.duration_ms || 0) + Number(segment.pause_after_ms || 0);
-                    const dividerX = x + clipWidth * (groupOffset / Math.max(1, item.duration_ms));
+                    if (groupOffset <= trimStart || groupOffset >= trimEnd) return;
+                    const dividerX = x + clipWidth * ((groupOffset - trimStart) / Math.max(1, item.duration_ms));
                     ctx.beginPath(); ctx.moveTo(dividerX, y + 11); ctx.lineTo(dividerX, y + rowHeight - 12); ctx.stroke();
                 });
             }
-            ctx.fillStyle = 'rgba(255,255,255,.82)'; ctx.fillText(item.label, x + 6, y + rowHeight / 2);
+            if (!expanded) {
+                ctx.fillStyle = 'rgba(255,255,255,.82)'; ctx.fillText(item.label, x + 6, y + rowHeight / 2);
+            }
         });
     });
     timelineCues.value.forEach((cue) => {
@@ -761,13 +837,13 @@ function timelineCard() {
         const item = [...timelineItems.value].reverse().find((candidate) => candidate.track === trackAt && seconds >= candidate.start_ms / 1000 && seconds <= (candidate.start_ms + candidate.duration_ms) / 1000);
         if (item) {
             const key = timelineItemKey(item);
-            selectedTimelineItemKey.value = key;
+            selectTimelineItem(item);
             if (!trackState.value[trackAt].locked) {
                 const edgeSeconds = Math.max(.35, duration * 10 / Math.max(1, rect.width - 170));
                 const clipStart = item.start_ms / 1000;
                 const clipEnd = clipStart + item.duration_ms / 1000;
                 const mode = seconds - clipStart < edgeSeconds ? 'trim-start' : clipEnd - seconds < edgeSeconds ? 'trim-end' : 'move';
-                drag = { key, item, mode, offset: seconds - clipStart, end: clipEnd };
+                drag = { key, item, mode, offset: seconds - clipStart, end: clipEnd, sourceDuration: timelineSourceDuration(item), changed: false };
                 canvas.setPointerCapture(event.pointerId);
             }
             render(); return;
@@ -785,17 +861,42 @@ function timelineCard() {
         const key = drag.key;
         if (drag.mode === 'move') {
             const start = timelineSnap(Math.max(0, seconds - drag.offset));
+            drag.changed ||= drag.item.track !== track || drag.item.start_ms !== Math.round(start * 1000);
             updateTimelineItem(key, (item) => ({ ...item, track, start_ms: Math.round(start * 1000) }));
         } else if (drag.mode === 'trim-start') {
             const start = Math.min(drag.end - .25, timelineSnap(seconds));
-            updateTimelineItem(key, (item) => ({ ...item, start_ms: Math.round(start * 1000), duration_ms: Math.round((drag.end - start) * 1000), trim_start_ms: Math.max(0, Math.round((item.trim_start_ms || 0) + (start - item.start_ms / 1000) * 1000)) }));
+            updateTimelineItem(key, (item) => {
+                const delta = Math.round((start - drag.item.start_ms / 1000) * 1000);
+                const next = { ...item, start_ms: Math.round(start * 1000), duration_ms: Math.round((drag.end - start) * 1000), trim_start_ms: Math.max(0, Number(drag.item.trim_start_ms || 0) + delta) };
+                drag.changed ||= next.start_ms !== drag.item.start_ms || next.duration_ms !== drag.item.duration_ms || next.trim_start_ms !== Number(drag.item.trim_start_ms || 0);
+                return next;
+            });
         } else {
             const end = Math.max(drag.item.start_ms / 1000 + .25, timelineSnap(seconds));
-            updateTimelineItem(key, (item) => ({ ...item, duration_ms: Math.round((end - item.start_ms / 1000) * 1000), trim_end_ms: Math.max(0, Math.round((drag.item.start_ms / 1000 + drag.item.duration_ms / 1000 - end) * 1000)) }));
+            updateTimelineItem(key, (item) => {
+                const removed = Math.round((drag.item.start_ms / 1000 + drag.item.duration_ms / 1000 - end) * 1000);
+                const next = { ...item, duration_ms: Math.round((end - item.start_ms / 1000) * 1000), trim_end_ms: Math.max(0, Number(drag.item.trim_end_ms || 0) + removed) };
+                drag.changed ||= next.duration_ms !== drag.item.duration_ms || next.trim_end_ms !== Number(drag.item.trim_end_ms || 0);
+                return next;
+            });
         }
         render();
     });
-    canvas.addEventListener('pointerup', () => { drag = null; });
+    canvas.addEventListener('pointerup', () => {
+        if (drag?.changed) scheduleTimelineSave(bookKey());
+        drag = null;
+    });
+    canvas.addEventListener('pointercancel', () => { drag = null; });
+    canvas.addEventListener('dblclick', (event) => {
+        const { track, seconds } = geometry(event);
+        const item = [...timelineItems.value].reverse().find((candidate) => candidate.track === track && seconds >= candidate.start_ms / 1000 && seconds <= (candidate.start_ms + candidate.duration_ms) / 1000);
+        if (!item?.is_group) return;
+        event.preventDefault();
+        drag = null;
+        selectTimelineItem(item);
+        toggleTimelineGroup(item);
+        render();
+    });
     window.requestAnimationFrame(render);
     window.addEventListener('resize', render, { passive: true });
 
@@ -818,11 +919,15 @@ function timelineCard() {
                 _.Btn({ dense: true, color: 'primary', icon: 'save', title: 'Save timeline', onClick: () => saveTimeline(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }),
             ),
         ),
-        _.div({ class: 'at-audioTimelineInspector' },
-            _.span({ class: 'at-audioInspectorLabel' }, () => selectedTimelineItem() ? selectedTimelineItem().label : 'No clip selected'),
-            _.span(() => selectedTimelineItem() ? `${selectedTimelineItem().track.toUpperCase()} · ${timelineSnap(selectedTimelineItem().start_ms / 1000).toFixed(2)}s` : 'Click a clip to edit'),
-            _.span(() => selectedTimelineItem() ? `${timelineSnap(selectedTimelineItem().duration_ms / 1000).toFixed(2)}s` : 'Drag center to move · edges to trim'),
-            _.div({ class: 'at-audioClipControls' },
+        _.div({ class: 'at-audioTimelineInspector' }, () => selectedTimelineItem() ? (() => {
+            const item = selectedTimelineItem();
+            return _.div({ class: 'at-audioTimelineSelection' },
+                _.div({ class: 'at-audioSelectionSummary' },
+                    _.strong({ class: 'at-audioInspectorLabel' }, item.label),
+                    _.span(`${item.track.toUpperCase()} · ${timelineSnap(item.start_ms / 1000).toFixed(2)}s · ${timelineSnap(item.duration_ms / 1000).toFixed(2)}s · ${timelinePersistence.value === 'saving' ? 'Saving…' : timelinePersistence.value === 'error' ? 'Save failed' : 'Saved'}`),
+                    _.small(item.is_group ? `${item.group_segments?.length || 0} clips · Double click the master to ${isTimelineGroupExpanded(item) ? 'collapse' : 'expand'}` : 'Drag center to move · edges to trim'),
+                ),
+                _.div({ class: 'at-audioClipControls' },
                 _.Btn({ dense: true, color: 'secondary', icon: 'volume_off', title: 'Toggle clip mute', onClick: () => updateSelectedTimelineItem((item) => ({ ...item, muted: !item.muted })) }),
                 _.span({ class: 'at-audioClipValue' }, () => selectedTimelineItem() ? `Vol ${selectedTimelineItem().volume ?? 100}%` : 'Vol'),
                 _.Btn({ dense: true, color: 'secondary', icon: 'remove', title: 'Lower clip volume', onClick: () => adjustSelectedTimelineItem('volume', -5, 100) }),
@@ -833,10 +938,12 @@ function timelineCard() {
                 _.span({ class: 'at-audioClipValue' }, () => selectedTimelineItem() ? `Out ${selectedTimelineItem().fade_out_ms || 0}ms` : 'Fade out'),
                 _.Btn({ dense: true, color: 'secondary', icon: 'remove', title: 'Reduce fade out', onClick: () => adjustSelectedTimelineItem('fade_out_ms', -100) }),
                 _.Btn({ dense: true, color: 'secondary', icon: 'add', title: 'Increase fade out', onClick: () => { const item = selectedTimelineItem(); adjustSelectedTimelineItem('fade_out_ms', 100, Math.floor((item?.duration_ms || 0) / 2)); } }),
-            ),
-            _.Btn({ dense: true, color: 'secondary', icon: 'delete_outline', title: 'Remove selected clip', onClick: () => removeSelectedTimelineItem(bookKey()) }),
-            () => selectedTimelineItem()?.is_group ? _.Btn({ dense: true, color: 'secondary', icon: 'call_split', title: 'Ungroup selected audio', onClick: () => ungroupSelectedTimelineItem(bookKey()) }) : null,
-        ),
+                ),
+                item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: isTimelineGroupExpanded(item) ? 'unfold_less' : 'unfold_more', title: isTimelineGroupExpanded(item) ? 'Collapse clips' : 'Expand clips', onClick: () => toggleTimelineGroup(item) }) : null,
+                item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: 'call_split', title: 'Ungroup selected audio', onClick: () => ungroupSelectedTimelineItem(bookKey()) }) : null,
+                _.Btn({ dense: true, color: 'danger', icon: 'delete_outline', title: 'Remove selected clip', onClick: () => removeSelectedTimelineItem(bookKey()) }),
+            );
+        })() : _.div({ class: 'at-audioTimelineEmptySelection' }, _.Icon ? _.Icon({ name: 'ads_click' }) : null, _.span('Select a clip to edit its level, fades and grouping.'))),
         canvas,
     );
 }
