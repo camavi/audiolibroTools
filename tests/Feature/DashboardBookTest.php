@@ -6,6 +6,9 @@ use App\Models\AiChatMessage;
 use App\Models\AccountCreditBalance;
 use App\Models\AiChatThread;
 use App\Models\Book;
+use App\Models\BookAudioJob;
+use App\Models\BookAudioSegment;
+use App\Models\BookAudioTimelineItem;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
 use App\Models\BookBlockTranslation;
@@ -1877,6 +1880,90 @@ class DashboardBookTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.translation.status', 'rejected')
             ->assertJsonPath('data.translation.approved_at', null);
+    }
+
+    public function test_dashboard_can_remove_a_clip_from_its_audio_timeline(): void
+    {
+        $book = $this->createBook();
+        $clip = BookAudioTimelineItem::query()->create([
+            'book_id' => $book->id,
+            'track' => 'voice',
+            'label' => 'Narration',
+            'start_ms' => 0,
+            'duration_ms' => 3000,
+            'sort_order' => 0,
+        ]);
+
+        $this->deleteJson("/dashboard/api/books/{$book->key_book}/audio-timeline/{$clip->id}")
+            ->assertOk()
+            ->assertJsonPath('data.deleted', true);
+
+        $this->assertDatabaseMissing('book_audio_timeline_items', ['id' => $clip->id]);
+    }
+
+    public function test_dashboard_can_delete_an_unused_generated_audio_master_only(): void
+    {
+        Storage::fake('public');
+        $book = $this->createBook();
+        $blockUuid = (string) Str::uuid();
+        $saved = app(BookBlockService::class)->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Generated narration.'),
+            'text_plain' => 'Generated narration.',
+        ]);
+        $job = BookAudioJob::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+            'block_uuid' => $blockUuid,
+            'status' => 'completed',
+            'provider_key' => 'mock',
+            'source' => 'mock',
+        ]);
+        $segment = BookAudioSegment::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+            'book_audio_job_id' => $job->id,
+            'block_uuid' => $blockUuid,
+            'audio_path' => 'audiobooks/test/segment.wav',
+            'duration_ms' => 1000,
+        ]);
+        Storage::disk('public')->put($segment->audio_path, 'audio');
+
+        $this->deleteJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/audio/{$job->id}")
+            ->assertOk()
+            ->assertJsonPath('data.deleted', true);
+
+        $this->assertDatabaseMissing('book_audio_jobs', ['id' => $job->id]);
+        $this->assertDatabaseMissing('book_audio_segments', ['id' => $segment->id]);
+        Storage::disk('public')->assertMissing($segment->audio_path);
+    }
+
+    public function test_dashboard_can_update_book_workspace_settings(): void
+    {
+        $book = $this->createBook();
+        $category = BookCategory::query()->create(['name' => 'Fantasy', 'slug' => 'fantasy']);
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}", [
+            'title' => 'Italian audiobook',
+            'description' => 'A book configured for Italian narration.',
+            'categories' => [$category->id],
+            'lang' => 'it',
+            'cover_img' => '/storage/covers/italian-audiobook.jpg',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.name', 'Italian audiobook')
+            ->assertJsonPath('data.lang', 'it')
+            ->assertJsonPath('data.categories.0', $category->id);
+
+        $this->assertDatabaseHas('books', [
+            'id' => $book->id,
+            'name' => 'Italian audiobook',
+            'lang' => 'it',
+        ]);
     }
 
     private function createBook(): Book

@@ -6,6 +6,7 @@ import booksPage from './dashboard/page/books.js';
 import bookPanelPage from './dashboard/page/bookPanel.js';
 import bookTraslatePage from './dashboard/page/bookTraslate.js';
 import audiobookEditPage from './dashboard/page/audiobookEdit.js';
+import uploadAudioPage from './dashboard/page/uploadAudio.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
@@ -31,7 +32,7 @@ const navGroups = [
     { label: 'Organization', key: 'organization', icon: 'hub' },
     { label: 'Settings', key: 'setting', icon: 'settings', link: '/dashboard/setting' },
     { label: 'Prompts AI', key: 'prompts-ai', icon: 'psychology' },
-    { label: 'Upload audio', key: 'upload-audio', icon: 'upload_file' },
+    { label: 'Upload audio', key: 'upload-audio', icon: 'upload_file', link: '/dashboard/upload-audio' },
     { label: 'Logout', key: 'logout', icon: 'logout' },
 ];
 
@@ -136,4 +137,6 @@ _.router.add('/dashboard/book/:key_book/translate', bookTraslatePage);
 _.router.add('/dashboard/book/:key_book/audiobook/edit', audiobookEditPage);
 _.router.add('/dashboard/setting', settingPage);
 _.router.add('/dashboard/books', booksPage);
+_.router.add('/dashboard/upload-audio', uploadAudioPage);
+
 _.router.start();

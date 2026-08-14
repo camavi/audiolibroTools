@@ -37,6 +37,15 @@
 .at-bookPanelHeroArtwork,
 .at-bookPanelHeroContent { position: relative; z-index: 1; }
 
+.at-bookPanelHeroSettings {
+    position: absolute;
+    right: clamp(1.25rem, 3vw, 2.5rem);
+    bottom: clamp(1.25rem, 3vw, 2.5rem);
+    z-index: 2;
+}
+
+.at-bookPanelHeroSettings .cms-btn { box-shadow: 0 4px 12px rgb(15 23 42 / 12%); }
+
 .at-bookPanelHeroArtwork {
     align-self: center;
     overflow: hidden;

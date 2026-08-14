@@ -22,6 +22,16 @@ Prima di lavorare sulla dashboard leggere e seguire come base `resources/js/dash
 - Per chiamate backend usare `_.http.getJSON`, `_.http.postJSON` e gli helper HTTP CMSwift; evitare `fetch` diretto salvo motivo tecnico documentato nel codice.
 - I form devono gestire stato locale con `_.rod`, validazione minima lato client, stato loading/submitting, feedback tramite `_.Alert` e `try/catch/finally`.
 
+## CMSwift: focus e controlli reattivi
+
+Quando lavori con CMSwift, evita che un parent dinamico si sottoscriva ai model dei controlli figli. Non leggere `.value` di un rod/model dentro la stessa funzione dinamica che crea `_.Input`, `_.Textarea`, `_.Select` o altri controlli editabili: a ogni modifica il parent verrebbe ricreato e il controllo perderebbe il focus.
+
+- Mantieni i controlli editabili in un parent stabile e metti l'interfaccia dipendente in piccoli callback dinamici separati.
+- Non chiamare side effect (`load...`, `fetch`, `save`) dentro un render dinamico. Se indispensabile per retrocompatibilità, isolarli con `CMSwift.reactive.untracked(() => ...)`.
+- Anche l'idratazione iniziale dei model nei componenti CMSwift deve usare `CMSwift.reactive.untracked()`.
+- In `FormField`, il calcolo iniziale di `hasValue` non deve sottoscrivere il parent al model; per `Select`, `value: ''` è valido se esiste un'opzione con quel valore.
+- Quando correggi focus perso: individua il controllo, verifica se un parent `() => ...` legge lo stesso model, sposta quella lettura in un callback più piccolo e aggiungi un test affinché l'update del model non ricrei il parent.
+
 ## Mappa Documenti
 
 - [Overview prodotto](project/overview.md)

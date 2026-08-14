@@ -150,6 +150,231 @@
     gap: 1rem
 }
 
+.at-audioGeneratedGroups {
+    display: grid;
+    gap: .5rem;
+    padding: .75rem;
+    border: 1px solid #dbe3ee;
+    border-radius: .6rem;
+    background: #f8fafc;
+    font-size: .78rem
+}
+
+.at-audioGeneratedGroupsHeader,
+.at-audioGeneratedGroup {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem
+}
+
+.at-audioGeneratedGroupsHeader small,
+.at-audioGeneratedMasterInfo small {
+    color: #64748b
+}
+
+.at-audioGeneratedGroup {
+    display: block;
+    overflow: hidden;
+    border: 1px solid #dbe3ee;
+    border-radius: .45rem;
+    background: #fff;
+    color: #475569
+}
+
+.at-audioGeneratedMaster {
+    display: flex;
+    align-items: center;
+    min-height: 3.35rem;
+    gap: .55rem;
+    padding: .45rem .55rem
+}
+
+.at-audioGroupToggle {
+    display: grid;
+    width: 1.85rem;
+    height: 1.85rem;
+    place-items: center;
+    border: 0;
+    border-radius: .35rem;
+    background: transparent;
+    color: #475569;
+    cursor: pointer
+}
+
+.at-audioGroupToggle:hover { background: #eef4ff; color: #2563eb }
+
+.at-audioGeneratedMasterInfo {
+    display: grid;
+    min-width: 0;
+    flex: 1;
+    gap: .12rem
+}
+
+.at-audioGeneratedMasterInfo small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap
+}
+
+.at-audioGeneratedMasterActions {
+    display: flex;
+    align-items: center;
+    gap: .35rem
+}
+
+.at-audioGroupUsed {
+    padding: .24rem .46rem;
+    border-radius: 999px;
+    background: #e8f7ee;
+    color: #15803d;
+    font-size: .68rem;
+    font-weight: 700
+}
+
+.at-audioGeneratedChildren {
+    display: grid;
+    border-top: 1px solid #e2e8f0;
+    background: #f8fafc
+}
+
+.at-audioGeneratedChild {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: .75rem;
+    padding: .45rem .8rem .45rem 3.15rem;
+    border-top: 1px solid #edf2f7;
+    color: #64748b;
+    font-size: .72rem
+}
+
+.at-audioGeneratedChild:first-child { border-top: 0 }
+
+.at-audioDeleteConfirm {
+    display: grid;
+    gap: 1rem
+}
+
+.at-audioDeleteConfirm p {
+    margin: 0;
+    color: #475569
+}
+
+.at-audioDeleteConfirmActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .5rem
+}
+
+.at-audioVoiceSelect {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .85rem;
+    border: 1px solid #cbdcf9;
+    border-radius: .6rem;
+    background: #f4f8ff
+}
+
+.at-audioVoiceSelect span,
+.at-audioVoiceSelect small {
+    display: block
+}
+
+.at-audioVoiceSelect span {
+    color: #2563eb;
+    font-size: .7rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase
+}
+
+.at-audioVoiceSelect strong {
+    display: block;
+    margin: .18rem 0;
+    font-size: .95rem
+}
+
+.at-audioVoiceSelect small {
+    color: #64748b;
+    font-size: .75rem
+}
+
+.at-libraryVoiceDialog {
+    display: grid;
+    gap: 1rem
+}
+
+.at-libraryVoiceFilters {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(160px, .75fr) minmax(190px, .9fr);
+    gap: .7rem
+}
+
+.at-libraryVoiceResults {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: .7rem;
+    max-height: 420px;
+    overflow: auto
+}
+
+.at-libraryVoiceResult {
+    display: grid;
+    gap: .5rem;
+    padding: .85rem;
+    border: 1px solid #dbe3ee;
+    border-radius: .6rem;
+    background: #f8fafc;
+    color: #182033;
+    font: inherit;
+    text-align: left;
+    cursor: pointer
+}
+
+.at-libraryVoiceResult:hover {
+    border-color: #2563eb;
+    background: #eff6ff
+}
+
+.at-libraryVoiceResultHead {
+    display: flex;
+    justify-content: space-between;
+    gap: .6rem
+}
+
+.at-libraryVoiceResultHead span,
+.at-libraryVoiceResult small {
+    color: #64748b;
+    font-size: .72rem
+}
+
+.at-libraryVoiceToneChips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .3rem
+}
+
+.at-libraryVoiceToneChips span {
+    padding: .16rem .36rem;
+    border: 1px solid color-mix(in srgb, var(--at-tone-color) 40%, #dbe3ee);
+    border-radius: 999px;
+    color: #475569;
+    font-size: .66rem
+}
+
+.at-libraryVoiceEmpty {
+    padding: 2.5rem 1rem;
+    color: #64748b;
+    text-align: center
+}
+
+.at-libraryVoiceActions {
+    display: flex;
+    justify-content: flex-end
+}
+
 .at-audioPreviewCard {
     background: #fff
 }
@@ -310,6 +535,14 @@
     height: 330px;
     cursor: crosshair;
     background: #0f172a
+}
+
+.at-audioReadingWord {
+    border-radius: .18rem;
+    background: #fde68a;
+    box-decoration-break: clone;
+    box-shadow: 0 0 0 .08rem rgba(245, 158, 11, .35);
+    color: #0f172a;
 }
 
 

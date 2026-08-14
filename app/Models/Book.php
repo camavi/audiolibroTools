@@ -16,12 +16,14 @@ class Book extends Model
         'categories',
         'lang',
         'cover_img',
+        'audio_settings_json',
     ];
 
     protected function casts(): array
     {
         return [
             'categories' => 'array',
+            'audio_settings_json' => 'array',
         ];
     }
 

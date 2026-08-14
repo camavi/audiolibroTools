@@ -14,17 +14,22 @@ const textColor = _.rod('#182033');
 const blockPadding = _.rod('24');
 const audioStatus = _.rod(null);
 const audioSegments = _.rod([]);
+const audioGroups = _.rod([]);
+const expandedAudioGroupIds = _.rod([]);
 const audioGenerating = _.rod(false);
-const ttsProvider = _.rod('coqui-local');
-const coquiVoiceId = _.rod('');
+const selectedLibraryVoice = _.rod(null);
 const timelineCues = _.rod([]);
 const timelineZoom = _.rod(1);
 const timelineItems = _.rod([]);
 const timelinePlayhead = _.rod(0);
 const selectedTimelineItemKey = _.rod(null);
 const timelineIsPlaying = _.rod(false);
+const readingPlayback = _.rod(null);
 const trackState = _.rod({ voice: { muted: false, solo: false, locked: false, volume: 80 }, music: { muted: false, solo: false, locked: false, volume: 80 }, fx: { muted: false, solo: false, locked: false, volume: 80 } });
 const timelinePlayers = new Map();
+const timelineWaveforms = new Map();
+const pendingTimelineWaveforms = new Set();
+let timelineAudioContext = null;
 let timelineFrame = null;
 let timelineStartedAt = 0;
 let renderTimeline = null;
@@ -133,6 +138,86 @@ function timelineAudioUrl(item) {
     if (/^https?:\/\//.test(path)) return path;
     return path.startsWith('/') ? path : `/storage/${path.replace(/^storage\//, '')}`;
 }
+function timelineAudioParts(item) {
+    const parts = Array.isArray(item.group_segments) && item.group_segments.length ? item.group_segments : [item];
+    let offset = 0;
+    return parts.map((part) => {
+        const output = { ...part, offset_ms: offset };
+        offset += Number(part.duration_ms || 0) + Number(part.pause_after_ms || 0);
+        return output;
+    });
+}
+
+function timelineWaveform(url) {
+    if (!url || timelineWaveforms.has(url) || pendingTimelineWaveforms.has(url)) return timelineWaveforms.get(url) || null;
+    pendingTimelineWaveforms.add(url);
+    // CMSwift's JSON helpers intentionally parse response bodies. A WAV must be
+    // decoded as an ArrayBuffer by the browser Web Audio API, so this is the
+    // one technical use of fetch in the dashboard.
+    fetch(url)
+        .then((response) => {
+            if (!response.ok) throw new Error(`Unable to read audio (${response.status})`);
+            return response.arrayBuffer();
+        })
+        .then(async (buffer) => {
+            timelineAudioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+            const decoded = await timelineAudioContext.decodeAudioData(buffer.slice(0));
+            const buckets = Math.min(360, Math.max(48, Math.ceil(decoded.duration * 90)));
+            const samples = Array.from({ length: buckets }, (_, bucket) => {
+                const start = Math.floor((bucket / buckets) * decoded.length);
+                const end = Math.max(start + 1, Math.floor(((bucket + 1) / buckets) * decoded.length));
+                let peak = 0;
+                for (let channel = 0; channel < decoded.numberOfChannels; channel += 1) {
+                    const channelData = decoded.getChannelData(channel);
+                    for (let index = start; index < end; index += 1) peak = Math.max(peak, Math.abs(channelData[index] || 0));
+                }
+                return peak;
+            });
+            timelineWaveforms.set(url, samples);
+        })
+        .catch(() => timelineWaveforms.set(url, []))
+        .finally(() => {
+            pendingTimelineWaveforms.delete(url);
+            renderTimeline?.();
+        });
+    return null;
+}
+
+function drawWaveform(ctx, samples, x, y, width, height, tint) {
+    const center = y + height / 2;
+    const maxHeight = Math.max(3, height / 2 - 5);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x + 3, y + 3, Math.max(0, width - 6), Math.max(0, height - 6)); ctx.clip();
+    ctx.strokeStyle = tint;
+    ctx.lineWidth = 1;
+    if (samples?.length) {
+        samples.forEach((sample, index) => {
+            const sampleX = x + 4 + ((width - 8) * index / Math.max(1, samples.length - 1));
+            const amplitude = Math.max(1, sample * maxHeight);
+            ctx.beginPath(); ctx.moveTo(sampleX, center - amplitude); ctx.lineTo(sampleX, center + amplitude); ctx.stroke();
+        });
+    } else {
+        ctx.beginPath();
+        for (let waveX = 6; waveX < width - 6; waveX += 4) {
+            const waveY = center + Math.sin((waveX + x) * .34) * (maxHeight * .55);
+            waveX === 6 ? ctx.moveTo(x + waveX, waveY) : ctx.lineTo(x + waveX, waveY);
+        }
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
+function drawTimelineClipWaveforms(ctx, item, x, y, width, height) {
+    const parts = timelineAudioParts(item);
+    parts.forEach((part) => {
+        const partX = x + width * (part.offset_ms / Math.max(1, item.duration_ms));
+        const partWidth = width * (Number(part.duration_ms || 0) / Math.max(1, item.duration_ms));
+        if (partWidth < 3) return;
+        const url = timelineAudioUrl(part);
+        const samples = url ? timelineWaveform(url) : null;
+        drawWaveform(ctx, samples, partX, y, partWidth, height, 'rgba(255,255,255,.56)');
+    });
+}
 function timelineEnd() { return Math.max(90, ...timelineItems.value.map((item) => (item.start_ms + item.duration_ms) / 1000)); }
 function trackCanPlay(track) {
     const states = trackState.value;
@@ -145,36 +230,40 @@ function stopTimelinePlayers() {
 }
 function syncTimelinePlayers(playhead, seek = false) {
     const activeKeys = new Set();
-    timelineItems.value.filter((item) => item.track === 'voice').forEach((item) => {
-        const url = timelineAudioUrl(item);
-        const start = item.start_ms / 1000;
-        const end = start + item.duration_ms / 1000;
-        const key = timelineItemKey(item);
-        if (!url || item.muted || !trackCanPlay(item.track) || playhead < start || playhead >= end) {
-            timelinePlayers.get(key)?.pause();
-            return;
-        }
+    let nextReading = null;
+    timelineItems.value.filter((item) => item.track === 'voice').forEach((item) => timelineAudioParts(item).forEach((part) => {
+        const url = timelineAudioUrl(part);
+        const start = (item.start_ms + part.offset_ms) / 1000;
+        const end = start + Number(part.duration_ms || 0) / 1000;
+        const key = `${timelineItemKey(item)}:${part.id || part.offset_ms}`;
+        if (!url || item.muted || !trackCanPlay(item.track) || playhead < start || playhead >= end) { timelinePlayers.get(key)?.pause(); return; }
         activeKeys.add(key);
         let audio = timelinePlayers.get(key);
         if (!audio) { audio = new Audio(url); audio.preload = 'auto'; timelinePlayers.set(key, audio); seek = true; }
-        const elapsed = (playhead - start) * 1000;
-        const remaining = (end - playhead) * 1000;
-        const fadeIn = item.fade_in_ms ? Math.min(1, elapsed / item.fade_in_ms) : 1;
-        const fadeOut = item.fade_out_ms ? Math.min(1, remaining / item.fade_out_ms) : 1;
-        audio.volume = Math.max(0, Math.min(1, ((item.volume ?? 100) / 100) * ((trackState.value[item.track]?.volume ?? 100) / 100) * fadeIn * fadeOut));
-        const offset = Math.max(0, (item.trim_start_ms || 0) / 1000 + playhead - start);
-        if (seek || Math.abs(audio.currentTime - offset) > .35) {
-            try { audio.currentTime = offset; } catch { }
+        audio.volume = Math.max(0, Math.min(1, ((item.volume ?? 100) / 100) * ((trackState.value[item.track]?.volume ?? 100) / 100)));
+        const offset = Math.max(0, playhead - start);
+        const offsetMs = Math.round(offset * 1000);
+        const word = Array.isArray(part.word_timings)
+            ? part.word_timings.find((timing) => offsetMs >= Number(timing.start_ms || 0) && offsetMs < Number(timing.end_ms || 0))
+            : null;
+        if (word && item.block_uuid && Number.isInteger(Number(word.source_start)) && Number.isInteger(Number(word.source_end))) {
+            nextReading = { blockUuid: item.block_uuid, start: Number(word.source_start), end: Number(word.source_end) };
         }
+        if (seek || Math.abs(audio.currentTime - offset) > .35) { try { audio.currentTime = offset; } catch { } }
         if (audio.paused) audio.play().catch(() => { });
-    });
+    }));
     timelinePlayers.forEach((audio, key) => { if (!activeKeys.has(key)) { audio.pause(); timelinePlayers.delete(key); } });
+    const current = readingPlayback.value;
+    if (!current || !nextReading || current.blockUuid !== nextReading.blockUuid || current.start !== nextReading.start || current.end !== nextReading.end) {
+        readingPlayback.value = nextReading;
+    }
 }
 function stopTimelinePlayback() {
     if (timelineFrame) window.cancelAnimationFrame(timelineFrame);
     timelineFrame = null;
     timelineIsPlaying.value = false;
     stopTimelinePlayers();
+    readingPlayback.value = null;
 }
 function startTimelinePlayback(render) {
     if (timelineIsPlaying.value) return;
@@ -199,6 +288,42 @@ function addTimelineItem(track) {
     selectedTimelineItemKey.value = clientKey;
 }
 
+async function removeSelectedTimelineItem(keyBook) {
+    const item = selectedTimelineItem();
+    if (!item) {
+        audioStatus.value = { type: 'info', message: 'Select a clip before removing it.' };
+        return;
+    }
+
+    const itemKey = timelineItemKey(item);
+    try {
+        if (item.id) {
+            await _.http.delJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline/${encodeURIComponent(item.id)}`);
+        }
+
+        timelinePlayers.get(itemKey)?.pause();
+        timelinePlayers.delete(itemKey);
+        timelineItems.value = timelineItems.value.filter((timelineItem) => timelineItemKey(timelineItem) !== itemKey);
+        selectedTimelineItemKey.value = null;
+        audioStatus.value = { type: 'success', message: 'Clip removed from the timeline.' };
+        renderTimeline?.();
+    } catch (error) {
+        audioStatus.value = { type: 'danger', message: error.message || 'Unable to remove the selected clip.' };
+    }
+}
+
+async function ungroupSelectedTimelineItem(keyBook) {
+    const item = selectedTimelineItem();
+    if (!item?.is_group || !item.id) return;
+    try {
+        const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline/${encodeURIComponent(item.id)}/ungroup`, {});
+        timelineItems.value = audioData(payload).items || [];
+        selectedTimelineItemKey.value = null;
+        audioStatus.value = { type: 'success', message: 'Audio group ungrouped into individual timeline clips.' };
+        renderTimeline?.();
+    } catch (error) { audioStatus.value = { type: 'danger', message: error.message || 'Unable to ungroup this clip.' }; }
+}
+
 async function loadBlockAudio(keyBook) {
     const block = activeBlock();
     if (!keyBook || !block?.block_uuid) return;
@@ -207,6 +332,7 @@ async function loadBlockAudio(keyBook) {
         const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio`);
         const data = audioData(payload);
         audioSegments.value = data.segments || [];
+        audioGroups.value = data.groups || [];
     } catch (error) {
         audioStatus.value = { type: 'danger', message: error.message || 'Unable to load generated audio clips.' };
     }
@@ -215,63 +341,91 @@ async function loadBlockAudio(keyBook) {
 async function generateSelectedAudio(keyBook) {
     const block = activeBlock();
     if (!keyBook || !block?.block_uuid || audioGenerating.value) return;
-    const providerKey = ttsProvider.value;
-    const model = providerKey === 'coqui-local' ? 'xtts-v2' : 'mock-tts-v1';
+    const providerKey = 'coqui-local';
+    const model = 'xtts-v2';
 
-    if (providerKey === 'coqui-local' && !coquiVoiceId.value.trim()) {
-        audioStatus.value = { type: 'danger', message: 'Enter the Coqui voice reference ID before generating audio.' };
+    if (!selectedLibraryVoice.value) {
+        audioStatus.value = { type: 'danger', message: 'Select an AT library voice before generating audio.' };
         return;
     }
 
     audioGenerating.value = true;
     audioStatus.value = { type: 'info', message: 'Coqui is generating the WAV file. Longer paragraphs can take a minute or more.' };
     try {
-        const voicesPayload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/voices`);
-        const voices = audioData(voicesPayload).profiles || [];
-        let voice = voices.find((profile) => profile.voice_provider === providerKey && profile.voice_id === (providerKey === 'coqui-local' ? coquiVoiceId.value.trim() : 'mock-narrator-01'))
-            || voices.find((profile) => profile.voice_provider === providerKey && profile.name.toLowerCase() === voiceName.value.trim().toLowerCase());
-
-        if (!voice) {
-            const created = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/voices`, {
-                name: voiceName.value.trim() || 'Narrator',
-                role: 'narrator',
-                voice_provider: providerKey,
-                voice_id: providerKey === 'coqui-local' ? coquiVoiceId.value.trim() : 'mock-narrator-01',
-                language: audiobookBook.value?.lang || 'en',
-                notes: `${voiceTone.value}\n${deliveryNotes.value}`.trim(),
-            });
-            voice = audioData(created).profile || null;
-        }
-
-        if (!voice?.id) {
-            throw new Error('The voice profile was not created correctly. Please try again.');
-        }
-
-        await _.http.patchJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/voice-assignment`, {
-            voice_profile_id: voice.id,
-        });
         const generated = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/generate`, {
             provider_key: providerKey,
             model,
         }, providerKey === 'coqui-local' ? { timeout: 900000, retry: { attempts: 0 } } : undefined);
         const data = audioData(generated);
-        audioSegments.value = [data.segment, ...audioSegments.value.filter((segment) => segment.id !== data.segment?.id)];
-        const clientKey = `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-        const startMs = timelineItems.value.length * 4000;
-        timelineItems.value = [...timelineItems.value, { client_key: clientKey, book_audio_segment_id: data.segment?.id, audio_path: data.segment?.audio_path, track: 'voice', label: voiceName.value || 'Narration', start_ms: startMs, duration_ms: data.segment?.duration_ms || estimatedSeconds() * 1000, trim_start_ms: 0, trim_end_ms: 0, fade_in_ms: 0, fade_out_ms: 0, volume: 100, muted: false }];
-        selectedTimelineItemKey.value = clientKey;
-        await saveTimeline(keyBook, false);
-        const savedItem = timelineItems.value.find((item) => item.book_audio_segment_id === data.segment?.id);
-        selectedTimelineItemKey.value = timelineItemKey(savedItem || { client_key: clientKey });
-        timelinePlayhead.value = startMs / 1000;
-        renderTimeline?.();
-        window.requestAnimationFrame(() => document.querySelector('.at-audioTimelineCard')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
-        audioStatus.value = { type: 'success', message: 'Audio clip generated, saved and selected in the Voice track. Press Play in the timeline to listen.' };
+        await loadBlockAudio(keyBook);
+        audioStatus.value = { type: 'success', message: `Audio group generated with ${data.segments?.length || 1} timed clips. Insert it in the timeline when you are ready.` };
     } catch (error) {
         audioStatus.value = { type: 'danger', message: error.message || 'Unable to generate audio for this block.' };
     } finally {
         audioGenerating.value = false;
     }
+}
+
+async function insertAudioGroup(keyBook, jobId) {
+    const block = activeBlock();
+    if (!block?.block_uuid) return;
+    try {
+        await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/${encodeURIComponent(jobId)}/insert-timeline`, {});
+        await loadTimeline(keyBook);
+        audioStatus.value = { type: 'success', message: 'Audio group inserted into the Voice track.' };
+        window.requestAnimationFrame(() => document.querySelector('.at-audioTimelineCard')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    } catch (error) { audioStatus.value = { type: 'danger', message: error.message || 'Unable to insert this audio group.' }; }
+}
+
+function isAudioGroupExpanded(jobId) {
+    return expandedAudioGroupIds.value.includes(Number(jobId));
+}
+
+function toggleAudioGroup(jobId) {
+    const id = Number(jobId);
+    expandedAudioGroupIds.value = isAudioGroupExpanded(id)
+        ? expandedAudioGroupIds.value.filter((value) => value !== id)
+        : [...expandedAudioGroupIds.value, id];
+}
+
+function audioGroupDate(value) {
+    if (!value) return 'Date unavailable';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? 'Date unavailable' : date.toLocaleString();
+}
+
+async function removeAudioGroup(keyBook, jobId) {
+    const block = activeBlock();
+    if (!block?.block_uuid) return;
+
+    try {
+        await _.http.delJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/${encodeURIComponent(jobId)}`);
+        expandedAudioGroupIds.value = expandedAudioGroupIds.value.filter((id) => id !== Number(jobId));
+        await loadBlockAudio(keyBook);
+        audioStatus.value = { type: 'success', message: 'Generated audio deleted.' };
+    } catch (error) {
+        audioStatus.value = { type: 'danger', message: error.message || 'This audio cannot be deleted while it is used in the timeline.' };
+    }
+}
+
+function deleteAudioGroup(keyBook, jobId) {
+    _.Dialog({
+        size: 'sm',
+        stickyActions: true,
+        slots: {
+            header: _.div(
+                _.h3('Delete generated audio?'),
+                _.span({ class: 'text-muted' }, 'This action cannot be undone.'),
+            ),
+            content: ({ close }) => _.div({ class: 'at-audioDeleteConfirm' },
+                _.p('This removes the master audio and all of its generated clips.'),
+                _.div({ class: 'at-audioDeleteConfirmActions' },
+                    _.Btn({ color: 'secondary', onClick: close }, 'Cancel'),
+                    _.Btn({ color: 'danger', icon: 'delete', onClick: () => { close(); removeAudioGroup(keyBook, jobId); } }, 'Delete audio'),
+                ),
+            ),
+        },
+    }).open();
 }
 
 function audioTabs() {
@@ -315,27 +469,132 @@ function blockStyle() {
     );
 }
 
+async function openLibraryVoiceDialog(keyBook) {
+    const voices = _.rod([]);
+    const tones = _.rod([]);
+    const search = _.rod('');
+    const type = _.rod('');
+    const toneId = _.rod('');
+    const dialogStatus = _.rod(null);
+    const assigning = _.rod(false);
+
+    try {
+        const payload = await _.http.getJSON('/dashboard/api/audio-library/voices');
+        const data = audioData(payload);
+        voices.value = data.voices || [];
+        tones.value = data.tones || [];
+    } catch (error) {
+        audioStatus.value = { type: 'danger', message: error.message || 'Unable to load the AT voice library.' };
+        return;
+    }
+
+    const filteredVoices = () => {
+        const query = search.value.trim().toLowerCase();
+        const selectedTone = Number(toneId.value || 0);
+        return voices.value.filter((voice) => {
+            const haystack = `${voice.name} ${voice.language} ${voice.description || ''}`.toLowerCase();
+            return (!query || haystack.includes(query))
+                && (!type.value || voice.type === type.value)
+                && (!selectedTone || voice.samples.some((sample) => Number(sample.tone_id || sample.tone?.id) === selectedTone));
+        });
+    };
+
+    const chooseVoice = async (voice, close) => {
+        const block = activeBlock();
+        if (!block?.block_uuid) return;
+        assigning.value = true;
+        dialogStatus.value = null;
+        const requestedToneId = Number(toneId.value || 0) || Number(voice.samples[0]?.tone_id || voice.samples[0]?.tone?.id || 0) || null;
+        try {
+            await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/library-voice`, {
+                audio_library_voice_id: voice.id,
+                tone_id: requestedToneId,
+            }, { timeout: 900000, retry: { attempts: 0 } });
+            selectedLibraryVoice.value = { ...voice, selected_tone_id: requestedToneId };
+            voiceName.value = voice.name;
+            audioStatus.value = { type: 'success', message: `${voice.name} is assigned to this block and ready for AT generation.` };
+            close();
+        } catch (error) {
+            dialogStatus.value = { type: 'danger', message: error.message || 'Unable to prepare this voice.' };
+        } finally {
+            assigning.value = false;
+        }
+    };
+
+    _.Dialog({
+        size: 'xl',
+        stickyActions: true,
+        slots: {
+            header: _.div(_.h3('Choose an AT voice'), _.span({ class: 'text-muted' }, 'Search your audio library and choose a voice reference for this block.')),
+            content: ({ close }) => _.div({ class: 'at-libraryVoiceDialog' },
+                _.div({ class: 'at-libraryVoiceFilters' },
+                    _.Input({ label: 'Search voices', model: search, icon: 'search', placeholder: 'Name, language or description' }),
+                    _.Select({ label: 'Voice type', model: type, options: [{ value: '', label: 'All types' }, { value: 'female', label: 'Female' }, { value: 'male', label: 'Male' }, { value: 'neutral', label: 'Neutral' }] }),
+                    _.Select({ label: 'Tone available', model: toneId, options: () => [{ value: '', label: 'Any tone' }, ...tones.value.map((tone) => ({ value: String(tone.id), label: `#${tone.id} · ${tone.name}` }))] }),
+                ),
+                () => {
+                    const results = filteredVoices();
+                    return results.length ? _.div({ class: 'at-libraryVoiceResults' }, results.map((voice) => _.button({
+                        type: 'button',
+                        class: 'at-libraryVoiceResult',
+                        onclick: () => chooseVoice(voice, close),
+                    },
+                        _.div({ class: 'at-libraryVoiceResultHead' }, _.strong(voice.name), _.span(`${voice.type} · ${voice.language.toUpperCase()}`)),
+                        _.small(voice.description || 'No description'),
+                        _.div({ class: 'at-libraryVoiceToneChips' }, voice.samples.map((sample) => _.span(
+                            { style: { '--at-tone-color': sample.tone?.color || '#64748b' } },
+                            `#${sample.tone?.id || sample.tone_id} · ${sample.tone?.name || 'Tone'}`,
+                        ))),
+                    ))) : _.div({ class: 'at-libraryVoiceEmpty' }, 'No library voice matches these filters.');
+                },
+                () => dialogStatus.value ? _.Alert(dialogStatus.value) : null,
+                _.div({ class: 'at-libraryVoiceActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Cancel')),
+            ),
+        },
+    }).open();
+}
+
 function createAudio() {
     const words = wordCount(activeBlock()?.text_plain);
     const seconds = estimatedSeconds();
 
     return _.div({ class: 'at-audioCreate' },
-        _.Select({
-            label: 'TTS provider',
-            model: ttsProvider,
-            options: [
-                { label: 'Coqui local · XTTS v2', value: 'coqui-local' },
-                { label: 'Test mode · no audio file', value: 'mock' },
-            ],
-        }),
-        () => ttsProvider.value === 'coqui-local' ? _.Input({ label: 'Coqui voice reference ID', model: coquiVoiceId, icon: 'voice_selection', placeholder: 'ID returned by the Coqui TTS service' }) : null,
+        _.div({ class: 'at-audioVoiceSelect' },
+            _.div(_.span('AT voice'), _.strong(() => selectedLibraryVoice.value?.name || 'No voice selected'), _.small(() => selectedLibraryVoice.value ? `${selectedLibraryVoice.value.type} · ${selectedLibraryVoice.value.language.toUpperCase()}` : 'Choose a saved voice reference from your AT audio library.')),
+            _.Btn({ color: 'secondary', icon: 'record_voice_over', onClick: () => openLibraryVoiceDialog(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'Choose voice'),
+        ),
         _.div({ class: 'at-audioCostGrid' },
             _.div(_.span('Selected text'), _.strong(`${words} words`)),
             _.div(_.span('Estimated duration'), _.strong(`~${seconds}s`)),
             _.div(_.span('AT estimate'), _.strong('1 credit')),
         ),
-        _.Alert({ type: 'info', title: 'Draft audio', message: () => ttsProvider.value === 'coqui-local' ? 'Coqui generates a real WAV file for the selected text. The clip is then added to Voice in the timeline.' : 'The generated clip can be repositioned, trimmed or layered with music and effects in the timeline below.' }),
+        _.Alert({ type: 'info', title: 'AT generation', message: 'Audiobook Tools prepares the selected voice reference in its managed Coqui engine, then creates a real WAV clip in the Voice track.' }),
         _.Btn({ color: 'primary', dense: true, icon: 'play_circle', loading: audioGenerating, onClick: () => generateSelectedAudio(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'Generate selected audio'),
+        () => audioGroups.value.length ? _.div({ class: 'at-audioGeneratedGroups' },
+            _.div({ class: 'at-audioGeneratedGroupsHeader' }, _.strong('Generated audio'), _.small(`${audioGroups.value.length} master${audioGroups.value.length === 1 ? '' : 's'}`)),
+            ...audioGroups.value.map((group) => _.div({ class: 'at-audioGeneratedGroup' },
+                _.div({ class: 'at-audioGeneratedMaster' },
+                    _.button({ type: 'button', class: 'at-audioGroupToggle', title: isAudioGroupExpanded(group.id) ? 'Collapse clips' : 'Show clips', onclick: () => toggleAudioGroup(group.id) }, _.Icon ? _.Icon({ name: isAudioGroupExpanded(group.id) ? 'expand_more' : 'chevron_right' }) : '›'),
+                    _.div({ class: 'at-audioGeneratedMasterInfo' },
+                        _.strong(group.label || 'Narration'),
+                        _.small(`${group.segments.length} clips · ~${Math.ceil(group.duration_ms / 1000)}s · ${audioGroupDate(group.created_at)}`),
+                    ),
+                    group.in_timeline
+                        ? _.span({ class: 'at-audioGroupUsed' }, 'In timeline')
+                        : _.div({ class: 'at-audioGeneratedMasterActions' },
+                            _.Btn({ color: 'secondary', icon: 'playlist_add', onClick: () => insertAudioGroup(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1], group.id) }, 'Insert timeline'),
+                            _.Btn({ color: 'danger', icon: 'delete', title: 'Delete generated audio', onClick: () => deleteAudioGroup(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1], group.id) }),
+                        ),
+                ),
+                () => isAudioGroupExpanded(group.id) ? _.div({ class: 'at-audioGeneratedChildren' },
+                    ...group.segments.map((segment, index) => _.div({ class: 'at-audioGeneratedChild' },
+                        _.span(`Clip ${index + 1}`),
+                        _.span(`${wordCount(segment.text_plain)} words`),
+                        _.span(`~${Math.ceil((Number(segment.duration_ms || 0) + Number(segment.pause_after_ms || 0)) / 1000)}s`),
+                    )),
+                ) : null,
+            )),
+        ) : null,
     );
 }
 
@@ -363,6 +622,18 @@ function previewCard() {
     const style = () => `font-size:${fontSize.value}px;line-height:${lineHeight.value};color:${textColor.value};padding:${blockPadding.value}px;`;
     const keyBook = window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1];
 
+    const previewText = (block) => {
+        const text = String(block.text_plain || '');
+        const reading = readingPlayback.value;
+        if (!reading || reading.blockUuid !== block.block_uuid || reading.start < 0 || reading.end <= reading.start) return text;
+
+        return [
+            text.slice(0, reading.start),
+            _.span({ class: 'at-audioReadingWord' }, text.slice(reading.start, reading.end)),
+            text.slice(reading.end),
+        ];
+    };
+
     return _.section({ class: () => audiobookViewMode.value === 'developer' ? 'at-audioPreviewCard is-developer' : 'at-audioPreviewCard' },
         _.article({ class: 'at-audioReading', style }, () => audiobookBlocks.value.length
             ? audiobookBlocks.value.map((block, index) => _.button({
@@ -371,7 +642,7 @@ function previewCard() {
                 'data-audiobook-block-index': index,
                 title: 'Select this text to create its audio',
                 onclick: () => selectAudiobookBlock(index, keyBook),
-            }, block.text_plain))
+            }, previewText(block)))
             : _.p({ class: 'at-audioReadingEmpty' }, audiobookBook.value ? 'This manuscript has no text blocks yet.' : 'Loading manuscript…'),
         ),
     );
@@ -423,9 +694,7 @@ function drawTimeline(canvas) {
                 ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 10, Math.max(1, clipWidth - 2), rowHeight - 21);
                 ctx.fillStyle = '#f8fafc'; ctx.fillRect(x, y + 9, 5, rowHeight - 19); ctx.fillRect(x + clipWidth - 5, y + 9, 5, rowHeight - 19);
             }
-            ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 1; ctx.beginPath();
-            for (let waveX = 6; waveX < clipWidth - 6; waveX += 4) { const waveY = y + rowHeight / 2 + Math.sin((waveX + item.start_ms / 17) * .34) * ((rowHeight - 26) / 4); waveX === 6 ? ctx.moveTo(x + waveX, waveY) : ctx.lineTo(x + waveX, waveY); }
-            ctx.stroke();
+            drawTimelineClipWaveforms(ctx, item, x, y + 9, clipWidth, rowHeight - 19);
             const fadeInWidth = Math.min(clipWidth / 2, clipWidth * ((item.fade_in_ms || 0) / Math.max(1, item.duration_ms)));
             const fadeOutWidth = Math.min(clipWidth / 2, clipWidth * ((item.fade_out_ms || 0) / Math.max(1, item.duration_ms)));
             if (fadeInWidth || fadeOutWidth) {
@@ -433,6 +702,15 @@ function drawTimeline(canvas) {
                 if (fadeInWidth) { ctx.moveTo(x + 2, y + rowHeight - 13); ctx.lineTo(x + fadeInWidth, y + 13); }
                 if (fadeOutWidth) { ctx.moveTo(x + clipWidth - fadeOutWidth, y + 13); ctx.lineTo(x + clipWidth - 2, y + rowHeight - 13); }
                 ctx.stroke();
+            }
+            if (item.is_group && Array.isArray(item.group_segments)) {
+                let groupOffset = 0;
+                ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1;
+                item.group_segments.slice(0, -1).forEach((segment) => {
+                    groupOffset += Number(segment.duration_ms || 0) + Number(segment.pause_after_ms || 0);
+                    const dividerX = x + clipWidth * (groupOffset / Math.max(1, item.duration_ms));
+                    ctx.beginPath(); ctx.moveTo(dividerX, y + 11); ctx.lineTo(dividerX, y + rowHeight - 12); ctx.stroke();
+                });
             }
             ctx.fillStyle = 'rgba(255,255,255,.82)'; ctx.fillText(item.label, x + 6, y + rowHeight / 2);
         });
@@ -556,11 +834,8 @@ function timelineCard() {
                 _.Btn({ dense: true, color: 'secondary', icon: 'remove', title: 'Reduce fade out', onClick: () => adjustSelectedTimelineItem('fade_out_ms', -100) }),
                 _.Btn({ dense: true, color: 'secondary', icon: 'add', title: 'Increase fade out', onClick: () => { const item = selectedTimelineItem(); adjustSelectedTimelineItem('fade_out_ms', 100, Math.floor((item?.duration_ms || 0) / 2)); } }),
             ),
-            _.Btn({ dense: true, color: 'secondary', icon: 'delete_outline', title: 'Remove selected clip', onClick: () => {
-                timelineItems.value = timelineItems.value.filter((item) => timelineItemKey(item) !== selectedTimelineItemKey.value);
-                selectedTimelineItemKey.value = null;
-                render();
-            } }),
+            _.Btn({ dense: true, color: 'secondary', icon: 'delete_outline', title: 'Remove selected clip', onClick: () => removeSelectedTimelineItem(bookKey()) }),
+            () => selectedTimelineItem()?.is_group ? _.Btn({ dense: true, color: 'secondary', icon: 'call_split', title: 'Ungroup selected audio', onClick: () => ungroupSelectedTimelineItem(bookKey()) }) : null,
         ),
         canvas,
     );

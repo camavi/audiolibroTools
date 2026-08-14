@@ -28,6 +28,24 @@ class CoquiTtsService
         return $data;
     }
 
+    public function registerVoice(string $name, string $referencePath): string
+    {
+        $response = $this->request()
+            ->attach('file', fopen($referencePath, 'r'), basename($referencePath))
+            ->post($this->url('/v1/voices'), ['name' => $name]);
+
+        if ($response->failed()) {
+            throw new RuntimeException($response->json('message') ?: 'Coqui voice registration failed.');
+        }
+
+        $voiceId = $response->json('data.id');
+        if (! filled($voiceId)) {
+            throw new RuntimeException('Coqui did not return a voice identifier.');
+        }
+
+        return $voiceId;
+    }
+
     public function download(string $audioUrl): string
     {
         $response = $this->request()->get($this->url($audioUrl));
