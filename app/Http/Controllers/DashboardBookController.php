@@ -1209,15 +1209,15 @@ class DashboardBookController extends Controller
         return response()->json(['data' => ['deleted' => true]]);
     }
 
-    public function insertAudioGroupTimeline(string $keyBook, string $blockUuid, BookAudioJob $job): JsonResponse
+    public function insertAudioGroupTimeline(Request $request, string $keyBook, string $blockUuid, BookAudioJob $job): JsonResponse
     {
+        $validated = $request->validate(['start_ms' => ['nullable', 'integer', 'min:0', 'max:86400000']]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
         abort_unless($job->book_id === $book->id && $job->block_uuid === $blockUuid && $job->status === 'completed', 404);
         $segments = $job->segments()->orderBy('segment_index')->get();
         abort_if($segments->isEmpty(), 422, 'This audio group has no completed clips.');
         $duration = $segments->sum(fn (BookAudioSegment $segment) => (int) $segment->duration_ms + (int) $segment->pause_after_ms);
-        $start = (int) ($book->audioTimelineItems()->max('start_ms') ?? 0);
-        if ($book->audioTimelineItems()->exists()) $start += 1000;
+        $start = (int) ($validated['start_ms'] ?? 0);
         $item = BookAudioTimelineItem::query()->create([
             'book_id' => $book->id, 'book_audio_segment_id' => $segments->first()->id,
             'book_audio_job_id' => $job->id, 'is_group' => true, 'track' => 'voice',

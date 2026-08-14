@@ -422,7 +422,9 @@ async function insertAudioGroup(keyBook, jobId) {
     const block = activeBlock();
     if (!block?.block_uuid) return;
     try {
-        await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/${encodeURIComponent(jobId)}/insert-timeline`, {});
+        await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/${encodeURIComponent(jobId)}/insert-timeline`, {
+            start_ms: Math.round(Math.max(0, timelinePlayhead.value) * 1000),
+        });
         await loadTimeline(keyBook);
         audioStatus.value = { type: 'success', message: 'Audio group inserted into the Voice track.' };
         window.requestAnimationFrame(() => document.querySelector('.at-audioTimelineCard')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
