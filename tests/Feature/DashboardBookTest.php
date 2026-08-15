@@ -1926,6 +1926,18 @@ class DashboardBookTest extends TestCase
         $this->assertDatabaseMissing('book_audio_timeline_items', ['id' => $clip->id]);
     }
 
+    public function test_dashboard_publish_returns_the_three_channel_contract_when_timeline_is_empty(): void
+    {
+        $book = $this->createBook();
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/audio-publish")
+            ->assertOk()
+            ->assertJsonPath('data.channels.voice.status', 'empty')
+            ->assertJsonPath('data.channels.music.status', 'empty')
+            ->assertJsonPath('data.channels.fx.status', 'empty')
+            ->assertJsonPath('data.duration_ms', 0);
+    }
+
     public function test_dashboard_ungroups_a_trimmed_audio_master_without_restoring_hidden_audio(): void
     {
         $book = $this->createBook();

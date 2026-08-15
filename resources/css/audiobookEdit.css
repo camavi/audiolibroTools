@@ -13,6 +13,17 @@
     box-shadow: 0 14px 32px rgb(15 23 42 / 7%)
 }
 
+.at-audioPublishDialog { display: grid; gap: 1rem; width: 100%; min-width: 0; max-width: 100%; overflow-x: hidden; }
+.at-audioPublishNotice,
+.at-audioPublishProgress { display: flex; align-items: center; gap: .55rem; min-width: 0; padding: .8rem 1rem; border-radius: .55rem; background: #eff6ff; color: #36527a; }
+.at-audioPublishNotice span { min-width: 0; overflow-wrap: anywhere; }
+.at-audioPublishProgress { justify-content: center; min-height: 8rem; }
+.at-audioPublishResults { display: grid; gap: .55rem; }
+.at-audioPublishRow { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-width: 0; padding: .7rem .85rem; border: 1px solid #dbe3ee; border-radius: .55rem; background: #f8fafc; }
+.at-audioPublishRow div { display: grid; min-width: 0; gap: .15rem; }
+.at-audioPublishRow small { overflow-wrap: anywhere; }
+.at-audioPublishReady { display: grid; gap: .9rem; }
+
 .at-audiobookTopbar {
     display: flex;
     align-items: center;

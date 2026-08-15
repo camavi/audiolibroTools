@@ -13,6 +13,8 @@ const lineHeight = _.rod('1.62');
 const textColor = _.rod('#182033');
 const blockPadding = _.rod('24');
 const audioStatus = _.rod(null);
+const publishResult = _.rod(null);
+const publishRunning = _.rod(false);
 const audioSegments = _.rod([]);
 const audioGroups = _.rod([]);
 const expandedAudioGroupIds = _.rod([]);
@@ -758,6 +760,50 @@ function deleteAudioGroup(keyBook, jobId) {
     }).open();
 }
 
+async function publishAudiobook(keyBook) {
+    if (publishRunning.value) return;
+    publishRunning.value = true;
+    publishResult.value = null;
+    try {
+        const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-publish`, {});
+        publishResult.value = audioData(payload);
+        audioStatus.value = { type: 'success', message: 'Voice, Music and FX masters rendered successfully.' };
+    } catch (error) {
+        audioStatus.value = { type: 'danger', message: error.message || 'Unable to render the audiobook masters.' };
+    } finally {
+        publishRunning.value = false;
+    }
+}
+
+function openPublishDialog(keyBook) {
+    publishResult.value = null;
+    _.Dialog({
+        size: 'lg',
+        stickyActions: true,
+        slots: {
+            header: _.div(
+                _.h3('Publish audiobook'),
+                _.span({ class: 'text-muted' }, 'Render the saved timeline into three independent master channels.'),
+            ),
+            content: ({ close }) => _.div({ class: 'at-audioPublishDialog' },
+                _.div({ class: 'at-audioPublishNotice' }, _.Icon ? _.Icon({ name: 'info' }) : null, _.span('The timeline remains editable. Publishing creates new WAV files and never replaces your clips.')),
+                () => publishRunning.value
+                    ? _.div({ class: 'at-audioPublishProgress' }, _.Icon ? _.Icon({ name: 'progress_activity' }) : null, _.span('Rendering Voice, Music and FX…'))
+                    : publishResult.value
+                        ? _.div({ class: 'at-audioPublishResults' },
+                            _.strong('Published masters'),
+                            ...Object.entries(publishResult.value.channels || {}).map(([track, channel]) => _.div({ class: 'at-audioPublishRow' },
+                                _.div(_.strong(track === 'voice' ? 'Voice' : track === 'music' ? 'Music' : 'FX'), _.small(`${Math.ceil(Number(channel.duration_ms || 0) / 1000)}s · ${channel.status}`)),
+                                channel.url ? _.Btn({ color: 'secondary', icon: 'download', onClick: () => window.open(channel.url, '_blank', 'noopener') }, 'Download WAV') : _.span({ class: 'text-muted' }, 'No clips'),
+                            )),
+                            _.Btn({ color: 'secondary', onClick: close }, 'Close'),
+                        )
+                        : _.div({ class: 'at-audioPublishReady' }, _.p('The renderer will consolidate all clips according to their current position, trim, volume and fades.'), _.Btn({ color: 'primary', icon: 'publish', loading: publishRunning, onClick: () => publishAudiobook(keyBook) }, 'Render masters')),
+            ),
+        },
+    }).open();
+}
+
 function audioTabs() {
     const tabs = [
         ['editing', 'Audio direction'],
@@ -1493,16 +1539,16 @@ function timelineCard() {
                     _.small(multiple ? 'Shift+click adds clips · Drag to move the selection together' : (item.is_group ? `${item.group_segments?.length || 0} clips · Double click the master to ${isTimelineGroupExpanded(item) ? 'collapse' : 'expand'}` : 'Drag center to move · edges to trim')),
                 ),
                 _.div({ class: 'at-audioClipControls' },
-                _.Btn({ dense: true, color: 'secondary', icon: 'volume_off', title: 'Toggle clip mute', onClick: () => updateSelectedTimelineItem((item) => ({ ...item, muted: !item.muted })) }),
-                _.span({ class: 'at-audioClipValue' }, () => selectedTimelineItem() ? `Vol ${selectedTimelineItem().volume ?? 100}%` : 'Vol'),
-                _.Btn({ dense: true, color: 'secondary', icon: 'remove', title: 'Lower clip volume', onClick: () => adjustSelectedTimelineItem('volume', -5, 100) }),
-                _.Btn({ dense: true, color: 'secondary', icon: 'add', title: 'Raise clip volume', onClick: () => adjustSelectedTimelineItem('volume', 5, 100) }),
-                _.span({ class: 'at-audioClipValue' }, () => selectedTimelineItem() ? `In ${selectedTimelineItem().fade_in_ms || 0}ms` : 'Fade in'),
-                _.Btn({ dense: true, color: 'secondary', icon: 'remove', title: 'Reduce fade in', onClick: () => adjustSelectedTimelineItem('fade_in_ms', -100) }),
-                _.Btn({ dense: true, color: 'secondary', icon: 'add', title: 'Increase fade in', onClick: () => { const item = selectedTimelineItem(); adjustSelectedTimelineItem('fade_in_ms', 100, Math.floor((item?.duration_ms || 0) / 2)); } }),
-                _.span({ class: 'at-audioClipValue' }, () => selectedTimelineItem() ? `Out ${selectedTimelineItem().fade_out_ms || 0}ms` : 'Fade out'),
-                _.Btn({ dense: true, color: 'secondary', icon: 'remove', title: 'Reduce fade out', onClick: () => adjustSelectedTimelineItem('fade_out_ms', -100) }),
-                _.Btn({ dense: true, color: 'secondary', icon: 'add', title: 'Increase fade out', onClick: () => { const item = selectedTimelineItem(); adjustSelectedTimelineItem('fade_out_ms', 100, Math.floor((item?.duration_ms || 0) / 2)); } }),
+                    _.Btn({ dense: true, color: 'secondary', icon: 'volume_off', title: 'Toggle clip mute', onClick: () => updateSelectedTimelineItem((item) => ({ ...item, muted: !item.muted })) }),
+                    _.span({ class: 'at-audioClipValue' }, () => selectedTimelineItem() ? `Vol ${selectedTimelineItem().volume ?? 100}%` : 'Vol'),
+                    _.Btn({ dense: true, color: 'secondary', icon: 'remove', title: 'Lower clip volume', onClick: () => adjustSelectedTimelineItem('volume', -5, 100) }),
+                    _.Btn({ dense: true, color: 'secondary', icon: 'add', title: 'Raise clip volume', onClick: () => adjustSelectedTimelineItem('volume', 5, 100) }),
+                    _.span({ class: 'at-audioClipValue' }, () => selectedTimelineItem() ? `In ${selectedTimelineItem().fade_in_ms || 0}ms` : 'Fade in'),
+                    _.Btn({ dense: true, color: 'secondary', icon: 'remove', title: 'Reduce fade in', onClick: () => adjustSelectedTimelineItem('fade_in_ms', -100) }),
+                    _.Btn({ dense: true, color: 'secondary', icon: 'add', title: 'Increase fade in', onClick: () => { const item = selectedTimelineItem(); adjustSelectedTimelineItem('fade_in_ms', 100, Math.floor((item?.duration_ms || 0) / 2)); } }),
+                    _.span({ class: 'at-audioClipValue' }, () => selectedTimelineItem() ? `Out ${selectedTimelineItem().fade_out_ms || 0}ms` : 'Fade out'),
+                    _.Btn({ dense: true, color: 'secondary', icon: 'remove', title: 'Reduce fade out', onClick: () => adjustSelectedTimelineItem('fade_out_ms', -100) }),
+                    _.Btn({ dense: true, color: 'secondary', icon: 'add', title: 'Increase fade out', onClick: () => { const item = selectedTimelineItem(); adjustSelectedTimelineItem('fade_out_ms', 100, Math.floor((item?.duration_ms || 0) / 2)); } }),
                 ),
                 !multiple && item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: isTimelineGroupExpanded(item) ? 'unfold_less' : 'unfold_more', title: isTimelineGroupExpanded(item) ? 'Collapse clips' : 'Expand clips', onClick: () => toggleTimelineGroup(item) }) : null,
                 !multiple && item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: 'call_split', title: 'Ungroup selected audio', onClick: () => ungroupSelectedTimelineItem(bookKey()) }) : null,
@@ -1526,8 +1572,8 @@ export default function audiobookEdit(ctx) {
         _.div({ class: 'at-audiobookTopbar' },
             _.div(_.span({ class: 'at-audiobookEyebrow' }, 'Audiobook studio'), _.h2(() => audiobookBook.value?.name || 'Loading audiobook…')),
             _.div({ class: 'at-audiobookTopbarActions' },
-                _.Btn({ color: 'secondary', dense: true, onClick: () => _.router.navigate(`/dashboard/book/${keyBook}/panel`) }, 'Book panel'),
-                _.Btn({ color: 'primary', dense: true, icon: 'publish', onClick: () => { audioStatus.value = { type: 'info', message: 'Publishing will create the final Music, Voice and FX master channels.' }; } }, 'Publish audiobook'),
+                _.Btn({ color: 'secondary', onClick: () => _.router.navigate(`/dashboard/book/${keyBook}/panel`) }, 'Book panel'),
+                _.Btn({ color: 'primary', icon: 'publish', onClick: () => openPublishDialog(keyBook) }, 'Publish audiobook'),
             ),
         ),
         () => audioStatus.value ? _.Alert({ type: audioStatus.value.type, message: audioStatus.value.message }) : null,

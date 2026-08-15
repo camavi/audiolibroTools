@@ -36,6 +36,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Symfony\Component\Process\Process;
 
 class DashboardBookController extends Controller
 {
@@ -1415,6 +1416,97 @@ class DashboardBookController extends Controller
         });
 
         return $this->audioTimeline($keyBook);
+    }
+
+    public function publishAudioTimeline(string $keyBook): JsonResponse
+    {
+        set_time_limit(0);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $roots = $book->audioTimelineItems()
+            ->whereNull('parent_timeline_item_id')
+            ->with([
+                'audioSegment', 'mediaAsset', 'librarySample',
+                'audioJob.segments' => fn ($query) => $query->orderBy('segment_index'),
+                'timelineChildren.audioSegment', 'timelineChildren.mediaAsset', 'timelineChildren.librarySample',
+            ])
+            ->get();
+        $entries = ['voice' => [], 'music' => [], 'fx' => []];
+        $addEntry = function (string $track, ?string $path, int $startMs, int $durationMs, int $trimStartMs, int $trimEndMs, float $volume, int $fadeInMs, int $fadeOutMs) use (&$entries): void {
+            if (! isset($entries[$track]) || ! $path || str_starts_with($path, 'mock://')) return;
+            $absolute = Storage::disk('public')->path($path);
+            if (! is_file($absolute) || $durationMs < 1) return;
+            $entries[$track][] = compact('absolute', 'startMs', 'durationMs', 'trimStartMs', 'trimEndMs', 'volume', 'fadeInMs', 'fadeOutMs');
+        };
+
+        foreach ($roots as $root) {
+            if ($root->timelineChildren->isNotEmpty()) {
+                foreach ($root->timelineChildren->sortBy('start_ms') as $child) {
+                    $path = $child->audioSegment?->audio_path ?? $child->mediaAsset?->audio_path ?? $child->librarySample?->audio_path;
+                    $volume = ((float) ($root->volume ?? 100) / 100) * ((float) ($child->volume ?? 100) / 100);
+                    $addEntry($child->track, $path, (int) $child->start_ms, (int) $child->duration_ms, (int) $child->trim_start_ms, (int) $child->trim_end_ms, $volume, (int) $child->fade_in_ms, (int) $child->fade_out_ms);
+                }
+                continue;
+            }
+
+            if ($root->is_group && $root->audioJob?->segments->isNotEmpty()) {
+                $offset = 0;
+                foreach ($root->audioJob->segments as $segment) {
+                    $addEntry($root->track, $segment->audio_path, (int) $root->start_ms + $offset, (int) $segment->duration_ms, 0, 0, (float) ($root->volume ?? 100) / 100, (int) $root->fade_in_ms, (int) $root->fade_out_ms);
+                    $offset += (int) $segment->duration_ms + (int) $segment->pause_after_ms;
+                }
+                continue;
+            }
+
+            $path = $root->audioSegment?->audio_path ?? $root->mediaAsset?->audio_path ?? $root->librarySample?->audio_path;
+            $addEntry($root->track, $path, (int) $root->start_ms, (int) $root->duration_ms, (int) $root->trim_start_ms, (int) $root->trim_end_ms, (float) ($root->volume ?? 100) / 100, (int) $root->fade_in_ms, (int) $root->fade_out_ms);
+        }
+
+        $channels = [];
+        foreach (['voice', 'music', 'fx'] as $track) {
+            $trackEntries = $entries[$track];
+            if (! count($trackEntries)) {
+                $channels[$track] = ['status' => 'empty', 'duration_ms' => 0, 'url' => null];
+                continue;
+            }
+            $filename = "audiobooks/{$book->key_book}/published/{$track}-" . Str::uuid() . '.wav';
+            Storage::disk('public')->makeDirectory(dirname($filename));
+            $this->renderAudioChannel($trackEntries, Storage::disk('public')->path($filename));
+            $durationMs = max(array_map(fn (array $entry): int => $entry['startMs'] + $entry['durationMs'], $trackEntries));
+            // Build the URL from the current API request host. APP_URL is
+            // commonly `http://localhost` in local .env files, while dev.sh
+            // serves Laravel on 127.0.0.1:8000 (or another configured port).
+            $channels[$track] = ['status' => 'ready', 'duration_ms' => $durationMs, 'url' => url(Storage::disk('public')->url($filename))];
+        }
+
+        return response()->json(['data' => ['channels' => $channels, 'duration_ms' => max(array_column($channels, 'duration_ms'))]]);
+    }
+
+    /** @param array<int, array<string, mixed>> $entries */
+    private function renderAudioChannel(array $entries, string $output): void
+    {
+        $arguments = [config('audiobook.ffmpeg_binary', env('FFMPEG_BINARY', 'ffmpeg')), '-y'];
+        $filters = [];
+        $labels = [];
+        foreach ($entries as $index => $entry) {
+            $arguments[] = '-i';
+            $arguments[] = $entry['absolute'];
+            $duration = max(.001, ((int) $entry['durationMs']) / 1000);
+            $trimStart = max(0, ((int) $entry['trimStartMs']) / 1000);
+            $filter = "[{$index}:a]atrim=start={$trimStart}:duration={$duration},asetpts=PTS-STARTPTS";
+            $filter .= ',volume=' . max(0, min(4, (float) $entry['volume']));
+            if ((int) $entry['fadeInMs'] > 0) $filter .= ',afade=t=in:st=0:d=' . ((int) $entry['fadeInMs'] / 1000);
+            if ((int) $entry['fadeOutMs'] > 0) $filter .= ',afade=t=out:st=' . max(0, $duration - ((int) $entry['fadeOutMs'] / 1000)) . ':d=' . ((int) $entry['fadeOutMs'] / 1000);
+            $delay = max(0, (int) $entry['startMs']);
+            $filter .= ",adelay={$delay}|{$delay}[a{$index}]";
+            $filters[] = $filter;
+            $labels[] = "[a{$index}]";
+        }
+        $filters[] = implode('', $labels) . 'amix=inputs=' . count($labels) . ':duration=longest:normalize=0,aresample=async=1:first_pts=0[mix]';
+        $arguments = array_merge($arguments, ['-filter_complex', implode(';', $filters), '-map', '[mix]', '-ac', '2', '-ar', '44100', '-c:a', 'pcm_s16le', $output]);
+        $process = new Process($arguments);
+        $process->setTimeout(0);
+        $process->run();
+        if (! $process->isSuccessful()) throw new \RuntimeException('Audio mixdown failed: ' . trim($process->getErrorOutput() ?: $process->getOutput()));
     }
 
     public function blockTranslations(string $keyBook, string $blockUuid): JsonResponse

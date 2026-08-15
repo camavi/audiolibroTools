@@ -60,6 +60,7 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::get('/books/{keyBook}/voices', [DashboardBookController::class, 'voiceProfiles'])->name('books.voices');
     Route::get('/books/{keyBook}/audio-timeline', [DashboardBookController::class, 'audioTimeline'])->name('books.audio-timeline');
     Route::put('/books/{keyBook}/audio-timeline', [DashboardBookController::class, 'saveAudioTimeline'])->name('books.audio-timeline.save');
+    Route::post('/books/{keyBook}/audio-publish', [DashboardBookController::class, 'publishAudioTimeline'])->name('books.audio-publish');
     Route::delete('/books/{keyBook}/audio-timeline/{timelineItem}', [DashboardBookController::class, 'deleteAudioTimelineItem'])->name('books.audio-timeline.delete');
     Route::post('/books/{keyBook}/voices', [DashboardBookController::class, 'storeVoiceProfile'])->name('books.voices.store');
     Route::get('/books/{keyBook}/translation-terms', [DashboardBookController::class, 'translationTerms'])->name('books.translation-terms');
