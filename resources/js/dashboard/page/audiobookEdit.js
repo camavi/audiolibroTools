@@ -382,7 +382,10 @@ function stopTimelinePlayers() {
 function syncTimelinePlayers(playhead, seek = false) {
     const activeKeys = new Set();
     let nextReading = null;
-    timelineItems.value.filter((item) => item.track === 'voice').forEach((item) => timelinePlayableParts(item).forEach((part) => {
+    // Every timeline channel uses the same transport. Voice additionally
+    // updates the manuscript reading highlight, while Music and FX simply
+    // mix into the playback at their own timeline positions.
+    timelineItems.value.forEach((item) => timelinePlayableParts(item).forEach((part) => {
         const url = timelineAudioUrl(part);
         const start = (item.start_ms + part.timeline_offset_ms) / 1000;
         const end = start + Number(part.playable_duration_ms || 0) / 1000;
@@ -398,7 +401,7 @@ function syncTimelinePlayers(playhead, seek = false) {
         audio.volume = Math.max(0, Math.min(1, ((item.volume ?? 100) / 100) * ((trackState.value[item.track]?.volume ?? 100) / 100) * fadeInGain * fadeOutGain));
         const offset = Math.max(0, playhead - start);
         const offsetMs = Math.round(part.media_offset_ms + offset * 1000);
-        const word = Array.isArray(part.word_timings)
+        const word = item.track === 'voice' && Array.isArray(part.word_timings)
             ? part.word_timings.find((timing) => offsetMs >= Number(timing.start_ms || 0) && offsetMs < Number(timing.end_ms || 0))
             : null;
         if (word && item.block_uuid && Number.isInteger(Number(word.source_start)) && Number.isInteger(Number(word.source_end))) {
@@ -423,8 +426,8 @@ function stopTimelinePlayback() {
 }
 function startTimelinePlayback(render) {
     if (timelineIsPlaying.value) return;
-    const available = timelineItems.value.some((item) => item.track === 'voice' && timelineAudioUrl(item));
-    if (!available) audioStatus.value = { type: 'info', message: 'The playhead is running. Generated mock clips do not have a playable audio file yet.' };
+    const available = timelineItems.value.some((item) => timelineAudioUrl(item));
+    if (!available) audioStatus.value = { type: 'info', message: 'The playhead is running. There are no playable audio files in the timeline yet.' };
     timelineIsPlaying.value = true;
     timelineStartedAt = performance.now() - timelinePlayhead.value * 1000;
     const tick = (now) => {
