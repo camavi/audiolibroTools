@@ -22,6 +22,7 @@ const timelineCues = _.rod([]);
 const timelineZoom = _.rod(1);
 const timelineItems = _.rod([]);
 const timelinePlayhead = _.rod(0);
+const timelineLoopRange = _.rod(null);
 const selectedTimelineItemKey = _.rod(null);
 const selectedTimelineItemKeys = _.rod([]);
 const expandedTimelineGroupKey = _.rod(null);
@@ -370,6 +371,29 @@ function timelineCanvasWidth(canvas, duration) {
     const viewportWidth = Math.max(1, canvas.parentElement?.clientWidth || canvas.clientWidth || 1);
     return Math.ceil(Math.max(viewportWidth, viewportWidth * timelineZoom.value * duration / 90));
 }
+function timelineClipGainY(clipY, clipHeight, volume) {
+    const level = Math.max(0, Math.min(1, Number(volume ?? 100) / 100));
+    return clipY + clipHeight * (1 - level);
+}
+function selectedTimelineLoopRange() {
+    const selection = selectedTimelineItems();
+    if (!selection.length) return null;
+    const start = Math.min(...selection.map((item) => Number(item.start_ms || 0) / 1000));
+    const end = Math.max(...selection.map((item) => (Number(item.start_ms || 0) + Number(item.duration_ms || 0)) / 1000));
+    return end > start ? { start, end } : null;
+}
+function toggleTimelineLoop() {
+    const range = selectedTimelineLoopRange();
+    if (!range) {
+        audioStatus.value = { type: 'info', message: 'Select one or more clips to set the loop range.' };
+        return;
+    }
+    const current = timelineLoopRange.value;
+    const sameRange = current && Math.abs(current.start - range.start) < .01 && Math.abs(current.end - range.end) < .01;
+    timelineLoopRange.value = sameRange ? null : range;
+    audioStatus.value = { type: 'info', message: sameRange ? 'Loop disabled.' : `Loop set from ${range.start.toFixed(2)}s to ${range.end.toFixed(2)}s.` };
+    renderTimeline?.();
+}
 function trackCanPlay(track) {
     const states = trackState.value;
     const hasSolo = Object.values(states).some((state) => state.solo);
@@ -431,7 +455,13 @@ function startTimelinePlayback(render) {
     timelineIsPlaying.value = true;
     timelineStartedAt = performance.now() - timelinePlayhead.value * 1000;
     const tick = (now) => {
-        const next = (now - timelineStartedAt) / 1000;
+        let next = (now - timelineStartedAt) / 1000;
+        const loop = timelineLoopRange.value;
+        if (loop && next >= loop.end) {
+            next = loop.start;
+            timelineStartedAt = now - loop.start * 1000;
+            syncTimelinePlayers(next, true);
+        }
         if (next >= timelineEnd()) { timelinePlayhead.value = timelineEnd(); stopTimelinePlayback(); render(); return; }
         timelinePlayhead.value = next;
         syncTimelinePlayers(next);
@@ -1101,6 +1131,17 @@ function drawTimeline(canvas, labelCanvas) {
                 if (fadeOutWidth) { ctx.moveTo(x + clipWidth - fadeOutWidth, y + 13); ctx.lineTo(x + clipWidth - 2, y + rowHeight - 13); }
                 ctx.stroke();
             }
+            const gainY = timelineClipGainY(clipY, clipHeight, item.volume);
+            ctx.strokeStyle = selected ? 'rgba(255,255,255,.96)' : 'rgba(255,255,255,.54)';
+            ctx.lineWidth = selected ? 1.5 : 1;
+            ctx.beginPath(); ctx.moveTo(x + 3, gainY); ctx.lineTo(x + clipWidth - 3, gainY); ctx.stroke();
+            if (selected) {
+                ctx.fillStyle = '#f8fafc'; ctx.beginPath(); ctx.arc(x + clipWidth - 7, gainY, 3, 0, Math.PI * 2); ctx.fill();
+                if (clipWidth > 72) {
+                    ctx.fillStyle = 'rgba(255,255,255,.95)';
+                    ctx.fillText(`${Math.round(Number(item.volume ?? 100))}%`, x + 8, Math.max(clipY + 11, gainY - 7));
+                }
+            }
             if (!expanded && item.is_group && Array.isArray(item.group_segments)) {
                 const trimStart = Number(item.trim_start_ms || 0);
                 const trimEnd = timelineSourceDuration(item) - Number(item.trim_end_ms || 0);
@@ -1122,6 +1163,15 @@ function drawTimeline(canvas, labelCanvas) {
         const x = width * cue / duration;
         ctx.fillStyle = '#fbbf24'; ctx.beginPath(); ctx.moveTo(x - 4, 0); ctx.lineTo(x + 4, 0); ctx.lineTo(x, 7); ctx.closePath(); ctx.fill();
     });
+    const loop = timelineLoopRange.value;
+    if (loop) {
+        const loopStartX = width * loop.start / duration;
+        const loopEndX = width * loop.end / duration;
+        ctx.fillStyle = 'rgba(59,130,246,.13)'; ctx.fillRect(loopStartX, rulerHeight, Math.max(1, loopEndX - loopStartX), height - rulerHeight);
+        ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(loopStartX, 0); ctx.lineTo(loopStartX, height); ctx.moveTo(loopEndX, 0); ctx.lineTo(loopEndX, height); ctx.stroke();
+        ctx.fillStyle = '#bfdbfe'; ctx.fillText('LOOP', loopStartX + 5, 17);
+    }
     const playheadX = width * timelinePlayhead.value / duration;
     ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(playheadX, 0); ctx.lineTo(playheadX, height); ctx.stroke();
 }
@@ -1196,7 +1246,14 @@ function timelineCard() {
                 const clipStart = item.start_ms / 1000;
                 const clipEnd = clipStart + item.duration_ms / 1000;
                 const selection = selectedTimelineItems();
-                const mode = selection.length > 1 ? 'move-group' : (seconds - clipStart < edgeSeconds ? 'trim-start' : clipEnd - seconds < edgeSeconds ? 'trim-end' : 'move');
+                const lanes = timelineLaneLayout();
+                const rowHeight = (rect.height - 34) / lanes.length;
+                const laneIndex = lanes.findIndex((lane) => lane.key === trackAt && Number(lane.lane || 0) === Number(laneAt || 0));
+                const clipY = 34 + laneIndex * rowHeight + 9;
+                const clipHeight = rowHeight - 19;
+                const gainY = timelineClipGainY(clipY, clipHeight, item.volume);
+                const isGainHandle = Math.abs(event.clientY - rect.top - gainY) <= 8;
+                const mode = isGainHandle ? 'volume' : (selection.length > 1 ? 'move-group' : (seconds - clipStart < edgeSeconds ? 'trim-start' : clipEnd - seconds < edgeSeconds ? 'trim-end' : 'move'));
                 drag = { key, item, items: selection, mode, offset: seconds - clipStart, end: clipEnd, sourceDuration: timelineSourceDuration(item), before: timelineSnapshot(), changed: false };
                 canvas.setPointerCapture(event.pointerId);
             }
@@ -1214,7 +1271,24 @@ function timelineCard() {
         if (!drag) return;
         const { track, lane, seconds, duration } = geometry(event);
         const key = drag.key;
-        if (drag.mode === 'move' || drag.mode === 'move-group') {
+        if (drag.mode === 'volume') {
+            const lanes = timelineLaneLayout();
+            const rowHeight = (canvas.getBoundingClientRect().height - 34) / lanes.length;
+            const laneIndex = lanes.findIndex((entry) => entry.key === drag.item.track && Number(entry.lane || 0) === Number(drag.item.lane || 0));
+            const clipY = 34 + laneIndex * rowHeight + 9;
+            const clipHeight = rowHeight - 19;
+            const localY = event.clientY - canvas.getBoundingClientRect().top;
+            const targetVolume = Math.round(Math.max(0, Math.min(100, (1 - (localY - clipY) / Math.max(1, clipHeight)) * 100)));
+            const originals = new Map(drag.items.map((item) => [timelineItemKey(item), Number(item.volume ?? 100)]));
+            const delta = targetVolume - Number(drag.item.volume ?? 100);
+            timelineItems.value = timelineItems.value.map((item) => {
+                const original = originals.get(timelineItemKey(item));
+                if (original === undefined) return item;
+                const volume = Math.max(0, Math.min(100, original + delta));
+                drag.changed ||= volume !== original;
+                return { ...item, volume };
+            });
+        } else if (drag.mode === 'move' || drag.mode === 'move-group') {
             const dragKeys = drag.items.map(timelineItemKey);
             const start = magnetizeTimelineTime(Math.max(0, seconds - drag.offset), duration, dragKeys);
             const startMs = Math.round(start * 1000);
@@ -1346,6 +1420,7 @@ function timelineCard() {
                 !multiple && item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: isTimelineGroupExpanded(item) ? 'unfold_less' : 'unfold_more', title: isTimelineGroupExpanded(item) ? 'Collapse clips' : 'Expand clips', onClick: () => toggleTimelineGroup(item) }) : null,
                 !multiple && item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: 'call_split', title: 'Ungroup selected audio', onClick: () => ungroupSelectedTimelineItem(bookKey()) }) : null,
                 !multiple && !item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: 'content_cut', title: 'Split clip at playhead', onClick: () => splitSelectedTimelineItem(bookKey()) }) : null,
+                _.Btn({ dense: true, color: () => timelineLoopRange.value ? 'primary' : 'secondary', icon: 'repeat', title: 'Loop selected clip(s)', onClick: toggleTimelineLoop }),
                 _.Btn({ dense: true, color: 'secondary', icon: 'content_copy', title: 'Duplicate selected clip', onClick: () => duplicateSelectedTimelineItem(bookKey()) }),
                 _.Btn({ dense: true, color: 'danger', icon: 'delete_outline', title: 'Remove selected clip', onClick: () => removeSelectedTimelineItem(bookKey()) }),
             );
