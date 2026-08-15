@@ -7,6 +7,8 @@ use App\Jobs\ProcessBookTranslationJob;
 use App\Models\AiChatMessage;
 use App\Models\AiChatThread;
 use App\Models\AudioLibraryVoice;
+use App\Models\AudioLibraryVoiceSample;
+use App\Models\AudioMediaAsset;
 use App\Models\Book;
 use App\Models\BookAudioJob;
 use App\Models\BookAudioSegment;
@@ -1158,13 +1160,14 @@ class DashboardBookController extends Controller
     {
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
         $items = $book->audioTimelineItems()
-            ->with(['audioSegment:id,block_uuid,audio_path,duration_ms,status', 'audioJob.segments:id,book_audio_job_id,audio_path,duration_ms,pause_after_ms,segment_index,text_plain,source_start,source_end,metadata_json'])
+            ->with(['audioSegment:id,block_uuid,audio_path,duration_ms,status', 'librarySample:id,audio_library_voice_id,audio_path,duration_ms,original_name', 'mediaAsset:id,account_id,audio_path,duration_ms,original_name', 'audioJob.segments:id,book_audio_job_id,audio_path,duration_ms,pause_after_ms,segment_index,text_plain,source_start,source_end,metadata_json'])
             ->orderBy('track')
             ->orderBy('sort_order')
             ->get()
             ->map(function (BookAudioTimelineItem $item): array {
                 $data = $item->toArray();
-                $data['audio_path'] = $item->audioSegment?->audio_path;
+                $data['audio_path'] = $item->audioSegment?->audio_path
+                    ?? ($item->mediaAsset ? route('dashboard.api.audio-media.stream', $item->mediaAsset) : ($item->librarySample ? route('dashboard.api.audio-library.samples.stream', $item->librarySample) : null));
                 $data['block_uuid'] = $item->audioJob?->block_uuid ?? $item->audioSegment?->block_uuid;
                 $data['group_segments'] = $item->is_group ? $item->audioJob?->segments
                     ->sortBy('segment_index')->values()->map(fn (BookAudioSegment $segment) => [
@@ -1174,6 +1177,8 @@ class DashboardBookController extends Controller
                         'word_timings' => $segment->metadata_json['word_timings'] ?? [],
                     ]) : null;
                 unset($data['audio_segment']);
+                unset($data['library_sample']);
+                unset($data['media_asset']);
                 unset($data['audio_job']);
 
                 return $data;
@@ -1184,15 +1189,23 @@ class DashboardBookController extends Controller
 
     public function saveAudioTimeline(Request $request, string $keyBook): JsonResponse
     {
-        $validated = $request->validate(['items' => ['required', 'array', 'max:300'], 'items.*.id' => ['nullable', 'integer'], 'items.*.track' => ['required', 'in:voice,music,fx'], 'items.*.label' => ['required', 'string', 'max:160'], 'items.*.start_ms' => ['required', 'integer', 'min:0'], 'items.*.duration_ms' => ['required', 'integer', 'min:100'], 'items.*.trim_start_ms' => ['nullable', 'integer', 'min:0'], 'items.*.trim_end_ms' => ['nullable', 'integer', 'min:0'], 'items.*.fade_in_ms' => ['nullable', 'integer', 'min:0'], 'items.*.fade_out_ms' => ['nullable', 'integer', 'min:0'], 'items.*.volume' => ['nullable', 'integer', 'min:0', 'max:100'], 'items.*.muted' => ['nullable', 'boolean'], 'items.*.book_audio_segment_id' => ['nullable', 'integer']]);
+        $validated = $request->validate(['items' => ['required', 'array', 'max:300'], 'items.*.id' => ['nullable', 'integer'], 'items.*.track' => ['required', 'in:voice,music,fx'], 'items.*.lane' => ['nullable', 'integer', 'min:0', 'max:40'], 'items.*.label' => ['required', 'string', 'max:160'], 'items.*.start_ms' => ['required', 'integer', 'min:0'], 'items.*.duration_ms' => ['required', 'integer', 'min:100'], 'items.*.trim_start_ms' => ['nullable', 'integer', 'min:0'], 'items.*.trim_end_ms' => ['nullable', 'integer', 'min:0'], 'items.*.fade_in_ms' => ['nullable', 'integer', 'min:0'], 'items.*.fade_out_ms' => ['nullable', 'integer', 'min:0'], 'items.*.volume' => ['nullable', 'integer', 'min:0', 'max:100'], 'items.*.muted' => ['nullable', 'boolean'], 'items.*.is_group' => ['nullable', 'boolean'], 'items.*.book_audio_segment_id' => ['nullable', 'integer'], 'items.*.audio_library_voice_sample_id' => ['nullable', 'integer'], 'items.*.audio_media_asset_id' => ['nullable', 'integer'], 'items.*.book_audio_job_id' => ['nullable', 'integer']]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
-        $saved = [];
-        foreach ($validated['items'] as $index => $item) {
-            $record = isset($item['id']) ? $book->audioTimelineItems()->whereKey($item['id'])->firstOrFail() : new BookAudioTimelineItem(['book_id' => $book->id]);
-            $record->fill([...$item, 'sort_order' => $index]);
-            $record->save();
-            $saved[] = $record;
-        }
+        $sampleIds = collect($validated['items'])->pluck('audio_library_voice_sample_id')->filter()->map(fn ($id) => (int) $id)->unique()->values();
+        abort_unless($sampleIds->isEmpty() || AudioLibraryVoiceSample::query()->whereIn('id', $sampleIds)->whereHas('voice', fn ($query) => $query->where('account_id', auth()->id()))->count() === $sampleIds->count(), 422);
+        $mediaIds = collect($validated['items'])->pluck('audio_media_asset_id')->filter()->map(fn ($id) => (int) $id)->unique()->values();
+        abort_unless($mediaIds->isEmpty() || AudioMediaAsset::query()->whereIn('id', $mediaIds)->where('account_id', auth()->id())->count() === $mediaIds->count(), 422);
+        DB::transaction(function () use ($book, $validated): void {
+            $submittedIds = collect($validated['items'])->pluck('id')->filter()->map(fn ($id) => (int) $id)->values();
+            $existing = $book->audioTimelineItems();
+            $submittedIds->isEmpty() ? $existing->delete() : $existing->whereNotIn('id', $submittedIds)->delete();
+
+            foreach ($validated['items'] as $index => $item) {
+                $record = isset($item['id']) ? $book->audioTimelineItems()->whereKey($item['id'])->firstOrFail() : new BookAudioTimelineItem(['book_id' => $book->id]);
+                $record->fill([...$item, 'sort_order' => $index]);
+                $record->save();
+            }
+        });
 
         return $this->audioTimeline($keyBook);
     }
@@ -1211,7 +1224,7 @@ class DashboardBookController extends Controller
 
     public function insertAudioGroupTimeline(Request $request, string $keyBook, string $blockUuid, BookAudioJob $job): JsonResponse
     {
-        $validated = $request->validate(['start_ms' => ['nullable', 'integer', 'min:0', 'max:86400000']]);
+        $validated = $request->validate(['start_ms' => ['nullable', 'integer', 'min:0', 'max:86400000'], 'lane' => ['nullable', 'integer', 'min:0', 'max:40']]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
         abort_unless($job->book_id === $book->id && $job->block_uuid === $blockUuid && $job->status === 'completed', 404);
         $segments = $job->segments()->orderBy('segment_index')->get();
@@ -1221,7 +1234,7 @@ class DashboardBookController extends Controller
         $item = BookAudioTimelineItem::query()->create([
             'book_id' => $book->id, 'book_audio_segment_id' => $segments->first()->id,
             'book_audio_job_id' => $job->id, 'is_group' => true, 'track' => 'voice',
-            'label' => $job->voiceProfile?->name ?: 'Narration group', 'start_ms' => $start,
+            'lane' => (int) ($validated['lane'] ?? 0), 'label' => $job->voiceProfile?->name ?: 'Narration group', 'start_ms' => $start,
             'duration_ms' => $duration, 'sort_order' => $book->audioTimelineItems()->count(),
         ]);
         return response()->json(['data' => ['item_id' => $item->id]], 201);
@@ -1264,6 +1277,7 @@ class DashboardBookController extends Controller
         foreach ($segments as $index => $segment) {
             BookAudioTimelineItem::query()->create([
                 'book_id' => $book->id, 'book_audio_segment_id' => $segment->id, 'track' => $timelineItem->track,
+                'lane' => $timelineItem->lane,
                 'label' => $segment->text_plain, 'start_ms' => $start, 'duration_ms' => $segment->duration_ms,
                 'volume' => $timelineItem->volume, 'muted' => $timelineItem->muted,
                 'sort_order' => $timelineItem->sort_order + $index,

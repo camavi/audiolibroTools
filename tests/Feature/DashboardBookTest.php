@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AiChatMessage;
 use App\Models\AccountCreditBalance;
+use App\Models\AudioMediaAsset;
 use App\Models\AiChatThread;
 use App\Models\Book;
 use App\Models\BookAudioJob;
@@ -19,6 +20,7 @@ use App\Models\BookVoiceProfile;
 use App\Services\BookBlockService;
 use App\Jobs\ProcessBookTranslationJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -40,6 +42,29 @@ class DashboardBookTest extends TestCase
         $this->getJson('/dashboard/api/book-categories')
             ->assertOk()
             ->assertJsonPath('data.0.name', 'Fiction');
+    }
+
+    public function test_dashboard_can_store_and_list_guest_music_media(): void
+    {
+        Storage::fake('public');
+
+        $this->post('/dashboard/api/audio-media', [
+            'kind' => 'music',
+            'duration_ms' => 8_500,
+            'file' => UploadedFile::fake()->create('forest-ambience.mp3', 120, 'audio/mpeg'),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.asset.kind', 'music')
+            ->assertJsonPath('data.asset.name', 'forest-ambience');
+
+        $asset = AudioMediaAsset::query()->sole();
+        $this->assertNull($asset->account_id);
+        Storage::disk('public')->assertExists($asset->audio_path);
+
+        $this->getJson('/dashboard/api/audio-media?kind=music')
+            ->assertOk()
+            ->assertJsonPath('data.assets.0.id', $asset->id)
+            ->assertJsonPath('data.assets.0.original_name', 'forest-ambience.mp3');
     }
 
     public function test_dashboard_translation_provider_defaults_to_translation_mock_model(): void

@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class BookAudioTimelineItem extends Model
 {
-    protected $fillable = ['book_id', 'book_audio_segment_id', 'book_audio_job_id', 'is_group', 'track', 'label', 'start_ms', 'duration_ms', 'trim_start_ms', 'trim_end_ms', 'fade_in_ms', 'fade_out_ms', 'volume', 'muted', 'sort_order'];
+    protected $fillable = ['book_id', 'book_audio_segment_id', 'audio_library_voice_sample_id', 'audio_media_asset_id', 'book_audio_job_id', 'is_group', 'track', 'lane', 'label', 'start_ms', 'duration_ms', 'trim_start_ms', 'trim_end_ms', 'fade_in_ms', 'fade_out_ms', 'volume', 'muted', 'sort_order'];
 
     protected function casts(): array
     {
@@ -22,5 +22,15 @@ class BookAudioTimelineItem extends Model
     public function audioJob(): BelongsTo
     {
         return $this->belongsTo(BookAudioJob::class, 'book_audio_job_id');
+    }
+
+    public function librarySample(): BelongsTo
+    {
+        return $this->belongsTo(AudioLibraryVoiceSample::class, 'audio_library_voice_sample_id');
+    }
+
+    public function mediaAsset(): BelongsTo
+    {
+        return $this->belongsTo(AudioMediaAsset::class, 'audio_media_asset_id');
     }
 }

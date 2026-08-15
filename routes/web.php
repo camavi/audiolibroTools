@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AudioLibraryController;
+use App\Http\Controllers\AudioMediaController;
 use App\Http\Controllers\DashboardAiController;
 use App\Http\Controllers\DashboardBookController;
 use Illuminate\Support\Facades\Route;
@@ -48,6 +49,9 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::get('/audio-library/samples/{sample}/stream', [AudioLibraryController::class, 'stream'])->name('audio-library.samples.stream');
     Route::post('/audio-library/voices/{voice}', [AudioLibraryController::class, 'update'])->name('audio-library.voices.update');
     Route::delete('/audio-library/voices/{voice}', [AudioLibraryController::class, 'destroy'])->name('audio-library.voices.destroy');
+    Route::get('/audio-media', [AudioMediaController::class, 'index'])->name('audio-media.index');
+    Route::post('/audio-media', [AudioMediaController::class, 'store'])->name('audio-media.store');
+    Route::get('/audio-media/{asset}/stream', [AudioMediaController::class, 'stream'])->name('audio-media.stream');
     Route::get('/books', [DashboardBookController::class, 'index'])->name('books.index');
     Route::post('/books', [DashboardBookController::class, 'store'])->name('books.store');
     Route::get('/books/{keyBook}', [DashboardBookController::class, 'show'])->name('books.show');

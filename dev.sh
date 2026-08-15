@@ -14,9 +14,23 @@ if [ ! -x "$COQUI_TTS_DIR/scripts/run-dev.sh" ]; then
     exit 1
 fi
 
-# Avvia il backend Laravel
+# Non avviare un secondo stack su una porta già occupata: altrimenti il
+# browser continua a parlare con il vecchio PHP, spesso con limiti upload
+# differenti, mentre questo script sembra comunque avviato.
+if lsof -tiTCP:8000 -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "Port 8000 is already in use. Stop the existing development server before running ./dev.sh." >&2
+    exit 1
+fi
+
+# Avvia il backend Laravel. I file media possono arrivare fino a 50 MB,
+# quindi il server di sviluppo deve accettare multipart più grandi dei
+# valori predefiniti PHP (2 MB upload / 8 MB POST).
 cd "$ROOT_DIR"
-php artisan serve &
+(
+    cd "$ROOT_DIR/public"
+    exec php -d upload_max_filesize=64M -d post_max_size=64M -d memory_limit=256M \
+        -S 127.0.0.1:8000 "$ROOT_DIR/vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php"
+) &
 LARAVEL_PID=$!
 
 # Avvia il frontend Vite

@@ -23,7 +23,10 @@ const timelineZoom = _.rod(1);
 const timelineItems = _.rod([]);
 const timelinePlayhead = _.rod(0);
 const selectedTimelineItemKey = _.rod(null);
+const selectedTimelineItemKeys = _.rod([]);
 const expandedTimelineGroupKey = _.rod(null);
+const timelineUndoStack = _.rod([]);
+const timelineRedoStack = _.rod([]);
 const timelineIsPlaying = _.rod(false);
 const timelinePersistence = _.rod('saved');
 const readingPlayback = _.rod(null);
@@ -36,6 +39,11 @@ let timelineFrame = null;
 let timelineStartedAt = 0;
 let renderTimeline = null;
 let timelineSaveTimer = null;
+const timelineTracks = [
+    { key: 'voice', label: 'Voice', color: '#2563eb' },
+    { key: 'music', label: 'Music', color: '#a855f7' },
+    { key: 'fx', label: 'FX', color: '#f59e0b' },
+];
 
 function bookKey(ctx) {
     return ctx?.params?.key_book
@@ -109,6 +117,10 @@ async function loadTimeline(keyBook) {
     try {
         const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline`);
         timelineItems.value = audioData(payload).items || [];
+        selectedTimelineItemKey.value = null;
+        selectedTimelineItemKeys.value = [];
+        timelineUndoStack.value = [];
+        timelineRedoStack.value = [];
         renderTimeline?.();
     } catch { }
 }
@@ -137,11 +149,92 @@ function scheduleTimelineSave(keyBook) {
     }, 550);
 }
 function timelineItemKey(item) { return String(item.id ?? item.client_key ?? ''); }
+function newTimelineClientKey() { return `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
+function timelineSnapshot() { return JSON.parse(JSON.stringify(timelineItems.value)); }
+function rememberTimelineSnapshot(snapshot = timelineSnapshot()) {
+    const previous = timelineUndoStack.value.at(-1);
+    if (previous && JSON.stringify(previous) === JSON.stringify(snapshot)) return;
+    timelineUndoStack.value = [...timelineUndoStack.value.slice(-49), snapshot];
+    timelineRedoStack.value = [];
+}
+function restoreTimelineSnapshot(snapshot, keyBook) {
+    const currentIds = new Set(timelineItems.value.map((item) => Number(item.id)).filter(Boolean));
+    timelineItems.value = snapshot.map((item) => item.id && !currentIds.has(Number(item.id))
+        ? { ...item, id: null, client_key: newTimelineClientKey() }
+        : { ...item });
+    selectedTimelineItemKey.value = null;
+    selectedTimelineItemKeys.value = [];
+    renderTimeline?.();
+    scheduleTimelineSave(keyBook);
+}
+function undoTimeline(keyBook) {
+    const snapshot = timelineUndoStack.value.at(-1);
+    if (!snapshot) return;
+    timelineRedoStack.value = [...timelineRedoStack.value.slice(-49), timelineSnapshot()];
+    timelineUndoStack.value = timelineUndoStack.value.slice(0, -1);
+    restoreTimelineSnapshot(snapshot, keyBook);
+    audioStatus.value = { type: 'info', message: 'Timeline change undone.' };
+}
+function redoTimeline(keyBook) {
+    const snapshot = timelineRedoStack.value.at(-1);
+    if (!snapshot) return;
+    timelineUndoStack.value = [...timelineUndoStack.value.slice(-49), timelineSnapshot()];
+    timelineRedoStack.value = timelineRedoStack.value.slice(0, -1);
+    restoreTimelineSnapshot(snapshot, keyBook);
+    audioStatus.value = { type: 'info', message: 'Timeline change restored.' };
+}
 function timelineSnap(seconds) { return Math.round(Math.max(0, seconds) * 4) / 4; }
-function selectedTimelineItem() { return timelineItems.value.find((item) => timelineItemKey(item) === selectedTimelineItemKey.value) || null; }
-function selectTimelineItem(item) {
+function timelineLaneLayout() {
+    return timelineTracks.flatMap((track) => {
+        const count = Math.max(1, ...timelineItems.value.filter((item) => item.track === track.key).map((item) => Number(item.lane || 0) + 1));
+        return Array.from({ length: count }, (_, lane) => ({ ...track, lane }));
+    });
+}
+function rangesOverlap(startA, durationA, startB, durationB) {
+    return startA < startB + durationB && startA + durationA > startB;
+}
+function firstAvailableTimelineLane(track, startMs, durationMs, ignoreKey = null, preferredLane = null) {
+    const ignoredKeys = new Set(Array.isArray(ignoreKey) ? ignoreKey : [ignoreKey]);
+    const lanes = Array.from({ length: 41 }, (_, lane) => lane);
+    if (Number.isInteger(preferredLane) && preferredLane >= 0 && preferredLane <= 40) {
+        lanes.splice(lanes.indexOf(preferredLane), 1);
+        lanes.unshift(preferredLane);
+    }
+    for (const lane of lanes) {
+        const occupied = timelineItems.value.some((item) => !ignoredKeys.has(timelineItemKey(item)) && item.track === track && Number(item.lane || 0) === lane && rangesOverlap(startMs, durationMs, Number(item.start_ms || 0), Number(item.duration_ms || 0)));
+        if (!occupied) return lane;
+    }
+    return 0;
+}
+function timelineMagnetPoints(ignoreKey = null) {
+    const ignoredKeys = new Set(Array.isArray(ignoreKey) ? ignoreKey : [ignoreKey]);
+    const points = [0, timelinePlayhead.value, ...timelineCues.value];
+    timelineItems.value.forEach((item) => {
+        if (ignoredKeys.has(timelineItemKey(item))) return;
+        points.push(item.start_ms / 1000, (item.start_ms + item.duration_ms) / 1000);
+        if (item.is_group) timelinePlayableParts(item).forEach((part) => points.push((item.start_ms + part.timeline_offset_ms) / 1000, (item.start_ms + part.timeline_offset_ms + part.playable_duration_ms) / 1000));
+    });
+    return points;
+}
+function magnetizeTimelineTime(seconds, duration, ignoreKey = null) {
+    const threshold = Math.max(.08, .25 / timelineZoom.value);
+    const target = timelineSnap(seconds);
+    const closest = timelineMagnetPoints(ignoreKey)
+        .map((point) => ({ point, distance: Math.abs(point - target) }))
+        .sort((a, b) => a.distance - b.distance)[0];
+    return closest && closest.distance <= threshold ? Math.max(0, closest.point) : target;
+}
+function selectedTimelineItems() {
+    const keys = new Set(selectedTimelineItemKeys.value);
+    return timelineItems.value.filter((item) => keys.has(timelineItemKey(item)));
+}
+function selectedTimelineItem() { return timelineItems.value.find((item) => timelineItemKey(item) === selectedTimelineItemKey.value) || selectedTimelineItems()[0] || null; }
+function selectTimelineItem(item, additive = false) {
     const key = timelineItemKey(item);
     selectedTimelineItemKey.value = key;
+    selectedTimelineItemKeys.value = additive
+        ? (selectedTimelineItemKeys.value.includes(key) ? selectedTimelineItemKeys.value : [...selectedTimelineItemKeys.value, key])
+        : [key];
     const blockIndex = audiobookBlocks.value.findIndex((block) => block.block_uuid === item.block_uuid);
     if (blockIndex >= 0) activeBlockIndex.value = blockIndex;
 }
@@ -153,8 +246,13 @@ function toggleTimelineGroup(item) {
 }
 function updateTimelineItem(key, updater) { timelineItems.value = timelineItems.value.map((item) => timelineItemKey(item) === key ? updater(item) : item); }
 function updateSelectedTimelineItem(updater) {
-    const item = selectedTimelineItem();
-    if (item) updateTimelineItem(timelineItemKey(item), updater);
+    const items = selectedTimelineItems();
+    if (!items.length) return;
+    const keys = new Set(items.map(timelineItemKey));
+    rememberTimelineSnapshot();
+    timelineItems.value = timelineItems.value.map((item) => keys.has(timelineItemKey(item)) ? updater(item) : item);
+    scheduleTimelineSave(bookKey());
+    renderTimeline?.();
 }
 function adjustSelectedTimelineItem(field, delta, max = Infinity) {
     updateSelectedTimelineItem((item) => ({ ...item, [field]: Math.max(0, Math.min(max, Number(item[field] || 0) + delta)) }));
@@ -265,7 +363,13 @@ function drawTimelineClipWaveforms(ctx, item, x, y, width, height) {
         drawWaveform(ctx, samples, partX, y, partWidth, height, 'rgba(255,255,255,.56)');
     });
 }
-function timelineEnd() { return Math.max(90, ...timelineItems.value.map((item) => (item.start_ms + item.duration_ms) / 1000)); }
+function timelineContentEnd() { return Math.max(0, ...timelineItems.value.map((item) => (item.start_ms + item.duration_ms) / 1000)); }
+function timelineEnd() { return Math.max(90, timelineContentEnd()); }
+function timelineDisplayDuration() { return Math.max(90 / timelineZoom.value, timelineContentEnd() + 5); }
+function timelineCanvasWidth(canvas, duration) {
+    const viewportWidth = Math.max(1, canvas.parentElement?.clientWidth || canvas.clientWidth || 1);
+    return Math.ceil(Math.max(viewportWidth, viewportWidth * timelineZoom.value * duration / 90));
+}
 function trackCanPlay(track) {
     const states = trackState.value;
     const hasSolo = Object.values(states).some((state) => state.solo);
@@ -335,33 +439,87 @@ function startTimelinePlayback(render) {
     timelineFrame = window.requestAnimationFrame(tick);
 }
 function addTimelineItem(track) {
-    const clientKey = `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    timelineItems.value = [...timelineItems.value, { client_key: clientKey, track, label: track === 'music' ? 'Music cue' : track === 'fx' ? 'FX cue' : 'Voice cue', start_ms: timelineItems.value.length * 5000, duration_ms: 5000, trim_start_ms: 0, trim_end_ms: 0, fade_in_ms: 0, fade_out_ms: 0, volume: 80, muted: false }];
+    rememberTimelineSnapshot();
+    const clientKey = newTimelineClientKey();
+    const startMs = Math.round(timelinePlayhead.value * 1000);
+    timelineItems.value = [...timelineItems.value, { client_key: clientKey, track, lane: firstAvailableTimelineLane(track, startMs, 5000), label: track === 'music' ? 'Music cue' : track === 'fx' ? 'FX cue' : 'Voice cue', start_ms: startMs, duration_ms: 5000, trim_start_ms: 0, trim_end_ms: 0, fade_in_ms: 0, fade_out_ms: 0, volume: 80, muted: false }];
     selectedTimelineItemKey.value = clientKey;
+    selectedTimelineItemKeys.value = [clientKey];
+    scheduleTimelineSave(bookKey());
+}
+
+function duplicateSelectedTimelineItem(keyBook) {
+    const selected = selectedTimelineItems();
+    if (!selected.length) return;
+    const firstStart = Math.min(...selected.map((item) => Number(item.start_ms || 0)));
+    const insertAt = Math.max(...selected.map((item) => Number(item.start_ms || 0) + Number(item.duration_ms || 0))) + 250;
+    rememberTimelineSnapshot();
+    const duplicates = selected.map((item) => {
+        const duplicate = { ...item, id: null, client_key: newTimelineClientKey(), start_ms: insertAt + Number(item.start_ms || 0) - firstStart };
+        duplicate.lane = firstAvailableTimelineLane(duplicate.track, duplicate.start_ms, duplicate.duration_ms, selected.map(timelineItemKey), Number(item.lane || 0));
+        return duplicate;
+    });
+    timelineItems.value = [...timelineItems.value, ...duplicates];
+    selectedTimelineItemKey.value = duplicates[0].client_key;
+    selectedTimelineItemKeys.value = duplicates.map(timelineItemKey);
+    scheduleTimelineSave(keyBook);
+    renderTimeline?.();
+}
+
+function splitSelectedTimelineItem(keyBook) {
+    const item = selectedTimelineItem();
+    if (!item) return;
+    if (selectedTimelineItems().length > 1) {
+        audioStatus.value = { type: 'info', message: 'Select one clip to split it at the playhead.' };
+        return;
+    }
+    if (item.is_group) {
+        audioStatus.value = { type: 'info', message: 'Use Ungroup for a generated audio master before editing its individual clips.' };
+        return;
+    }
+    const startMs = Number(item.start_ms || 0);
+    const durationMs = Number(item.duration_ms || 0);
+    const splitMs = Math.round(timelinePlayhead.value * 1000);
+    if (splitMs <= startMs + 250 || splitMs >= startMs + durationMs - 250) {
+        audioStatus.value = { type: 'info', message: 'Place the playhead inside the clip, at least 0.25s from either edge, to split it.' };
+        return;
+    }
+    const firstDuration = splitMs - startMs;
+    const secondDuration = durationMs - firstDuration;
+    rememberTimelineSnapshot();
+    const first = { ...item, duration_ms: firstDuration, trim_end_ms: Number(item.trim_end_ms || 0) + secondDuration };
+    const second = {
+        ...item,
+        id: null,
+        client_key: newTimelineClientKey(),
+        start_ms: splitMs,
+        duration_ms: secondDuration,
+        trim_start_ms: Number(item.trim_start_ms || 0) + firstDuration,
+    };
+    second.lane = firstAvailableTimelineLane(second.track, second.start_ms, second.duration_ms, timelineItemKey(item), Number(item.lane || 0));
+    timelineItems.value = timelineItems.value.flatMap((candidate) => timelineItemKey(candidate) === timelineItemKey(item) ? [first, second] : [candidate]);
+    selectedTimelineItemKey.value = second.client_key;
+    selectedTimelineItemKeys.value = [second.client_key];
+    scheduleTimelineSave(keyBook);
+    renderTimeline?.();
 }
 
 async function removeSelectedTimelineItem(keyBook) {
-    const item = selectedTimelineItem();
-    if (!item) {
+    const items = selectedTimelineItems();
+    if (!items.length) {
         audioStatus.value = { type: 'info', message: 'Select a clip before removing it.' };
         return;
     }
 
-    const itemKey = timelineItemKey(item);
-    try {
-        if (item.id) {
-            await _.http.delJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline/${encodeURIComponent(item.id)}`);
-        }
-
-        timelinePlayers.get(itemKey)?.pause();
-        timelinePlayers.delete(itemKey);
-        timelineItems.value = timelineItems.value.filter((timelineItem) => timelineItemKey(timelineItem) !== itemKey);
-        selectedTimelineItemKey.value = null;
-        audioStatus.value = { type: 'success', message: 'Clip removed from the timeline.' };
-        renderTimeline?.();
-    } catch (error) {
-        audioStatus.value = { type: 'danger', message: error.message || 'Unable to remove the selected clip.' };
-    }
+    const keys = new Set(items.map(timelineItemKey));
+    rememberTimelineSnapshot();
+    keys.forEach((key) => { timelinePlayers.get(key)?.pause(); timelinePlayers.delete(key); });
+    timelineItems.value = timelineItems.value.filter((timelineItem) => !keys.has(timelineItemKey(timelineItem)));
+    selectedTimelineItemKey.value = null;
+    selectedTimelineItemKeys.value = [];
+    scheduleTimelineSave(keyBook);
+    audioStatus.value = { type: 'success', message: `${items.length} clip${items.length === 1 ? '' : 's'} removed. Use Undo to restore ${items.length === 1 ? 'it' : 'them'}.` };
+    renderTimeline?.();
 }
 
 async function ungroupSelectedTimelineItem(keyBook) {
@@ -371,6 +529,7 @@ async function ungroupSelectedTimelineItem(keyBook) {
         const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline/${encodeURIComponent(item.id)}/ungroup`, {});
         timelineItems.value = audioData(payload).items || [];
         selectedTimelineItemKey.value = null;
+        selectedTimelineItemKeys.value = [];
         audioStatus.value = { type: 'success', message: 'Audio group ungrouped into individual timeline clips.' };
         renderTimeline?.();
     } catch (error) { audioStatus.value = { type: 'danger', message: error.message || 'Unable to ungroup this clip.' }; }
@@ -422,8 +581,11 @@ async function insertAudioGroup(keyBook, jobId) {
     const block = activeBlock();
     if (!block?.block_uuid) return;
     try {
+        const startMs = Math.round(Math.max(0, timelinePlayhead.value) * 1000);
+        const group = audioGroups.value.find((candidate) => Number(candidate.id) === Number(jobId));
         await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/${encodeURIComponent(jobId)}/insert-timeline`, {
-            start_ms: Math.round(Math.max(0, timelinePlayhead.value) * 1000),
+            start_ms: startMs,
+            lane: firstAvailableTimelineLane('voice', startMs, Number(group?.duration_ms || 1000)),
         });
         await loadTimeline(keyBook);
         audioStatus.value = { type: 'success', message: 'Audio group inserted into the Voice track.' };
@@ -521,6 +683,144 @@ function blockStyle() {
         _.Select({ label: 'Block alignment', options: [{ label: 'Left', value: 'left' }, { label: 'Justified', value: 'justify' }, { label: 'Centered', value: 'center' }] }),
         _.div({ class: 'at-audioHint' }, 'Block style remains separate from the manuscript. It changes only the audiobook player experience.'),
     );
+}
+
+function resolveLibrarySampleDuration(sample) {
+    const storedDuration = Number(sample.duration_ms || 0);
+    if (storedDuration > 0) return Promise.resolve(storedDuration);
+    return new Promise((resolve) => {
+        const audio = new Audio(sample.audio_url);
+        const finish = () => resolve(Number.isFinite(audio.duration) && audio.duration > 0 ? Math.round(audio.duration * 1000) : 5000);
+        audio.preload = 'metadata';
+        audio.addEventListener('loadedmetadata', finish, { once: true });
+        audio.addEventListener('error', finish, { once: true });
+        audio.load();
+    });
+}
+
+async function openTimelineMediaDialog(track) {
+    const assets = _.rod([]);
+    const search = _.rod('');
+    const dialogStatus = _.rod(null);
+    const uploading = _.rod(false);
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'audio/*';
+    fileInput.hidden = true;
+
+    const loadAssets = async () => {
+        const query = new URLSearchParams({
+            kind: track,
+            search: search.value,
+            _: String(Date.now()),
+        });
+        const payload = await _.http.getJSON(`/dashboard/api/audio-media?${query.toString()}`);
+        assets.value = audioData(payload).assets || [];
+    };
+
+    try {
+        await loadAssets();
+    } catch (error) {
+        audioStatus.value = { type: 'danger', message: error.message || 'Unable to load media.' };
+        return;
+    }
+
+    const insertAsset = async (asset, close) => {
+        const startMs = Math.round(Math.max(0, timelinePlayhead.value) * 1000);
+        const durationMs = Math.max(100, await resolveLibrarySampleDuration(asset));
+        const clientKey = newTimelineClientKey();
+        rememberTimelineSnapshot();
+        timelineItems.value = [...timelineItems.value, {
+            client_key: clientKey,
+            track,
+            lane: firstAvailableTimelineLane(track, startMs, durationMs),
+            label: asset.name || asset.original_name || 'Audio media',
+            start_ms: startMs,
+            duration_ms: durationMs,
+            trim_start_ms: 0,
+            trim_end_ms: 0,
+            fade_in_ms: 0,
+            fade_out_ms: 0,
+            volume: 100,
+            muted: false,
+            audio_media_asset_id: asset.id,
+            audio_path: asset.audio_url,
+        }];
+        selectedTimelineItemKey.value = clientKey;
+        selectedTimelineItemKeys.value = [clientKey];
+        scheduleTimelineSave(bookKey());
+        renderTimeline?.();
+        audioStatus.value = { type: 'success', message: `${asset.name || 'Audio media'} inserted in the ${track.toUpperCase()} track.` };
+        close();
+    };
+
+    fileInput.onchange = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file || uploading.value) return;
+        uploading.value = true;
+        dialogStatus.value = null;
+        try {
+            const durationMs = await resolveLibrarySampleDuration({ audio_url: URL.createObjectURL(file) });
+            const form = new FormData();
+            form.append('kind', track); form.append('file', file); form.append('duration_ms', String(durationMs));
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            const response = await _.http.request('/dashboard/api/audio-media', {
+                method: 'POST',
+                body: form,
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
+                },
+            });
+            const responsePayload = await response.jsonStrict();
+            const savedAsset = responsePayload?.data?.data?.asset
+                || responsePayload?.data?.asset
+                || responsePayload?.asset
+                || null;
+            await loadAssets();
+            // Keep the just-created item visible even when an intermediary
+            // cache still serves the previous empty collection once.
+            if (savedAsset?.id && !assets.value.some((asset) => Number(asset.id) === Number(savedAsset.id))) {
+                assets.value = [savedAsset, ...assets.value];
+            }
+            dialogStatus.value = { type: 'success', message: `${file.name} uploaded to ${track.toUpperCase()} media.` };
+        } catch (error) {
+            const details = error.data?.message || error.data?.errors
+                ? Object.values(error.data?.errors || {}).flat().join(' ') || error.data?.message
+                : null;
+            dialogStatus.value = { type: 'danger', message: details || error.message || 'Unable to upload media.' };
+        }
+        finally { uploading.value = false; fileInput.value = ''; }
+    };
+
+    _.Dialog({
+        size: 'xl',
+        stickyActions: true,
+        slots: {
+            header: _.div(_.h3(`Choose ${track === 'music' ? 'music' : 'FX'} media`), _.span({ class: 'text-muted' }, 'Search or upload reusable media for this channel.')),
+            content: ({ close }) => _.div({ class: 'at-libraryVoiceDialog at-timelineMediaDialog' },
+                fileInput,
+                _.div({ class: 'at-timelineMediaToolbar' },
+                    _.Input({ label: false, model: search, icon: 'search', placeholder: 'Search name, tag or description', onInput: () => loadAssets().catch((error) => { dialogStatus.value = { type: 'danger', message: error.message || 'Unable to load media.' }; }) }),
+                    _.Btn({ color: 'secondary', icon: 'upload_file', loading: uploading, onClick: () => fileInput.click() }, 'Upload'),
+                ),
+                () => {
+                    return assets.value.length ? _.div({ class: 'at-timelineMediaResults' }, assets.value.map((asset) => _.article({ class: 'at-timelineMediaResult' },
+                        _.div({ class: 'at-timelineMediaCopy' },
+                            _.strong(asset.name || asset.original_name || 'Untitled audio'),
+                            _.small(`${Math.max(0, Math.round(Number(asset.duration_ms || 0) / 1000))}s · ${asset.original_name || 'Uploaded media'}`),
+                            _.div({ class: 'at-timelineMediaTags' }, ...(asset.tags?.length ? asset.tags.map((tag) => _.span(tag)) : [_.span(track.toUpperCase())])),
+                        ),
+                        _.audio({ controls: true, preload: 'metadata', src: asset.audio_url }),
+                        _.Btn({ dense: true, color: 'primary', icon: 'playlist_add', title: `Insert into ${track}`, onClick: () => insertAsset(asset, close) }),
+                    ))) : _.div({ class: 'at-libraryVoiceEmpty' }, `No ${track} media yet. Upload the first file.`);
+                },
+                () => dialogStatus.value ? _.Alert(dialogStatus.value) : null,
+                _.div({ class: 'at-libraryVoiceActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Cancel')),
+            ),
+        },
+    }).open();
 }
 
 async function openLibraryVoiceDialog(keyBook) {
@@ -702,7 +1002,41 @@ function previewCard() {
     );
 }
 
-function drawTimeline(canvas) {
+function drawTimelineLabels(canvas, lanes, height, rulerHeight, rowHeight) {
+    const rect = canvas.getBoundingClientRect();
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+    canvas.height = Math.max(1, Math.floor(height * ratio));
+    const ctx = canvas.getContext('2d');
+    ctx.scale(ratio, ratio);
+    const width = rect.width;
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = '#172033'; ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, width, rulerHeight);
+    ctx.font = '11px Inter, sans-serif'; ctx.textBaseline = 'middle';
+    lanes.forEach(({ key: trackKey, label: name, color, lane }, index) => {
+        const y = rulerHeight + index * rowHeight;
+        const state = trackState.value[trackKey];
+        ctx.fillStyle = index % 2 ? '#111b2b' : '#142033'; ctx.fillRect(0, y, width, rowHeight - 1);
+        ctx.fillStyle = '#cbd5e1'; ctx.fillText(lane ? `${name} ${lane + 1}` : name, 18, y + rowHeight / 2);
+        if (lane !== 0) return;
+        ctx.fillStyle = state.muted ? '#ef4444' : '#94a3b8'; ctx.fillText('M', 72, y + rowHeight / 2);
+        ctx.fillStyle = state.solo ? '#fbbf24' : '#64748b'; ctx.fillText('S', 94, y + rowHeight / 2);
+        ctx.fillStyle = state.locked ? '#fbbf24' : '#64748b'; ctx.fillText('L', 116, y + rowHeight / 2);
+        ctx.strokeStyle = '#475569'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(18, y + rowHeight - 17); ctx.lineTo(128, y + rowHeight - 17); ctx.stroke();
+        ctx.fillStyle = color; ctx.beginPath(); ctx.arc(18 + (110 * state.volume / 100), y + rowHeight - 17, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = color; ctx.font = '18px Inter, sans-serif'; ctx.fillText('+', 145, y + rowHeight / 2); ctx.font = '11px Inter, sans-serif';
+    });
+}
+
+function drawTimeline(canvas, labelCanvas) {
+    const lanes = timelineLaneLayout();
+    const rulerHeight = 34;
+    const requestedHeight = Math.max(330, rulerHeight + lanes.length * 100);
+    const duration = timelineDisplayDuration();
+    const requestedWidth = timelineCanvasWidth(canvas, duration);
+    if (Math.round(canvas.getBoundingClientRect().height) !== requestedHeight) canvas.style.height = `${requestedHeight}px`;
+    if (Math.round(canvas.getBoundingClientRect().width) !== requestedWidth) canvas.style.width = `${requestedWidth}px`;
     const rect = canvas.getBoundingClientRect();
     const ratio = window.devicePixelRatio || 1;
     canvas.width = Math.max(1, Math.floor(rect.width * ratio));
@@ -711,38 +1045,26 @@ function drawTimeline(canvas) {
     ctx.scale(ratio, ratio);
     const width = rect.width;
     const height = rect.height;
-    const labelWidth = 170;
-    const rulerHeight = 34;
-    const tracks = [['Voice', '#2563eb'], ['Music', '#a855f7'], ['FX', '#f59e0b']];
-    const rowHeight = (height - rulerHeight) / tracks.length;
-    const duration = 90 / timelineZoom.value;
-
+    const rowHeight = (height - rulerHeight) / lanes.length;
+    labelCanvas.style.height = `${requestedHeight}px`;
+    drawTimelineLabels(labelCanvas, lanes, height, rulerHeight, rowHeight);
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, width, height);
-    ctx.fillStyle = '#172033'; ctx.fillRect(0, 0, labelWidth, height);
-    ctx.fillStyle = '#111827'; ctx.fillRect(labelWidth, 0, width - labelWidth, rulerHeight);
+    ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, width, rulerHeight);
     ctx.font = '11px Inter, sans-serif'; ctx.textBaseline = 'middle';
     for (let second = 0; second <= duration; second += 5) {
-        const x = labelWidth + ((width - labelWidth) * second / duration);
+        const x = width * second / duration;
         ctx.strokeStyle = second % 10 === 0 ? 'rgba(148,163,184,.34)' : 'rgba(148,163,184,.16)';
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
         ctx.fillStyle = '#94a3b8'; ctx.fillText(`${second}s`, x + 4, 17);
     }
-    tracks.forEach(([name, color], index) => {
+    lanes.forEach(({ key: trackKey, label: name, color, lane }, index) => {
         const y = rulerHeight + index * rowHeight;
-        ctx.fillStyle = index % 2 ? '#111b2b' : '#142033'; ctx.fillRect(labelWidth, y, width - labelWidth, rowHeight - 1);
-        const state = trackState.value[name.toLowerCase()];
-        ctx.fillStyle = '#cbd5e1'; ctx.fillText(name, 18, y + rowHeight / 2);
-        ctx.fillStyle = state.muted ? '#ef4444' : '#94a3b8'; ctx.fillText('M', 72, y + rowHeight / 2);
-        ctx.fillStyle = state.solo ? '#fbbf24' : '#64748b'; ctx.fillText('S', 94, y + rowHeight / 2);
-        ctx.fillStyle = state.locked ? '#fbbf24' : '#64748b'; ctx.fillText('L', 116, y + rowHeight / 2);
-        ctx.strokeStyle = '#475569'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(18, y + rowHeight - 17); ctx.lineTo(128, y + rowHeight - 17); ctx.stroke();
-        ctx.fillStyle = color; ctx.beginPath(); ctx.arc(18 + (110 * state.volume / 100), y + rowHeight - 17, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = color; ctx.font = '18px Inter, sans-serif'; ctx.fillText('+', 145, y + rowHeight / 2); ctx.font = '11px Inter, sans-serif';
-        timelineItems.value.filter((item) => item.track === name.toLowerCase()).forEach((item) => {
-            const x = labelWidth + ((width - labelWidth) * (item.start_ms / 1000) / duration);
-            const clipWidth = Math.max(28, ((width - labelWidth) * (item.duration_ms / 1000) / duration));
-            const selected = timelineItemKey(item) === selectedTimelineItemKey.value;
+        ctx.fillStyle = index % 2 ? '#111b2b' : '#142033'; ctx.fillRect(0, y, width, rowHeight - 1);
+        timelineItems.value.filter((item) => item.track === trackKey && Number(item.lane || 0) === lane).forEach((item) => {
+            const x = width * (item.start_ms / 1000) / duration;
+            const clipWidth = Math.max(28, width * (item.duration_ms / 1000) / duration);
+            const selected = selectedTimelineItemKeys.value.includes(timelineItemKey(item));
             const expanded = isTimelineGroupExpanded(item);
             const clipY = y + 9;
             const clipHeight = rowHeight - 19;
@@ -794,30 +1116,66 @@ function drawTimeline(canvas) {
         });
     });
     timelineCues.value.forEach((cue) => {
-        const x = labelWidth + ((width - labelWidth) * cue / duration);
+        const x = width * cue / duration;
         ctx.fillStyle = '#fbbf24'; ctx.beginPath(); ctx.moveTo(x - 4, 0); ctx.lineTo(x + 4, 0); ctx.lineTo(x, 7); ctx.closePath(); ctx.fill();
     });
-    const playheadX = labelWidth + ((width - labelWidth) * timelinePlayhead.value / duration);
+    const playheadX = width * timelinePlayhead.value / duration;
     ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(playheadX, 0); ctx.lineTo(playheadX, height); ctx.stroke();
 }
 
 function timelineCard() {
     const canvas = document.createElement('canvas');
     canvas.className = 'at-audioTimelineCanvas';
-    const render = () => drawTimeline(canvas);
+    const labelCanvas = document.createElement('canvas');
+    labelCanvas.className = 'at-audioTimelineLabelsCanvas';
+    const channelViewport = document.createElement('div');
+    channelViewport.className = 'at-audioTimelineChannelViewport';
+    channelViewport.append(labelCanvas);
+    const scroller = document.createElement('div');
+    scroller.className = 'at-audioTimelineScroller';
+    scroller.tabIndex = 0;
+    scroller.setAttribute('aria-label', 'Scrollable audio timeline');
+    scroller.append(canvas);
+    const render = () => drawTimeline(canvas, labelCanvas);
     renderTimeline = render;
     let drag = null;
     const geometry = (event) => {
         const rect = canvas.getBoundingClientRect();
-        const duration = 90 / timelineZoom.value;
-        const rowHeight = (rect.height - 34) / 3;
-        const track = ['voice', 'music', 'fx'][Math.max(0, Math.min(2, Math.floor((event.clientY - rect.top - 34) / rowHeight)))];
-        const seconds = ((event.clientX - rect.left - 170) / (rect.width - 170)) * duration;
-        return { rect, duration, rowHeight, track, seconds };
+        const duration = timelineDisplayDuration();
+        const lanes = timelineLaneLayout();
+        const rowHeight = (rect.height - 34) / lanes.length;
+        const laneIndex = Math.max(0, Math.min(lanes.length - 1, Math.floor((event.clientY - rect.top - 34) / rowHeight)));
+        const laneData = lanes[laneIndex];
+        const seconds = ((event.clientX - rect.left) / rect.width) * duration;
+        return { rect, duration, rowHeight, track: laneData.key, lane: laneData.lane, seconds };
     };
+    labelCanvas.addEventListener('pointerdown', (event) => {
+        const rect = labelCanvas.getBoundingClientRect();
+        const rulerHeight = 34;
+        if (event.clientY - rect.top < rulerHeight) return;
+        const lanes = timelineLaneLayout();
+        const rowHeight = (rect.height - rulerHeight) / lanes.length;
+        const laneIndex = Math.max(0, Math.min(lanes.length - 1, Math.floor((event.clientY - rect.top - rulerHeight) / rowHeight)));
+        const laneData = lanes[laneIndex];
+        if (laneData.lane !== 0) return;
+        const x = event.clientX - rect.left;
+        const localY = event.clientY - rect.top - rulerHeight - laneIndex * rowHeight;
+        const next = { ...trackState.value, [laneData.key]: { ...trackState.value[laneData.key] } };
+        if (x >= 140) {
+            if (laneData.key === 'music' || laneData.key === 'fx') openTimelineMediaDialog(laneData.key);
+            else addTimelineItem(laneData.key);
+            render();
+            return;
+        }
+        if (localY > rowHeight - 30 && x <= 140) next[laneData.key].volume = Math.round(Math.max(0, Math.min(100, ((x - 18) / 110) * 100)));
+        else if (x >= 54 && x < 92) next[laneData.key].muted = !next[laneData.key].muted;
+        else if (x >= 92 && x < 117) next[laneData.key].solo = !next[laneData.key].solo;
+        else if (x >= 117 && x < 140) next[laneData.key].locked = !next[laneData.key].locked;
+        trackState.value = next;
+        render();
+    });
     canvas.addEventListener('pointerdown', (event) => {
         const rect = canvas.getBoundingClientRect();
-        const headerX = event.clientX - rect.left;
         const headerY = event.clientY - rect.top;
         if (headerY < 34) {
             const { seconds } = geometry(event);
@@ -825,32 +1183,24 @@ function timelineCard() {
             if (timelineIsPlaying.value) syncTimelinePlayers(timelinePlayhead.value, true);
             render(); return;
         }
-        const { duration, rowHeight, track: trackAt, seconds } = geometry(event);
-        if (headerX < 170 && event.clientY - rect.top >= 34) {
-            const next = { ...trackState.value, [trackAt]: { ...trackState.value[trackAt] } };
-            const trackY = event.clientY - rect.top - 34 - Math.floor((event.clientY - rect.top - 34) / rowHeight) * rowHeight;
-            if (trackY > rowHeight - 30 && headerX <= 130) next[trackAt].volume = Math.round(Math.max(0, Math.min(100, ((headerX - 18) / 110) * 100)));
-            else if (headerX >= 62 && headerX < 84) next[trackAt].muted = !next[trackAt].muted;
-            else if (headerX >= 84 && headerX < 106) next[trackAt].solo = !next[trackAt].solo;
-            else if (headerX >= 106 && headerX < 130) next[trackAt].locked = !next[trackAt].locked;
-            else if (headerX >= 130) addTimelineItem(trackAt);
-            trackState.value = next; render(); return;
-        }
-        const item = [...timelineItems.value].reverse().find((candidate) => candidate.track === trackAt && seconds >= candidate.start_ms / 1000 && seconds <= (candidate.start_ms + candidate.duration_ms) / 1000);
+        const { duration, track: trackAt, lane: laneAt, seconds } = geometry(event);
+        const item = [...timelineItems.value].reverse().find((candidate) => candidate.track === trackAt && Number(candidate.lane || 0) === laneAt && seconds >= candidate.start_ms / 1000 && seconds <= (candidate.start_ms + candidate.duration_ms) / 1000);
         if (item) {
             const key = timelineItemKey(item);
-            selectTimelineItem(item);
+            selectTimelineItem(item, event.shiftKey);
             if (!trackState.value[trackAt].locked) {
-                const edgeSeconds = Math.max(.35, duration * 10 / Math.max(1, rect.width - 170));
+                const edgeSeconds = Math.max(.35, duration * 10 / Math.max(1, rect.width));
                 const clipStart = item.start_ms / 1000;
                 const clipEnd = clipStart + item.duration_ms / 1000;
-                const mode = seconds - clipStart < edgeSeconds ? 'trim-start' : clipEnd - seconds < edgeSeconds ? 'trim-end' : 'move';
-                drag = { key, item, mode, offset: seconds - clipStart, end: clipEnd, sourceDuration: timelineSourceDuration(item), changed: false };
+                const selection = selectedTimelineItems();
+                const mode = selection.length > 1 ? 'move-group' : (seconds - clipStart < edgeSeconds ? 'trim-start' : clipEnd - seconds < edgeSeconds ? 'trim-end' : 'move');
+                drag = { key, item, items: selection, mode, offset: seconds - clipStart, end: clipEnd, sourceDuration: timelineSourceDuration(item), before: timelineSnapshot(), changed: false };
                 canvas.setPointerCapture(event.pointerId);
             }
             render(); return;
         }
         selectedTimelineItemKey.value = null;
+        selectedTimelineItemKeys.value = [];
         timelinePlayhead.value = Math.max(0, timelineSnap(seconds));
         if (timelineIsPlaying.value) syncTimelinePlayers(timelinePlayhead.value, true);
         const cue = Math.round(seconds);
@@ -859,39 +1209,61 @@ function timelineCard() {
     });
     canvas.addEventListener('pointermove', (event) => {
         if (!drag) return;
-        const { track, seconds } = geometry(event);
+        const { track, lane, seconds, duration } = geometry(event);
         const key = drag.key;
-        if (drag.mode === 'move') {
-            const start = timelineSnap(Math.max(0, seconds - drag.offset));
-            drag.changed ||= drag.item.track !== track || drag.item.start_ms !== Math.round(start * 1000);
-            updateTimelineItem(key, (item) => ({ ...item, track, start_ms: Math.round(start * 1000) }));
+        if (drag.mode === 'move' || drag.mode === 'move-group') {
+            const dragKeys = drag.items.map(timelineItemKey);
+            const start = magnetizeTimelineTime(Math.max(0, seconds - drag.offset), duration, dragKeys);
+            const startMs = Math.round(start * 1000);
+            if (drag.mode === 'move-group') {
+                const deltaMs = startMs - Number(drag.item.start_ms || 0);
+                const originals = new Map(drag.items.map((item) => [timelineItemKey(item), item]));
+                drag.changed ||= deltaMs !== 0;
+                timelineItems.value = timelineItems.value.map((item) => {
+                    const original = originals.get(timelineItemKey(item));
+                    if (!original) return item;
+                    const nextStart = Math.max(0, Number(original.start_ms || 0) + deltaMs);
+                    const nextLane = firstAvailableTimelineLane(original.track, nextStart, Number(original.duration_ms || 0), dragKeys, Number(original.lane || 0));
+                    drag.changed ||= nextStart !== Number(original.start_ms || 0) || nextLane !== Number(original.lane || 0);
+                    return { ...item, start_ms: nextStart, lane: nextLane };
+                });
+            } else {
+                const nextLane = firstAvailableTimelineLane(track, startMs, Number(drag.item.duration_ms || 0), key, lane);
+                drag.changed ||= drag.item.track !== track || Number(drag.item.lane || 0) !== nextLane || drag.item.start_ms !== startMs;
+                updateTimelineItem(key, (item) => ({ ...item, track, lane: nextLane, start_ms: startMs }));
+            }
         } else if (drag.mode === 'trim-start') {
-            const start = Math.min(drag.end - .25, timelineSnap(seconds));
+            const start = Math.min(drag.end - .25, magnetizeTimelineTime(seconds, duration, key));
             updateTimelineItem(key, (item) => {
                 const delta = Math.round((start - drag.item.start_ms / 1000) * 1000);
                 const next = { ...item, start_ms: Math.round(start * 1000), duration_ms: Math.round((drag.end - start) * 1000), trim_start_ms: Math.max(0, Number(drag.item.trim_start_ms || 0) + delta) };
-                drag.changed ||= next.start_ms !== drag.item.start_ms || next.duration_ms !== drag.item.duration_ms || next.trim_start_ms !== Number(drag.item.trim_start_ms || 0);
+                next.lane = firstAvailableTimelineLane(next.track, next.start_ms, next.duration_ms, key, Number(drag.item.lane || 0));
+                drag.changed ||= next.start_ms !== drag.item.start_ms || next.duration_ms !== drag.item.duration_ms || next.trim_start_ms !== Number(drag.item.trim_start_ms || 0) || Number(next.lane || 0) !== Number(drag.item.lane || 0);
                 return next;
             });
         } else {
-            const end = Math.max(drag.item.start_ms / 1000 + .25, timelineSnap(seconds));
+            const end = Math.max(drag.item.start_ms / 1000 + .25, magnetizeTimelineTime(seconds, duration, key));
             updateTimelineItem(key, (item) => {
                 const removed = Math.round((drag.item.start_ms / 1000 + drag.item.duration_ms / 1000 - end) * 1000);
                 const next = { ...item, duration_ms: Math.round((end - item.start_ms / 1000) * 1000), trim_end_ms: Math.max(0, Number(drag.item.trim_end_ms || 0) + removed) };
-                drag.changed ||= next.duration_ms !== drag.item.duration_ms || next.trim_end_ms !== Number(drag.item.trim_end_ms || 0);
+                next.lane = firstAvailableTimelineLane(next.track, next.start_ms, next.duration_ms, key, Number(drag.item.lane || 0));
+                drag.changed ||= next.duration_ms !== drag.item.duration_ms || next.trim_end_ms !== Number(drag.item.trim_end_ms || 0) || Number(next.lane || 0) !== Number(drag.item.lane || 0);
                 return next;
             });
         }
         render();
     });
     canvas.addEventListener('pointerup', () => {
-        if (drag?.changed) scheduleTimelineSave(bookKey());
+        if (drag?.changed) {
+            rememberTimelineSnapshot(drag.before);
+            scheduleTimelineSave(bookKey());
+        }
         drag = null;
     });
     canvas.addEventListener('pointercancel', () => { drag = null; });
     canvas.addEventListener('dblclick', (event) => {
-        const { track, seconds } = geometry(event);
-        const item = [...timelineItems.value].reverse().find((candidate) => candidate.track === track && seconds >= candidate.start_ms / 1000 && seconds <= (candidate.start_ms + candidate.duration_ms) / 1000);
+        const { track, lane, seconds } = geometry(event);
+        const item = [...timelineItems.value].reverse().find((candidate) => candidate.track === track && Number(candidate.lane || 0) === lane && seconds >= candidate.start_ms / 1000 && seconds <= (candidate.start_ms + candidate.duration_ms) / 1000);
         if (!item?.is_group) return;
         event.preventDefault();
         drag = null;
@@ -899,8 +1271,31 @@ function timelineCard() {
         toggleTimelineGroup(item);
         render();
     });
+    scroller.addEventListener('scroll', () => { labelCanvas.style.transform = `translateY(${-scroller.scrollTop}px)`; }, { passive: true });
     window.requestAnimationFrame(render);
     window.addEventListener('resize', render, { passive: true });
+    window.addEventListener('keydown', (event) => {
+        const tag = event.target?.tagName?.toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || event.target?.isContentEditable) return;
+        const modifier = event.metaKey || event.ctrlKey;
+        if (modifier && event.key.toLowerCase() === 'z') {
+            event.preventDefault();
+            event.shiftKey ? redoTimeline(bookKey()) : undoTimeline(bookKey());
+        } else if (modifier && event.key.toLowerCase() === 'y') {
+            event.preventDefault();
+            redoTimeline(bookKey());
+        } else if (modifier && event.key.toLowerCase() === 'd') {
+            event.preventDefault();
+            duplicateSelectedTimelineItem(bookKey());
+        } else if ((event.key === 'Delete' || event.key === 'Backspace') && selectedTimelineItem()) {
+            event.preventDefault();
+            removeSelectedTimelineItem(bookKey());
+        } else if (event.key === 'Escape') {
+            selectedTimelineItemKey.value = null;
+            selectedTimelineItemKeys.value = [];
+            render();
+        }
+    });
 
     return _.section({ class: 'at-audioTimelineCard' },
         _.div({ class: 'at-audioTimelineToolbar' },
@@ -914,20 +1309,24 @@ function timelineCard() {
             _.div({ class: 'at-audioTimelineActions' },
                 _.Btn({ dense: true, color: () => audiobookViewMode.value === 'developer' ? 'primary' : 'secondary', icon: 'code', title: 'Developer view', onClick: () => { audiobookViewMode.value = 'developer'; } }),
                 _.Btn({ dense: true, color: () => audiobookViewMode.value === 'preview' ? 'primary' : 'secondary', icon: 'visibility', title: 'Preview view', onClick: () => { audiobookViewMode.value = 'preview'; } }),
+                _.Btn({ dense: true, color: 'secondary', icon: 'undo', title: 'Undo (Ctrl/Cmd + Z)', disabled: () => !timelineUndoStack.value.length, onClick: () => undoTimeline(bookKey()) }),
+                _.Btn({ dense: true, color: 'secondary', icon: 'redo', title: 'Redo (Ctrl/Cmd + Shift + Z)', disabled: () => !timelineRedoStack.value.length, onClick: () => redoTimeline(bookKey()) }),
                 _.Btn({ dense: true, color: 'secondary', icon: 'zoom_in', title: 'Zoom in', onClick: () => { timelineZoom.value = Math.min(2, timelineZoom.value + .25); render(); } }),
                 _.Btn({ dense: true, color: 'secondary', icon: 'zoom_out', title: 'Zoom out', onClick: () => { timelineZoom.value = Math.max(.5, timelineZoom.value - .25); render(); } }),
-                _.Btn({ dense: true, color: 'secondary', icon: 'library_music', title: 'Add music channel', onClick: () => { addTimelineItem('music'); render(); } }),
-                _.Btn({ dense: true, color: 'secondary', icon: 'waves', title: 'Add FX channel', onClick: () => { addTimelineItem('fx'); render(); } }),
+                _.Btn({ dense: true, color: 'secondary', icon: 'library_music', title: 'Choose music from audio library', onClick: () => openTimelineMediaDialog('music') }),
+                _.Btn({ dense: true, color: 'secondary', icon: 'waves', title: 'Choose FX from audio library', onClick: () => openTimelineMediaDialog('fx') }),
                 _.Btn({ dense: true, color: 'primary', icon: 'save', title: 'Save timeline', onClick: () => saveTimeline(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }),
             ),
         ),
         _.div({ class: 'at-audioTimelineInspector' }, () => selectedTimelineItem() ? (() => {
             const item = selectedTimelineItem();
+            const selection = selectedTimelineItems();
+            const multiple = selection.length > 1;
             return _.div({ class: 'at-audioTimelineSelection' },
                 _.div({ class: 'at-audioSelectionSummary' },
-                    _.strong({ class: 'at-audioInspectorLabel' }, item.label),
-                    _.span(`${item.track.toUpperCase()} · ${timelineSnap(item.start_ms / 1000).toFixed(2)}s · ${timelineSnap(item.duration_ms / 1000).toFixed(2)}s · ${timelinePersistence.value === 'saving' ? 'Saving…' : timelinePersistence.value === 'error' ? 'Save failed' : 'Saved'}`),
-                    _.small(item.is_group ? `${item.group_segments?.length || 0} clips · Double click the master to ${isTimelineGroupExpanded(item) ? 'collapse' : 'expand'}` : 'Drag center to move · edges to trim'),
+                    _.strong({ class: 'at-audioInspectorLabel' }, multiple ? `${selection.length} clips selected` : item.label),
+                    _.span(multiple ? `Group selection · ${timelinePersistence.value === 'saving' ? 'Saving…' : timelinePersistence.value === 'error' ? 'Save failed' : 'Saved'}` : `${item.track.toUpperCase()} · ${timelineSnap(item.start_ms / 1000).toFixed(2)}s · ${timelineSnap(item.duration_ms / 1000).toFixed(2)}s · ${timelinePersistence.value === 'saving' ? 'Saving…' : timelinePersistence.value === 'error' ? 'Save failed' : 'Saved'}`),
+                    _.small(multiple ? 'Shift+click adds clips · Drag to move the selection together' : (item.is_group ? `${item.group_segments?.length || 0} clips · Double click the master to ${isTimelineGroupExpanded(item) ? 'collapse' : 'expand'}` : 'Drag center to move · edges to trim')),
                 ),
                 _.div({ class: 'at-audioClipControls' },
                 _.Btn({ dense: true, color: 'secondary', icon: 'volume_off', title: 'Toggle clip mute', onClick: () => updateSelectedTimelineItem((item) => ({ ...item, muted: !item.muted })) }),
@@ -941,12 +1340,14 @@ function timelineCard() {
                 _.Btn({ dense: true, color: 'secondary', icon: 'remove', title: 'Reduce fade out', onClick: () => adjustSelectedTimelineItem('fade_out_ms', -100) }),
                 _.Btn({ dense: true, color: 'secondary', icon: 'add', title: 'Increase fade out', onClick: () => { const item = selectedTimelineItem(); adjustSelectedTimelineItem('fade_out_ms', 100, Math.floor((item?.duration_ms || 0) / 2)); } }),
                 ),
-                item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: isTimelineGroupExpanded(item) ? 'unfold_less' : 'unfold_more', title: isTimelineGroupExpanded(item) ? 'Collapse clips' : 'Expand clips', onClick: () => toggleTimelineGroup(item) }) : null,
-                item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: 'call_split', title: 'Ungroup selected audio', onClick: () => ungroupSelectedTimelineItem(bookKey()) }) : null,
+                !multiple && item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: isTimelineGroupExpanded(item) ? 'unfold_less' : 'unfold_more', title: isTimelineGroupExpanded(item) ? 'Collapse clips' : 'Expand clips', onClick: () => toggleTimelineGroup(item) }) : null,
+                !multiple && item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: 'call_split', title: 'Ungroup selected audio', onClick: () => ungroupSelectedTimelineItem(bookKey()) }) : null,
+                !multiple && !item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: 'content_cut', title: 'Split clip at playhead', onClick: () => splitSelectedTimelineItem(bookKey()) }) : null,
+                _.Btn({ dense: true, color: 'secondary', icon: 'content_copy', title: 'Duplicate selected clip', onClick: () => duplicateSelectedTimelineItem(bookKey()) }),
                 _.Btn({ dense: true, color: 'danger', icon: 'delete_outline', title: 'Remove selected clip', onClick: () => removeSelectedTimelineItem(bookKey()) }),
             );
         })() : _.div({ class: 'at-audioTimelineEmptySelection' }, _.Icon ? _.Icon({ name: 'ads_click' }) : null, _.span('Select a clip to edit its level, fades and grouping.'))),
-        canvas,
+        _.div({ class: 'at-audioTimelineFrame' }, channelViewport, scroller),
     );
 }
 
