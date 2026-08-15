@@ -84,6 +84,7 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::post('/books/{keyBook}/blocks/{blockUuid}/audio/generate', [DashboardBookController::class, 'generateBlockAudio'])->name('books.blocks.audio.generate');
     Route::delete('/books/{keyBook}/blocks/{blockUuid}/audio/{job}', [DashboardBookController::class, 'deleteAudioGroup'])->name('books.blocks.audio.delete');
     Route::post('/books/{keyBook}/blocks/{blockUuid}/audio/{job}/insert-timeline', [DashboardBookController::class, 'insertAudioGroupTimeline'])->name('books.blocks.audio.insert-timeline');
+    Route::post('/books/{keyBook}/audio-timeline/group', [DashboardBookController::class, 'groupAudioTimelineItems'])->name('books.audio-timeline.group');
     Route::post('/books/{keyBook}/audio-timeline/{timelineItem}/ungroup', [DashboardBookController::class, 'ungroupAudioTimelineItem'])->name('books.audio-timeline.ungroup');
     Route::get('/books/{keyBook}/blocks/{blockUuid}/translations', [DashboardBookController::class, 'blockTranslations'])->name('books.blocks.translations');
     Route::post('/books/{keyBook}/blocks/{blockUuid}/translations', [DashboardBookController::class, 'storeBlockTranslation'])->name('books.blocks.translations.store');

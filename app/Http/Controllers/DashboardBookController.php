@@ -1159,27 +1159,57 @@ class DashboardBookController extends Controller
     public function audioTimeline(string $keyBook): JsonResponse
     {
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $relations = [
+            'audioSegment:id,block_uuid,audio_path,duration_ms,status,metadata_json',
+            'librarySample:id,audio_library_voice_id,audio_path,duration_ms,original_name',
+            'mediaAsset:id,account_id,audio_path,duration_ms,original_name',
+            'audioJob.segments:id,book_audio_job_id,audio_path,duration_ms,pause_after_ms,segment_index,text_plain,source_start,source_end,metadata_json',
+            'timelineChildren.audioSegment:id,block_uuid,audio_path,duration_ms,status,metadata_json',
+            'timelineChildren.librarySample:id,audio_library_voice_id,audio_path,duration_ms,original_name',
+            'timelineChildren.mediaAsset:id,account_id,audio_path,duration_ms,original_name',
+        ];
+        $audioPath = static fn (BookAudioTimelineItem $item): ?string => $item->audioSegment?->audio_path
+            ?? ($item->mediaAsset ? route('dashboard.api.audio-media.stream', $item->mediaAsset) : ($item->librarySample ? route('dashboard.api.audio-library.samples.stream', $item->librarySample) : null));
         $items = $book->audioTimelineItems()
-            ->with(['audioSegment:id,block_uuid,audio_path,duration_ms,status', 'librarySample:id,audio_library_voice_id,audio_path,duration_ms,original_name', 'mediaAsset:id,account_id,audio_path,duration_ms,original_name', 'audioJob.segments:id,book_audio_job_id,audio_path,duration_ms,pause_after_ms,segment_index,text_plain,source_start,source_end,metadata_json'])
+            // Compound children are represented by their persisted master.
+            // The original clip rows remain intact and are returned inside it.
+            ->whereNull('parent_timeline_item_id')
+            ->with($relations)
             ->orderBy('track')
             ->orderBy('sort_order')
             ->get()
-            ->map(function (BookAudioTimelineItem $item): array {
+            ->map(function (BookAudioTimelineItem $item) use ($audioPath): array {
                 $data = $item->toArray();
-                $data['audio_path'] = $item->audioSegment?->audio_path
-                    ?? ($item->mediaAsset ? route('dashboard.api.audio-media.stream', $item->mediaAsset) : ($item->librarySample ? route('dashboard.api.audio-library.samples.stream', $item->librarySample) : null));
+                $data['audio_path'] = $audioPath($item);
                 $data['block_uuid'] = $item->audioJob?->block_uuid ?? $item->audioSegment?->block_uuid;
-                $data['group_segments'] = $item->is_group ? $item->audioJob?->segments
-                    ->sortBy('segment_index')->values()->map(fn (BookAudioSegment $segment) => [
+                $data['group_segments'] = $item->is_group && $item->audioJob
+                    ? $item->audioJob->segments->sortBy('segment_index')->values()->map(fn (BookAudioSegment $segment) => [
                         'id' => $segment->id, 'audio_path' => $segment->audio_path,
                         'duration_ms' => $segment->duration_ms, 'pause_after_ms' => $segment->pause_after_ms,
                         'text_plain' => $segment->text_plain, 'source_start' => $segment->source_start, 'source_end' => $segment->source_end,
                         'word_timings' => $segment->metadata_json['word_timings'] ?? [],
-                    ]) : null;
+                    ])->all()
+                    : ($item->is_group && $item->timelineChildren->isNotEmpty()
+                        ? $item->timelineChildren->sortBy('start_ms')->values()->map(fn (BookAudioTimelineItem $child) => [
+                            'id' => "timeline-{$child->id}",
+                            'audio_path' => $audioPath($child),
+                            'duration_ms' => $child->duration_ms,
+                            'timeline_offset_ms' => max(0, (int) $child->start_ms - (int) $item->start_ms),
+                            'media_offset_ms' => $child->trim_start_ms,
+                            'volume' => $child->volume,
+                            'muted' => $child->muted,
+                            'fade_in_ms' => $child->fade_in_ms,
+                            'fade_out_ms' => $child->fade_out_ms,
+                            'text_plain' => $child->label,
+                            'word_timings' => $child->audioSegment?->metadata_json['word_timings'] ?? [],
+                        ])->all()
+                        : null);
+                $data['is_compound_group'] = $item->is_group && ! $item->book_audio_job_id && $item->timelineChildren->isNotEmpty();
                 unset($data['audio_segment']);
                 unset($data['library_sample']);
                 unset($data['media_asset']);
                 unset($data['audio_job']);
+                unset($data['timeline_children']);
 
                 return $data;
             });
@@ -1197,7 +1227,9 @@ class DashboardBookController extends Controller
         abort_unless($mediaIds->isEmpty() || AudioMediaAsset::query()->whereIn('id', $mediaIds)->where('account_id', auth()->id())->count() === $mediaIds->count(), 422);
         DB::transaction(function () use ($book, $validated): void {
             $submittedIds = collect($validated['items'])->pluck('id')->filter()->map(fn ($id) => (int) $id)->values();
-            $existing = $book->audioTimelineItems();
+            // Nested compound children are managed by their group/ungroup
+            // endpoints and must not disappear when the client saves masters.
+            $existing = $book->audioTimelineItems()->whereNull('parent_timeline_item_id');
             $submittedIds->isEmpty() ? $existing->delete() : $existing->whereNotIn('id', $submittedIds)->delete();
 
             foreach ($validated['items'] as $index => $item) {
@@ -1267,24 +1299,121 @@ class DashboardBookController extends Controller
         return response()->json(['data' => ['deleted' => true]]);
     }
 
+    public function groupAudioTimelineItems(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate([
+            'item_ids' => ['required', 'array', 'min:2', 'max:40'],
+            'item_ids.*' => ['integer', 'distinct'],
+        ]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $items = $book->audioTimelineItems()
+            ->whereIn('id', $validated['item_ids'])
+            ->whereNull('parent_timeline_item_id')
+            ->orderBy('start_ms')
+            ->get();
+        abort_unless($items->count() === count($validated['item_ids']), 422, 'One or more selected clips are no longer available.');
+        abort_if($items->contains(fn (BookAudioTimelineItem $item) => $item->is_group), 422, 'Ungroup master clips before creating a new compound clip.');
+
+        $track = $items->first()->track;
+        $lane = $items->first()->lane;
+        abort_unless($items->every(fn (BookAudioTimelineItem $item) => $item->track === $track && (int) $item->lane === (int) $lane), 422, 'Compound clips must use the same channel and lane.');
+
+        $start = $items->min('start_ms');
+        $end = $items->max(fn (BookAudioTimelineItem $item) => (int) $item->start_ms + (int) $item->duration_ms);
+        $master = DB::transaction(function () use ($book, $items, $track, $lane, $start, $end): BookAudioTimelineItem {
+            $master = BookAudioTimelineItem::query()->create([
+                'book_id' => $book->id,
+                'is_group' => true,
+                'track' => $track,
+                'lane' => $lane,
+                'label' => "{$items->count()} clips group",
+                'start_ms' => $start,
+                'duration_ms' => max(100, $end - $start),
+                'volume' => 100,
+                'sort_order' => $items->min('sort_order'),
+            ]);
+            BookAudioTimelineItem::query()->whereIn('id', $items->pluck('id'))->update(['parent_timeline_item_id' => $master->id]);
+
+            return $master;
+        });
+
+        return response()->json(['data' => ['master_id' => $master->id]], 201);
+    }
+
     public function ungroupAudioTimelineItem(string $keyBook, BookAudioTimelineItem $timelineItem): JsonResponse
     {
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
-        abort_unless($timelineItem->book_id === $book->id && $timelineItem->is_group && $timelineItem->book_audio_job_id, 422);
+        abort_unless($timelineItem->book_id === $book->id && $timelineItem->is_group, 422);
+
+        if (! $timelineItem->book_audio_job_id) {
+            $children = $timelineItem->timelineChildren()->get();
+            abort_if($children->isEmpty(), 422, 'This compound clip has no children to ungroup.');
+            DB::transaction(function () use ($timelineItem): void {
+                $timelineItem->timelineChildren()->update(['parent_timeline_item_id' => null]);
+                $timelineItem->delete();
+            });
+
+            return $this->audioTimeline($keyBook);
+        }
+
         $segments = $timelineItem->audioJob?->segments()->orderBy('segment_index')->get() ?? collect();
         abort_if($segments->isEmpty(), 422, 'This group has no clips to ungroup.');
-        $start = $timelineItem->start_ms;
-        foreach ($segments as $index => $segment) {
-            BookAudioTimelineItem::query()->create([
-                'book_id' => $book->id, 'book_audio_segment_id' => $segment->id, 'track' => $timelineItem->track,
-                'lane' => $timelineItem->lane,
-                'label' => $segment->text_plain, 'start_ms' => $start, 'duration_ms' => $segment->duration_ms,
-                'volume' => $timelineItem->volume, 'muted' => $timelineItem->muted,
-                'sort_order' => $timelineItem->sort_order + $index,
-            ]);
-            $start += (int) $segment->duration_ms + (int) $segment->pause_after_ms;
+
+        // A grouped generation is a non-destructive master. Ungrouping must
+        // keep its current timeline edit: portions trimmed from the master do
+        // not come back, and pauses remain at their original positions.
+        $sourceDuration = $segments->sum(fn (BookAudioSegment $segment) => (int) $segment->duration_ms + (int) $segment->pause_after_ms);
+        $visibleStart = min(max(0, (int) $timelineItem->trim_start_ms), $sourceDuration);
+        $visibleEnd = max($visibleStart, $sourceDuration - max(0, (int) $timelineItem->trim_end_ms));
+        abort_if($visibleEnd <= $visibleStart, 422, 'The visible portion of this group is empty.');
+
+        $created = [];
+        $offset = 0;
+        foreach ($segments as $segment) {
+            $segmentStart = $offset;
+            $segmentEnd = $segmentStart + (int) $segment->duration_ms;
+            $partStart = max($visibleStart, $segmentStart);
+            $partEnd = min($visibleEnd, $segmentEnd);
+
+            if ($partEnd > $partStart) {
+                $created[] = [
+                    'segment' => $segment,
+                    'start_ms' => (int) $timelineItem->start_ms + ($partStart - $visibleStart),
+                    'duration_ms' => $partEnd - $partStart,
+                    'trim_start_ms' => $partStart - $segmentStart,
+                    'trim_end_ms' => $segmentEnd - $partEnd,
+                ];
+            }
+            $offset = $segmentEnd + (int) $segment->pause_after_ms;
         }
-        $timelineItem->delete();
+        abort_if(empty($created), 422, 'The visible portion of this group contains no audio clips.');
+
+        DB::transaction(function () use ($book, $timelineItem, $created): void {
+            $lastIndex = count($created) - 1;
+            foreach ($created as $index => $part) {
+                /** @var BookAudioSegment $segment */
+                $segment = $part['segment'];
+                BookAudioTimelineItem::query()->create([
+                    'book_id' => $book->id,
+                    'book_audio_segment_id' => $segment->id,
+                    'book_audio_job_id' => $timelineItem->book_audio_job_id,
+                    'track' => $timelineItem->track,
+                    'lane' => $timelineItem->lane,
+                    'label' => $segment->text_plain,
+                    'start_ms' => $part['start_ms'],
+                    'duration_ms' => $part['duration_ms'],
+                    'trim_start_ms' => $part['trim_start_ms'],
+                    'trim_end_ms' => $part['trim_end_ms'],
+                    'fade_in_ms' => $index === 0 ? min((int) $timelineItem->fade_in_ms, (int) floor($part['duration_ms'] / 2)) : 0,
+                    'fade_out_ms' => $index === $lastIndex ? min((int) $timelineItem->fade_out_ms, (int) floor($part['duration_ms'] / 2)) : 0,
+                    'volume' => $timelineItem->volume,
+                    'muted' => $timelineItem->muted,
+                    'sort_order' => $timelineItem->sort_order + $index,
+                ]);
+            }
+            $timelineItem->delete();
+        });
+
         return $this->audioTimeline($keyBook);
     }
 

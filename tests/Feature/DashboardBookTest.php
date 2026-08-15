@@ -1926,6 +1926,131 @@ class DashboardBookTest extends TestCase
         $this->assertDatabaseMissing('book_audio_timeline_items', ['id' => $clip->id]);
     }
 
+    public function test_dashboard_ungroups_a_trimmed_audio_master_without_restoring_hidden_audio(): void
+    {
+        $book = $this->createBook();
+        $blockUuid = (string) Str::uuid();
+        $saved = app(BookBlockService::class)->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('A generated narration.'),
+            'text_plain' => 'A generated narration.',
+        ]);
+        $job = BookAudioJob::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+            'block_uuid' => $blockUuid,
+            'status' => 'completed',
+            'provider_key' => 'mock',
+            'source' => 'mock',
+        ]);
+        $first = BookAudioSegment::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+            'book_audio_job_id' => $job->id,
+            'block_uuid' => $blockUuid,
+            'audio_path' => 'audiobooks/test/first.wav',
+            'duration_ms' => 1000,
+            'pause_after_ms' => 200,
+            'segment_index' => 0,
+            'text_plain' => 'First sentence.',
+        ]);
+        $second = BookAudioSegment::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'book_block_version_id' => $saved['version']->id,
+            'book_audio_job_id' => $job->id,
+            'block_uuid' => $blockUuid,
+            'audio_path' => 'audiobooks/test/second.wav',
+            'duration_ms' => 1000,
+            'segment_index' => 1,
+            'text_plain' => 'Second sentence.',
+        ]);
+        $master = BookAudioTimelineItem::query()->create([
+            'book_id' => $book->id,
+            'book_audio_segment_id' => $first->id,
+            'book_audio_job_id' => $job->id,
+            'is_group' => true,
+            'track' => 'voice',
+            'lane' => 2,
+            'label' => 'Narration group',
+            'start_ms' => 10000,
+            'duration_ms' => 1500,
+            'trim_start_ms' => 400,
+            'trim_end_ms' => 300,
+            'fade_in_ms' => 300,
+            'fade_out_ms' => 300,
+            'volume' => 65,
+            'muted' => true,
+            'sort_order' => 0,
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/audio-timeline/{$master->id}/ungroup")
+            ->assertOk()
+            ->assertJsonCount(2, 'data.items');
+
+        $this->assertDatabaseMissing('book_audio_timeline_items', ['id' => $master->id]);
+        $this->assertDatabaseHas('book_audio_timeline_items', [
+            'book_audio_segment_id' => $first->id,
+            'start_ms' => 10000,
+            'duration_ms' => 600,
+            'trim_start_ms' => 400,
+            'trim_end_ms' => 0,
+            'fade_in_ms' => 300,
+            'fade_out_ms' => 0,
+            'volume' => 65,
+            'muted' => true,
+        ]);
+        $this->assertDatabaseHas('book_audio_timeline_items', [
+            'book_audio_segment_id' => $second->id,
+            'start_ms' => 10800,
+            'duration_ms' => 700,
+            'trim_start_ms' => 0,
+            'trim_end_ms' => 300,
+            'fade_in_ms' => 0,
+            'fade_out_ms' => 300,
+            'volume' => 65,
+            'muted' => true,
+        ]);
+    }
+
+    public function test_dashboard_can_group_and_ungroup_selected_timeline_clips_without_changing_them(): void
+    {
+        $book = $this->createBook();
+        $first = BookAudioTimelineItem::query()->create([
+            'book_id' => $book->id, 'track' => 'music', 'lane' => 1, 'label' => 'Intro',
+            'start_ms' => 1000, 'duration_ms' => 2000, 'trim_start_ms' => 250, 'volume' => 70, 'sort_order' => 0,
+        ]);
+        $second = BookAudioTimelineItem::query()->create([
+            'book_id' => $book->id, 'track' => 'music', 'lane' => 1, 'label' => 'Theme',
+            'start_ms' => 4500, 'duration_ms' => 1500, 'trim_end_ms' => 150, 'volume' => 55, 'muted' => true, 'sort_order' => 1,
+        ]);
+
+        $grouped = $this->postJson("/dashboard/api/books/{$book->key_book}/audio-timeline/group", [
+            'item_ids' => [$first->id, $second->id],
+        ])
+            ->assertCreated()
+            ->assertJsonStructure(['data' => ['master_id']]);
+        $masterId = $grouped->json('data.master_id');
+
+        $this->assertDatabaseHas('book_audio_timeline_items', [
+            'id' => $masterId, 'is_group' => true, 'track' => 'music', 'lane' => 1, 'start_ms' => 1000, 'duration_ms' => 5000,
+        ]);
+        $this->assertDatabaseHas('book_audio_timeline_items', ['id' => $first->id, 'parent_timeline_item_id' => $masterId]);
+        $this->assertDatabaseHas('book_audio_timeline_items', ['id' => $second->id, 'parent_timeline_item_id' => $masterId]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/audio-timeline/{$masterId}/ungroup")
+            ->assertOk()
+            ->assertJsonCount(2, 'data.items');
+
+        $this->assertDatabaseMissing('book_audio_timeline_items', ['id' => $masterId]);
+        $this->assertDatabaseHas('book_audio_timeline_items', ['id' => $first->id, 'parent_timeline_item_id' => null, 'trim_start_ms' => 250, 'volume' => 70]);
+        $this->assertDatabaseHas('book_audio_timeline_items', ['id' => $second->id, 'parent_timeline_item_id' => null, 'trim_end_ms' => 150, 'volume' => 55, 'muted' => true]);
+    }
+
     public function test_dashboard_can_delete_an_unused_generated_audio_master_only(): void
     {
         Storage::fake('public');

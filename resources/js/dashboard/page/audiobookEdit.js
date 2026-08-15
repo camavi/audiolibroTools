@@ -268,8 +268,9 @@ function timelineAudioParts(item) {
     const parts = Array.isArray(item.group_segments) && item.group_segments.length ? item.group_segments : [item];
     let offset = 0;
     return parts.map((part) => {
-        const output = { ...part, offset_ms: offset };
-        offset += Number(part.duration_ms || 0) + Number(part.pause_after_ms || 0);
+        const explicitOffset = Number(part.timeline_offset_ms);
+        const output = { ...part, offset_ms: Number.isFinite(explicitOffset) ? explicitOffset : offset };
+        offset = Math.max(offset, output.offset_ms + Number(part.duration_ms || 0) + Number(part.pause_after_ms || 0));
         return output;
     });
 }
@@ -287,7 +288,7 @@ function timelinePlayableParts(item) {
         if (visibleEnd <= visibleStart) return [];
         return [{
             ...part,
-            media_offset_ms: visibleStart - partStart,
+            media_offset_ms: Number(part.media_offset_ms || 0) + visibleStart - partStart,
             timeline_offset_ms: visibleStart - trimStart,
             playable_duration_ms: visibleEnd - visibleStart,
         }];
@@ -449,7 +450,7 @@ function syncTimelinePlayers(playhead, seek = false) {
         const start = (item.start_ms + part.timeline_offset_ms) / 1000;
         const end = start + Number(part.playable_duration_ms || 0) / 1000;
         const key = timelinePartPlayerKey(item, part);
-        if (!url || item.muted || !trackCanPlay(item.track) || playhead < start || playhead >= end) {
+        if (!url || item.muted || part.muted || !trackCanPlay(item.track) || playhead < start || playhead >= end) {
             const inactiveAudio = timelinePlayers.get(key);
             if (inactiveAudio) { inactiveAudio.pause(); inactiveAudio._atTimelineActive = false; }
             return;
@@ -460,8 +461,11 @@ function syncTimelinePlayers(playhead, seek = false) {
         const remainingMs = Math.max(0, Number(item.duration_ms || 0) - elapsedMs);
         const fadeInGain = Number(item.fade_in_ms || 0) > 0 ? Math.min(1, elapsedMs / Number(item.fade_in_ms)) : 1;
         const fadeOutGain = Number(item.fade_out_ms || 0) > 0 ? Math.min(1, remainingMs / Number(item.fade_out_ms)) : 1;
-        audio.volume = Math.max(0, Math.min(1, ((item.volume ?? 100) / 100) * ((trackState.value[item.track]?.volume ?? 100) / 100) * fadeInGain * fadeOutGain));
         const offset = Math.max(0, playhead - start);
+        const partFadeInGain = Number(part.fade_in_ms || 0) > 0 ? Math.min(1, offset * 1000 / Number(part.fade_in_ms)) : 1;
+        const partRemainingMs = Math.max(0, Number(part.playable_duration_ms || 0) - offset * 1000);
+        const partFadeOutGain = Number(part.fade_out_ms || 0) > 0 ? Math.min(1, partRemainingMs / Number(part.fade_out_ms)) : 1;
+        audio.volume = Math.max(0, Math.min(1, ((item.volume ?? 100) / 100) * ((part.volume ?? 100) / 100) * ((trackState.value[item.track]?.volume ?? 100) / 100) * fadeInGain * fadeOutGain * partFadeInGain * partFadeOutGain));
         const offsetMs = Math.round(part.media_offset_ms + offset * 1000);
         const word = item.track === 'voice' && Array.isArray(part.word_timings)
             ? part.word_timings.find((timing) => offsetMs >= Number(timing.start_ms || 0) && offsetMs < Number(timing.end_ms || 0))
@@ -546,6 +550,34 @@ function duplicateSelectedTimelineItem(keyBook) {
     selectedTimelineItemKeys.value = duplicates.map(timelineItemKey);
     scheduleTimelineSave(keyBook);
     renderTimeline?.();
+}
+
+function canGroupTimelineItems(items = selectedTimelineItems()) {
+    if (items.length < 2 || items.some((item) => item.is_group || !item.id)) return false;
+    const first = items[0];
+    return items.every((item) => item.track === first.track && Number(item.lane || 0) === Number(first.lane || 0));
+}
+
+async function groupSelectedTimelineItems(keyBook) {
+    const items = selectedTimelineItems();
+    if (!canGroupTimelineItems(items)) {
+        audioStatus.value = { type: 'info', message: 'Select at least two non-group clips in the same channel and lane.' };
+        return;
+    }
+    try {
+        const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline/group`, {
+            item_ids: items.map((item) => item.id),
+        });
+        const masterId = audioData(payload).master_id;
+        await loadTimeline(keyBook);
+        const master = timelineItems.value.find((item) => Number(item.id) === Number(masterId));
+        if (master) {
+            selectedTimelineItemKey.value = timelineItemKey(master);
+            selectedTimelineItemKeys.value = [timelineItemKey(master)];
+        }
+        audioStatus.value = { type: 'success', message: `${items.length} clips grouped into a compound clip.` };
+        renderTimeline?.();
+    } catch (error) { audioStatus.value = { type: 'danger', message: error.message || 'Unable to group the selected clips.' }; }
 }
 
 function splitSelectedTimelineItem(keyBook) {
@@ -1413,6 +1445,12 @@ function timelineCard() {
         } else if (modifier && event.key.toLowerCase() === 'd') {
             event.preventDefault();
             duplicateSelectedTimelineItem(bookKey());
+        } else if (event.key.toLowerCase() === 's' && selectedTimelineItem() && !selectedTimelineItem().is_group) {
+            event.preventDefault();
+            splitSelectedTimelineItem(bookKey());
+        } else if (event.key.toLowerCase() === 'u' && selectedTimelineItem()?.is_group) {
+            event.preventDefault();
+            ungroupSelectedTimelineItem(bookKey());
         } else if ((event.key === 'Delete' || event.key === 'Backspace') && selectedTimelineItem()) {
             event.preventDefault();
             removeSelectedTimelineItem(bookKey());
@@ -1468,6 +1506,7 @@ function timelineCard() {
                 ),
                 !multiple && item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: isTimelineGroupExpanded(item) ? 'unfold_less' : 'unfold_more', title: isTimelineGroupExpanded(item) ? 'Collapse clips' : 'Expand clips', onClick: () => toggleTimelineGroup(item) }) : null,
                 !multiple && item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: 'call_split', title: 'Ungroup selected audio', onClick: () => ungroupSelectedTimelineItem(bookKey()) }) : null,
+                multiple ? _.Btn({ dense: true, color: 'secondary', icon: 'folder_zip', title: 'Group selected clips', disabled: !canGroupTimelineItems(selection), onClick: () => groupSelectedTimelineItems(bookKey()) }) : null,
                 !multiple && !item.is_group ? _.Btn({ dense: true, color: 'secondary', icon: 'content_cut', title: 'Split clip at playhead', onClick: () => splitSelectedTimelineItem(bookKey()) }) : null,
                 _.Btn({ dense: true, color: () => timelineLoopRange.value ? 'primary' : 'secondary', icon: 'repeat', title: 'Loop selected clip(s)', onClick: toggleTimelineLoop }),
                 _.Btn({ dense: true, color: 'secondary', icon: 'content_copy', title: 'Duplicate selected clip', onClick: () => duplicateSelectedTimelineItem(bookKey()) }),
