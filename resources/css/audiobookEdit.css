@@ -13,16 +13,68 @@
     box-shadow: 0 14px 32px rgb(15 23 42 / 7%)
 }
 
-.at-audioPublishDialog { display: grid; gap: 1rem; width: 100%; min-width: 0; max-width: 100%; overflow-x: hidden; }
+.at-audioPublishDialog {
+    display: grid;
+    gap: 1rem;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
 .at-audioPublishNotice,
-.at-audioPublishProgress { display: flex; align-items: center; gap: .55rem; min-width: 0; padding: .8rem 1rem; border-radius: .55rem; background: #eff6ff; color: #36527a; }
-.at-audioPublishNotice span { min-width: 0; overflow-wrap: anywhere; }
-.at-audioPublishProgress { justify-content: center; min-height: 8rem; }
-.at-audioPublishResults { display: grid; gap: .55rem; }
-.at-audioPublishRow { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-width: 0; padding: .7rem .85rem; border: 1px solid #dbe3ee; border-radius: .55rem; background: #f8fafc; }
-.at-audioPublishRow div { display: grid; min-width: 0; gap: .15rem; }
-.at-audioPublishRow small { overflow-wrap: anywhere; }
-.at-audioPublishReady { display: grid; gap: .9rem; }
+.at-audioPublishProgress {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    min-width: 0;
+    padding: .8rem 1rem;
+    border-radius: .55rem;
+    background: #eff6ff;
+    color: #36527a;
+}
+
+.at-audioPublishNotice span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.at-audioPublishProgress {
+    justify-content: center;
+    min-height: 8rem;
+}
+
+.at-audioPublishResults {
+    display: grid;
+    gap: .55rem;
+}
+
+.at-audioPublishRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    min-width: 0;
+    padding: .7rem .85rem;
+    border: 1px solid #dbe3ee;
+    border-radius: .55rem;
+    background: #f8fafc;
+}
+
+.at-audioPublishRow div {
+    display: grid;
+    min-width: 0;
+    gap: .15rem;
+}
+
+.at-audioPublishRow small {
+    overflow-wrap: anywhere;
+}
+
+.at-audioPublishReady {
+    display: grid;
+    gap: .9rem;
+}
 
 .at-audiobookTopbar {
     display: flex;
@@ -213,7 +265,10 @@
     cursor: pointer
 }
 
-.at-audioGroupToggle:hover { background: #eef4ff; color: #2563eb }
+.at-audioGroupToggle:hover {
+    background: #eef4ff;
+    color: #2563eb
+}
 
 .at-audioGeneratedMasterInfo {
     display: grid;
@@ -259,7 +314,9 @@
     font-size: .72rem
 }
 
-.at-audioGeneratedChild:first-child { border-top: 0 }
+.at-audioGeneratedChild:first-child {
+    border-top: 0
+}
 
 .at-audioDeleteConfirm {
     display: grid;
@@ -463,25 +520,78 @@
 
 .at-audioTimelineCard {
     margin-top: 1rem;
+    border: 1px solid #29384d;
     border-radius: .9rem;
+    background: #111a29;
+    box-shadow: 0 18px 38px rgb(15 23 42 / 18%);
     overflow: hidden
 }
 
 .at-audioTimelineToolbar {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: 1rem;
-    padding: .8rem 1rem
+    justify-content: space-between;
+    gap: .75rem;
+    min-height: 3.45rem;
+    padding: .38rem .55rem .38rem .7rem;
+    border-bottom: 1px solid #29384d;
+    background: #172234
 }
 
 .at-audioTimelineTransport {
     display: flex;
-    gap: .35rem
+    align-items: center;
+    gap: .55rem
 }
 
 .at-audioTimelineActions {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
     margin-left: auto
+}
+
+.at-audioToolbarGroup {
+    display: flex;
+    align-items: center;
+    gap: .15rem;
+    padding: .16rem;
+    border: 1px solid #314157;
+    border-radius: .45rem;
+    background: #111a29
+}
+
+.at-audioToolbarGroup--transport {
+    gap: .2rem
+}
+
+.at-audioToolbarGroup--save {
+    border-color: rgb(96 165 250 / 50%)
+}
+
+.at-audioTimelineCard .cms-btn {
+    min-width: 1.85rem;
+    min-height: 1.85rem;
+    margin: 0 !important;
+}
+
+.at-audioTimelineCard .cms-state-secondary .cms-btn {
+    background: #253348;
+    color: #d5dfed
+}
+
+.at-audioTimelineCard .cms-state-secondary.cms-clickable:hover .cms-btn {
+    background: #344866;
+    color: #fff
+}
+
+.at-audioTimelineCard .cms-btn:disabled {
+    opacity: .38
+}
+
+.at-audioPlayButton {
+    width: 2.1rem !important;
+    min-width: 2.1rem !important
 }
 
 .at-audioPreviewCard.is-developer {
@@ -491,53 +601,73 @@
 
 .at-audioTimecode {
     align-self: center;
-    min-width: 84px;
-    padding: 0 .45rem;
-    color: #cbd5e1;
+    min-width: 7.2rem;
+    padding: .38rem .6rem;
+    border: 1px solid #314157;
+    border-radius: .38rem;
+    background: #0d1522;
+    color: #dbeafe;
     font-family: ui-monospace, SFMono-Regular, monospace;
-    font-size: .78rem;
+    font-size: .84rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .04em;
     text-align: center
 }
 
 .at-audioTimelineInspector {
     display: flex;
     align-items: center;
-    gap: .8rem;
-    min-height: 2.55rem;
-    padding: 0 .9rem;
-    border-top: 1px solid #dbe3ee;
-    color: #64748b;
+    gap: .65rem;
+    min-height: 3.65rem;
+    padding: .35rem .7rem;
+    border-bottom: 1px solid #29384d;
+    background: #141f30;
+    color: #91a4be;
     font-size: .72rem
 }
 
 .at-audioInspectorLabel {
     margin-right: .15rem;
-    color: #334155;
+    color: #edf4ff;
     font-weight: 750
 }
 
 .at-audioClipControls {
     display: flex;
     align-items: center;
-    gap: .2rem;
+    gap: .4rem;
     margin-left: auto
 }
 
 .at-audioClipValue {
-    min-width: 3.8rem;
-    margin-left: .35rem;
-    color: #475569;
+    min-width: 3.2rem;
+    color: #d5dfed;
     font-family: ui-monospace, SFMono-Regular, monospace;
     font-size: .67rem;
     text-align: center
 }
 
-.at-audioTimelineInspector > .cms-btn {
-    margin-left: auto
+.at-audioInspectorGroup {
+    display: flex;
+    align-items: center;
+    gap: .18rem;
+    padding: .16rem .25rem;
+    border: 1px solid #314157;
+    border-radius: .42rem;
+    background: #111a29
 }
 
-.at-audioClipControls .cms-btn {
-    margin-left: 0
+.at-audioInspectorGroupLabel {
+    padding: 0 .3rem 0 .15rem;
+    color: #8fa5c1;
+    font-size: .61rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase
+}
+
+.at-audioInspectorGroup--actions {
+    margin-left: .1rem
 }
 
 .at-audioTimelineSelection {
@@ -556,18 +686,14 @@
 
 .at-audioSelectionSummary span,
 .at-audioSelectionSummary small {
-    color: #64748b
-}
-
-.at-audioTimelineSelection > .cms-btn {
-    margin-left: 0
+    color: #91a4be
 }
 
 .at-audioTimelineEmptySelection {
     display: flex;
     align-items: center;
     gap: .45rem;
-    color: #64748b
+    color: #91a4be
 }
 
 .at-audioTimelineCanvas {
@@ -588,15 +714,15 @@
     width: 170px;
     flex: 0 0 170px;
     overflow: hidden;
-    border-right: 1px solid #334155;
-    background: #172033
+    border-right: 1px solid #314157;
+    background: #111a29
 }
 
 .at-audioTimelineLabelsCanvas {
     display: block;
     width: 170px;
     height: 330px;
-    background: #172033;
+    background: #111a29;
     will-change: transform
 }
 
@@ -613,7 +739,7 @@
     gap: .7rem
 }
 
-.at-timelineMediaToolbar > :first-child {
+.at-timelineMediaToolbar> :first-child {
     flex: 1
 }
 
@@ -720,6 +846,13 @@
         flex-direction: column
     }
 
+    .at-audioTimelineActions,
+    .at-audioTimelineSelection,
+    .at-audioClipControls {
+        flex-wrap: wrap;
+        margin-left: 0
+    }
+
     .at-timelineMediaResult {
         grid-template-columns: 1fr auto
     }
@@ -755,12 +888,4 @@
         height: 270px
     }
 
-    .at-audioTimelineInspector .cms-btn {
-        margin-left: 0
-    }
-
-    .at-audioClipControls {
-        flex-wrap: wrap;
-        margin-left: 0
-    }
 }
