@@ -403,6 +403,41 @@ function stopTimelinePlayers() {
     timelinePlayers.forEach((audio) => { audio.pause(); });
     timelinePlayers.clear();
 }
+function timelinePartPlayerKey(item, part) {
+    return `${timelineItemKey(item)}:${part.id || part.offset_ms}`;
+}
+function prepareTimelinePlayer(key, url) {
+    let audio = timelinePlayers.get(key);
+    if (audio) return audio;
+    audio = new Audio(url);
+    audio.preload = 'auto';
+    audio._atTimelineActive = false;
+    audio._atPendingMediaTime = null;
+    // A seek issued before metadata is available is not reliable in every
+    // browser. Keep the requested position and apply it as soon as this WAV
+    // is seekable, instead of retrying it on every animation frame.
+    audio.addEventListener('loadedmetadata', () => {
+        if (!Number.isFinite(audio._atPendingMediaTime)) return;
+        try { audio.currentTime = audio._atPendingMediaTime; } catch { }
+        audio._atPendingMediaTime = null;
+    });
+    audio.load();
+    timelinePlayers.set(key, audio);
+    return audio;
+}
+function seekTimelinePlayer(audio, mediaTime) {
+    if (audio.readyState < 1) {
+        audio._atPendingMediaTime = mediaTime;
+        return;
+    }
+    try { audio.currentTime = mediaTime; } catch { }
+}
+function preloadTimelinePlayers() {
+    timelineItems.value.forEach((item) => timelinePlayableParts(item).forEach((part) => {
+        const url = timelineAudioUrl(part);
+        if (url) prepareTimelinePlayer(timelinePartPlayerKey(item, part), url);
+    }));
+}
 function syncTimelinePlayers(playhead, seek = false) {
     const activeKeys = new Set();
     let nextReading = null;
@@ -413,11 +448,14 @@ function syncTimelinePlayers(playhead, seek = false) {
         const url = timelineAudioUrl(part);
         const start = (item.start_ms + part.timeline_offset_ms) / 1000;
         const end = start + Number(part.playable_duration_ms || 0) / 1000;
-        const key = `${timelineItemKey(item)}:${part.id || part.offset_ms}`;
-        if (!url || item.muted || !trackCanPlay(item.track) || playhead < start || playhead >= end) { timelinePlayers.get(key)?.pause(); return; }
+        const key = timelinePartPlayerKey(item, part);
+        if (!url || item.muted || !trackCanPlay(item.track) || playhead < start || playhead >= end) {
+            const inactiveAudio = timelinePlayers.get(key);
+            if (inactiveAudio) { inactiveAudio.pause(); inactiveAudio._atTimelineActive = false; }
+            return;
+        }
         activeKeys.add(key);
-        let audio = timelinePlayers.get(key);
-        if (!audio) { audio = new Audio(url); audio.preload = 'auto'; timelinePlayers.set(key, audio); seek = true; }
+        const audio = prepareTimelinePlayer(key, url);
         const elapsedMs = Math.max(0, (playhead - item.start_ms / 1000) * 1000);
         const remainingMs = Math.max(0, Number(item.duration_ms || 0) - elapsedMs);
         const fadeInGain = Number(item.fade_in_ms || 0) > 0 ? Math.min(1, elapsedMs / Number(item.fade_in_ms)) : 1;
@@ -432,10 +470,18 @@ function syncTimelinePlayers(playhead, seek = false) {
             nextReading = { blockUuid: item.block_uuid, start: Number(word.source_start), end: Number(word.source_end) };
         }
         const mediaTime = part.media_offset_ms / 1000 + offset;
-        if (seek || Math.abs(audio.currentTime - mediaTime) > .35) { try { audio.currentTime = mediaTime; } catch { } }
+        // Do not continuously compare currentTime to the requestAnimationFrame
+        // transport. Browser decoding can lag a little; seeking every frame
+        // then restarts the WAV over and over, producing a short sound followed
+        // by silence. A clip only needs a seek when it becomes active or after
+        // a deliberate playhead jump/loop.
+        if (seek || !audio._atTimelineActive) seekTimelinePlayer(audio, mediaTime);
+        audio._atTimelineActive = true;
         if (audio.paused) audio.play().catch(() => { });
     }));
-    timelinePlayers.forEach((audio, key) => { if (!activeKeys.has(key)) { audio.pause(); timelinePlayers.delete(key); } });
+    timelinePlayers.forEach((audio, key) => {
+        if (!activeKeys.has(key)) { audio.pause(); audio._atTimelineActive = false; }
+    });
     const current = readingPlayback.value;
     if (!current || !nextReading || current.blockUuid !== nextReading.blockUuid || current.start !== nextReading.start || current.end !== nextReading.end) {
         readingPlayback.value = nextReading;
@@ -452,6 +498,9 @@ function startTimelinePlayback(render) {
     if (timelineIsPlaying.value) return;
     const available = timelineItems.value.some((item) => timelineAudioUrl(item));
     if (!available) audioStatus.value = { type: 'info', message: 'The playhead is running. There are no playable audio files in the timeline yet.' };
+    // Coqui creates many short WAV parts. Preloading them prevents a network
+    // and decoder gap each time playback moves to the next spoken segment.
+    preloadTimelinePlayers();
     timelineIsPlaying.value = true;
     timelineStartedAt = performance.now() - timelinePlayhead.value * 1000;
     const tick = (now) => {
