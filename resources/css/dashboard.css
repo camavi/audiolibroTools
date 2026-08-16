@@ -6,3 +6,16 @@ body {
     padding: 0;
     margin: 0;
 }
+
+.at-dashboardPageActions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .5rem;
+}
+
+@media (max-width: 640px) {
+    .at-dashboardPageActions {
+        flex-wrap: wrap;
+    }
+}

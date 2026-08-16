@@ -99,7 +99,22 @@
     font-size: 1.35rem
 }
 
-.at-audiobookTopbarActions,
+.at-audiobookTopbarActions {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+}
+
+.at-audiobookTopbarActions .cms-btn {
+    min-height: 2.25rem;
+    font-size: .74rem;
+}
+
+.at-audioDirectionDialog {
+    display: grid;
+    gap: 1rem;
+}
+
 .at-audioTimelineActions {
     display: flex;
     gap: .35rem
@@ -239,6 +254,65 @@
 .at-audioListDialog {
     display: grid;
     gap: .9rem
+}
+
+.at-audioInsertPosition {
+    display: grid;
+    gap: .55rem;
+    padding: .7rem .8rem;
+    border: 1px solid #d9e4f4;
+    border-radius: .65rem;
+    background: #f7faff;
+}
+
+.at-audioInsertPositionHead {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    min-width: 0;
+    gap: 1rem;
+}
+
+.at-audioInsertPositionHead>div {
+    display: grid;
+    gap: .12rem;
+}
+
+.at-audioInsertPositionHead span {
+    color: #52709b;
+    font-size: .63rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.at-audioInsertPositionHead strong {
+    color: #24354d;
+    font-size: .8rem;
+}
+
+.at-audioInsertPositionHead small {
+    max-width: 28rem;
+    overflow: hidden;
+    color: #64748b;
+    font-size: .7rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.at-audioInsertPositionOptions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .8rem;
+}
+
+.at-audioInsertPositionRadio {
+    min-height: 1.5rem;
+    font-size: .7rem;
+}
+
+.cms-menu-shell {
+    overflow: auto
 }
 
 .at-audioListDialogActions {
@@ -436,14 +510,12 @@
     gap: .35rem
 }
 
-.at-voicesPanel,
 .at-characterDialog,
 .at-paragraphCharacterDialog {
     display: grid;
     gap: .8rem
 }
 
-.at-voicesPanelHead,
 .at-characterDialogActions {
     display: flex;
     align-items: center;
@@ -551,47 +623,6 @@
     font-size: .7rem
 }
 
-.at-voicesPanelHead>div {
-    display: grid;
-    gap: .08rem
-}
-
-.at-voicesPanelHead span {
-    color: #667a96;
-    font-size: .64rem;
-    font-weight: 800;
-    letter-spacing: .08em;
-    text-transform: uppercase
-}
-
-.at-characterList {
-    display: grid;
-    gap: .5rem
-}
-
-.at-characterCard,
-.at-characterChoice {
-    display: flex;
-    align-items: center;
-    gap: .65rem;
-    width: 100%;
-    padding: .65rem;
-    border: 1px solid #e0e7f0;
-    border-radius: .55rem;
-    background: #fbfcfe;
-    color: #25344a;
-    text-align: left
-}
-
-.at-characterChoice {
-    cursor: pointer
-}
-
-.at-characterChoice:hover {
-    border-color: #adc7f8;
-    background: #f4f8ff
-}
-
 .at-characterIcon {
     display: grid;
     width: 2.2rem;
@@ -601,29 +632,6 @@
     border-radius: .5rem;
     background: #eaf1ff;
     color: #3d72dd
-}
-
-.at-characterCopy,
-.at-characterChoice>div {
-    display: grid;
-    min-width: 0;
-    flex: 1;
-    gap: .1rem
-}
-
-.at-characterCopy span,
-.at-characterChoice small {
-    color: #5f738f;
-    font-size: .7rem
-}
-
-.at-characterCopy small,
-.at-characterChoice span {
-    overflow: hidden;
-    color: #71819a;
-    font-size: .68rem;
-    text-overflow: ellipsis;
-    white-space: nowrap
 }
 
 .at-audioGenerateButton {
@@ -755,31 +763,6 @@
 
 .at-audioReadingEmpty {
     color: #64748b
-}
-
-.at-audioBlockStrip {
-    display: flex;
-    gap: .45rem;
-    overflow: auto;
-    margin: 1rem 0;
-    padding: .15rem
-}
-
-.at-audioBlockStrip button {
-    border: 1px solid #dbe3ee;
-    border-radius: .45rem;
-    padding: .45rem .6rem;
-    background: #fff;
-    color: #64748b;
-    font-size: .72rem;
-    white-space: nowrap;
-    cursor: pointer
-}
-
-.at-audioBlockStrip button.is-active {
-    border-color: #2563eb;
-    background: #eff6ff;
-    color: #1d4ed8
 }
 
 .at-audioTimelineCard {
@@ -1147,6 +1130,16 @@
     .at-audioVoiceSelectActions {
         width: 100%
     }
+
+    .at-audioInsertPosition {
+        grid-template-columns: 1fr;
+    }
+
+    .at-audioInsertPositionHead {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: .25rem;
+    }
 }
 
 @media(max-width:560px) {
@@ -1162,7 +1155,6 @@
         grid-template-columns: 1fr
     }
 
-    .at-audiobookTopbarActions,
     .at-audioTimelineActions {
         flex-wrap: wrap
     }

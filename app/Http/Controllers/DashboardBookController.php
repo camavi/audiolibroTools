@@ -1304,20 +1304,63 @@ class DashboardBookController extends Controller
 
     public function insertAudioGroupTimeline(Request $request, string $keyBook, string $blockUuid, BookAudioJob $job): JsonResponse
     {
-        $validated = $request->validate(['start_ms' => ['nullable', 'integer', 'min:0', 'max:86400000'], 'lane' => ['nullable', 'integer', 'min:0', 'max:40']]);
+        $validated = $request->validate([
+            'placement' => ['nullable', Rule::in(['playhead', 'end', 'paragraph'])],
+            'start_ms' => ['nullable', 'integer', 'min:0', 'max:86400000'],
+            'lane' => ['nullable', 'integer', 'min:0', 'max:40'],
+        ]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
         abort_unless($job->book_id === $book->id && $job->block_uuid === $blockUuid && $job->status === 'completed', 404);
         $segments = $job->segments()->orderBy('segment_index')->get();
         abort_if($segments->isEmpty(), 422, 'This audio group has no completed clips.');
         $duration = $segments->sum(fn (BookAudioSegment $segment) => (int) $segment->duration_ms + (int) $segment->pause_after_ms);
-        $start = (int) ($validated['start_ms'] ?? 0);
-        $item = BookAudioTimelineItem::query()->create([
-            'book_id' => $book->id, 'book_audio_segment_id' => $segments->first()->id,
-            'book_audio_job_id' => $job->id, 'is_group' => true, 'track' => 'voice',
-            'lane' => (int) ($validated['lane'] ?? 0), 'label' => $job->voiceProfile?->name ?: 'Narration group', 'start_ms' => $start,
-            'duration_ms' => $duration, 'sort_order' => $book->audioTimelineItems()->count(),
-        ]);
-        return response()->json(['data' => ['item_id' => $item->id]], 201);
+        $placement = $validated['placement'] ?? 'paragraph';
+
+        [$item, $start, $shiftedItems] = DB::transaction(function () use ($book, $job, $blockUuid, $segments, $duration, $validated, $placement): array {
+            $voiceItems = $book->audioTimelineItems()
+                ->whereNull('parent_timeline_item_id')
+                ->where('track', 'voice')
+                ->with(['audioJob:id,block_uuid', 'audioSegment:id,block_uuid'])
+                ->lockForUpdate()
+                ->get();
+
+            $start = max(0, (int) ($validated['start_ms'] ?? 0));
+            $shiftedItems = 0;
+
+            if ($placement === 'end') {
+                $start = (int) $voiceItems->max(fn (BookAudioTimelineItem $item) => (int) $item->start_ms + (int) $item->duration_ms);
+            }
+
+            if ($placement === 'paragraph') {
+                $targetOrder = $book->blocks()->where('block_uuid', $blockUuid)->value('sort_order');
+                abort_if($targetOrder === null, 404);
+                $blockOrders = $book->blocks()->pluck('sort_order', 'block_uuid');
+
+                $start = (int) $voiceItems
+                    ->filter(function (BookAudioTimelineItem $item) use ($blockOrders, $targetOrder): bool {
+                        $sourceUuid = $item->audioJob?->block_uuid ?? $item->audioSegment?->block_uuid;
+                        return $sourceUuid && isset($blockOrders[$sourceUuid]) && (int) $blockOrders[$sourceUuid] < (int) $targetOrder;
+                    })
+                    ->max(fn (BookAudioTimelineItem $item) => (int) $item->start_ms + (int) $item->duration_ms);
+
+                foreach ($voiceItems->filter(fn (BookAudioTimelineItem $item) => (int) $item->start_ms >= $start) as $itemToShift) {
+                    $itemToShift->start_ms += $duration;
+                    $itemToShift->save();
+                    $shiftedItems++;
+                }
+            }
+
+            $item = BookAudioTimelineItem::query()->create([
+                'book_id' => $book->id, 'book_audio_segment_id' => $segments->first()->id,
+                'book_audio_job_id' => $job->id, 'is_group' => true, 'track' => 'voice',
+                'lane' => (int) ($validated['lane'] ?? 0), 'label' => $job->voiceProfile?->name ?: 'Narration group', 'start_ms' => $start,
+                'duration_ms' => $duration, 'sort_order' => $book->audioTimelineItems()->count(),
+            ]);
+
+            return [$item, $start, $shiftedItems];
+        });
+
+        return response()->json(['data' => ['item_id' => $item->id, 'start_ms' => $start, 'shifted_items' => $shiftedItems]], 201);
     }
 
     public function deleteAudioGroup(string $keyBook, string $blockUuid, BookAudioJob $job): JsonResponse

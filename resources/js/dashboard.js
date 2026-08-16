@@ -10,6 +10,8 @@ import uploadAudioPage from './dashboard/page/uploadAudio.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
+const pageHeaderActionsVersion = _.rod(0);
+let pageHeaderActions = () => [];
 
 
 const navGroups = [
@@ -97,6 +99,28 @@ function pageDashboard() {
         body: 'Welcome to Audiobook Tools editor dashboard.',
     });
 }
+function setPageHeaderActions(actions = []) {
+    const nodes = Array.isArray(actions) ? actions : [actions];
+    pageHeaderActions = () => nodes;
+    pageHeaderActionsVersion.value += 1;
+}
+
+window.AudiobookTools = {
+    ...(window.AudiobookTools || {}),
+    setPageHeaderActions,
+};
+
+const rightHeader = _.div({ class: 'at-dashboardPageActions' }, () => {
+    pageHeaderActionsVersion.value;
+    return pageHeaderActions();
+});
+
+function routePage(page) {
+    return (ctx) => {
+        setPageHeaderActions();
+        return page(ctx);
+    };
+}
 
 function mountDashboard(contentPage) {
     currentLayout = _.Layout({
@@ -104,6 +128,7 @@ function mountDashboard(contentPage) {
             left: false,
             title: 'Audiobook Tools',
             subtitle: 'Editor',
+            right: rightHeader,
         }),
         tagPage: true,
         disposition: 'classic',
@@ -129,14 +154,14 @@ let contentPage = _.div({ class: "cmswift-route-outlet" });
 const layoutPage = mountDashboard(contentPage);
 _.mount("#dashboard-root", layoutPage);
 _.router.setOutlet(contentPage);
-_.router.add('/dashboard', pageDashboard);
-_.router.add('/dashboard/new-book', newBookStart);
-_.router.add('/dashboard/book/:key_book/edit', bookEditor);
-_.router.add('/dashboard/book/:key_book/panel', bookPanelPage);
-_.router.add('/dashboard/book/:key_book/translate', bookTraslatePage);
-_.router.add('/dashboard/book/:key_book/audiobook/edit', audiobookEditPage);
-_.router.add('/dashboard/setting', settingPage);
-_.router.add('/dashboard/books', booksPage);
-_.router.add('/dashboard/upload-audio', uploadAudioPage);
+_.router.add('/dashboard', routePage(pageDashboard));
+_.router.add('/dashboard/new-book', routePage(newBookStart));
+_.router.add('/dashboard/book/:key_book/edit', routePage(bookEditor));
+_.router.add('/dashboard/book/:key_book/panel', routePage(bookPanelPage));
+_.router.add('/dashboard/book/:key_book/translate', routePage(bookTraslatePage));
+_.router.add('/dashboard/book/:key_book/audiobook/edit', routePage(audiobookEditPage));
+_.router.add('/dashboard/setting', routePage(settingPage));
+_.router.add('/dashboard/books', routePage(booksPage));
+_.router.add('/dashboard/upload-audio', routePage(uploadAudioPage));
 
 _.router.start();
