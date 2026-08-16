@@ -18,6 +18,8 @@ const publishRunning = _.rod(false);
 const audioSegments = _.rod([]);
 const audioGroups = _.rod([]);
 const expandedAudioGroupIds = _.rod([]);
+const previewingAudioGroupId = _.rod(null);
+let generatedAudioPreview = null;
 const audioGenerating = _.rod(false);
 const bookAudioGenerating = _.rod(false);
 const allAudioInserting = _.rod(false);
@@ -290,6 +292,48 @@ function timelineAudioUrl(item) {
     if (!path || path.startsWith('mock://')) return null;
     if (/^https?:\/\//.test(path)) return path;
     return path.startsWith('/') ? path : `/storage/${path.replace(/^storage\//, '')}`;
+}
+
+function stopGeneratedAudioPreview() {
+    if (generatedAudioPreview) {
+        generatedAudioPreview.pause();
+        generatedAudioPreview.onended = null;
+        generatedAudioPreview.onerror = null;
+        generatedAudioPreview = null;
+    }
+    previewingAudioGroupId.value = null;
+}
+
+function previewGeneratedAudioGroup(group) {
+    if (Number(previewingAudioGroupId.value) === Number(group.id)) {
+        stopGeneratedAudioPreview();
+        return;
+    }
+
+    stopGeneratedAudioPreview();
+    const urls = (group.segments || []).map(timelineAudioUrl).filter(Boolean);
+    if (!urls.length) {
+        audioStatus.value = { type: 'warning', message: 'This generated master has no playable audio.' };
+        return;
+    }
+
+    let index = 0;
+    previewingAudioGroupId.value = Number(group.id);
+    const playNext = () => {
+        if (Number(previewingAudioGroupId.value) !== Number(group.id)) return;
+        const player = new Audio(urls[index]);
+        generatedAudioPreview = player;
+        player.onended = () => {
+            index += 1;
+            if (index < urls.length) playNext(); else stopGeneratedAudioPreview();
+        };
+        player.onerror = () => {
+            audioStatus.value = { type: 'warning', message: 'Unable to play this generated audio preview.' };
+            stopGeneratedAudioPreview();
+        };
+        player.play().catch(() => stopGeneratedAudioPreview());
+    };
+    playNext();
 }
 function timelineAudioParts(item) {
     const parts = Array.isArray(item.group_segments) && item.group_segments.length ? item.group_segments : [item];
@@ -737,7 +781,9 @@ async function insertAudioGroup(keyBook, jobId, placement = 'paragraph') {
         await loadTimeline(keyBook);
         const shifted = Number(result.shifted_items || 0);
         audioStatus.value = {
-            type: 'success', message: placement === 'paragraph' && shifted
+            type: 'success', message: result.replaced
+                ? `Audio replaced in the Voice track${shifted ? ` · ${shifted} later Voice clip${shifted === 1 ? '' : 's'} adjusted` : ''}.`
+                : placement === 'paragraph' && shifted
                 ? `Audio inserted in paragraph order. ${shifted} later Voice clip${shifted === 1 ? '' : 's'} moved right.`
                 : 'Audio group inserted into the Voice track.'
         };
@@ -801,6 +847,7 @@ function deleteAudioGroup(keyBook, jobId) {
 }
 
 function insertionPlacementHint(placement) {
+    if (placement === 'replace') return 'Replaces the generated Voice master for this paragraph, keeping its position and timeline edits.';
     if (placement === 'playhead') return 'Starts at the red playhead. Existing clips keep their position.';
     if (placement === 'end') return 'Places this master after the last Voice clip.';
     return 'Matches this paragraph in book order and moves later Voice clips to the right.';
@@ -817,12 +864,15 @@ function audioGroupsList(keyBook, placement, close) {
                         _.strong(group.label || 'Narration'),
                         _.small(`${group.segments.length} clips · ~${Math.ceil(group.duration_ms / 1000)}s · ${audioGroupDate(group.created_at)}`),
                     ),
-                    group.in_timeline
-                        ? _.span({ class: 'at-audioGroupUsed' }, 'In timeline')
-                        : _.div({ class: 'at-audioGeneratedMasterActions' },
-                            _.Btn({ color: 'primary', icon: 'playlist_add', onClick: async () => { if (await insertAudioGroup(keyBook, group.id, placement.value)) close(); } }, 'Insert'),
+                    _.div({ class: 'at-audioGeneratedMasterActions' },
+                        () => _.Btn({ color: 'secondary', icon: Number(previewingAudioGroupId.value) === Number(group.id) ? 'stop_circle' : 'play_circle', title: Number(previewingAudioGroupId.value) === Number(group.id) ? 'Stop preview' : 'Listen before inserting', onClick: () => previewGeneratedAudioGroup(group) }, Number(previewingAudioGroupId.value) === Number(group.id) ? 'Stop' : 'Listen'),
+                        group.in_timeline
+                            ? _.span({ class: 'at-audioGroupUsed' }, 'In timeline')
+                            : [
+                            _.Btn({ color: 'primary', icon: 'playlist_add', onClick: async () => { if (await insertAudioGroup(keyBook, group.id, placement.value)) { stopGeneratedAudioPreview(); close(); } } }, 'Insert'),
                             _.Btn({ color: 'danger', icon: 'delete', title: 'Delete generated audio', onClick: () => deleteAudioGroup(keyBook, group.id) }),
-                        ),
+                            ],
+                    ),
                 ),
                 () => isAudioGroupExpanded(group.id) ? _.div({ class: 'at-audioGeneratedChildren' },
                     ...group.segments.map((segment, index) => _.div({ class: 'at-audioGeneratedChild' },
@@ -838,10 +888,12 @@ function audioGroupsList(keyBook, placement, close) {
 
 function openAudioListDialog(keyBook) {
     const placement = _.rod('paragraph');
+    const canReplaceTimelineAudio = () => audioGroups.value.some((group) => group.in_timeline);
     const placementOptions = [
         ['paragraph', 'Match paragraph'],
         ['playhead', 'At playhead'],
         ['end', 'At end'],
+        ['replace', 'Replace timeline'],
     ];
 
     _.Dialog({
@@ -861,11 +913,12 @@ function openAudioListDialog(keyBook) {
                         value,
                         label,
                         dense: true,
+                        disabled: () => value === 'replace' && !canReplaceTimelineAudio(),
                         model: placement,
                     }))),
                 ),
                 audioGroupsList(keyBook, placement, close),
-                _.div({ class: 'at-audioListDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close')),
+                _.div({ class: 'at-audioListDialogActions' }, _.Btn({ color: 'secondary', onClick: () => { stopGeneratedAudioPreview(); close(); } }, 'Close')),
             ),
         },
     }).open();
@@ -1366,33 +1419,34 @@ async function openLibraryVoiceDialog(keyBook) {
         return;
     }
 
-    const filteredVoices = () => {
+    const filteredVoiceSamples = () => {
         const query = search.value.trim().toLowerCase();
         const selectedTone = Number(toneId.value || 0);
-        return voices.value.filter((voice) => {
-            const haystack = `${voice.name} ${voice.language} ${voice.description || ''}`.toLowerCase();
+        return voices.value.flatMap((voice) => (voice.samples || []).map((sample) => ({ voice, sample }))).filter(({ voice, sample }) => {
+            const haystack = `${voice.name} ${voice.language} ${voice.description || ''} ${sample.description || ''} ${sample.original_name || ''} ${sample.tone?.name || ''}`.toLowerCase();
             return (!query || haystack.includes(query))
                 && (!type.value || voice.type === type.value)
-                && (!selectedTone || voice.samples.some((sample) => Number(sample.tone_id || sample.tone?.id) === selectedTone));
+                && (!selectedTone || Number(sample.tone_id || sample.tone?.id) === selectedTone);
         });
     };
 
-    const chooseVoice = async (voice, close) => {
+    const chooseVoice = async (voice, sample, close) => {
         const block = activeBlock();
         if (!block?.block_uuid) return;
         assigning.value = true;
         dialogStatus.value = null;
-        const requestedToneId = Number(toneId.value || 0) || Number(voice.samples[0]?.tone_id || voice.samples[0]?.tone?.id || 0) || null;
+        const requestedToneId = Number(sample.tone_id || sample.tone?.id || 0) || null;
         try {
             await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/library-voice`, {
                 audio_library_voice_id: voice.id,
+                audio_library_voice_sample_id: sample.id,
                 tone_id: requestedToneId,
             }, { timeout: 900000, retry: { attempts: 0 } });
             const data = audioData(await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/voice-assignment`));
             blockVoiceAssignment.value = data.assignment || null;
             selectedLibraryVoice.value = data.assignment?.voice_profile || { ...voice, selected_tone_id: requestedToneId };
             voiceName.value = voice.name;
-            audioStatus.value = { type: 'success', message: `${voice.name} is assigned to this block and ready for AT generation.` };
+            audioStatus.value = { type: 'success', message: `${voice.name} · ${sample.tone?.name || 'tone'} is assigned as a direct voice and ready for AT generation.` };
             close();
         } catch (error) {
             dialogStatus.value = { type: 'danger', message: error.message || 'Unable to prepare this voice.' };
@@ -1405,7 +1459,7 @@ async function openLibraryVoiceDialog(keyBook) {
         size: 'xl',
         stickyActions: true,
         slots: {
-            header: _.div(_.h3('Choose an AT voice'), _.span({ class: 'text-muted' }, 'Search your audio library and choose a voice reference for this block.')),
+            header: _.div(_.h3('Choose a direct AT voice'), _.span({ class: 'text-muted' }, 'Choose the exact voice reference and tone for this paragraph. This does not create a character.')),
             content: ({ close }) => _.div({ class: 'at-libraryVoiceDialog' },
                 _.div({ class: 'at-libraryVoiceFilters' },
                     _.Input({ label: 'Search voices', model: search, icon: 'search', placeholder: 'Name, language or description' }),
@@ -1413,18 +1467,18 @@ async function openLibraryVoiceDialog(keyBook) {
                     _.Select({ label: 'Tone available', model: toneId, options: () => [{ value: '', label: 'Any tone' }, ...tones.value.map((tone) => ({ value: String(tone.id), label: `#${tone.id} · ${tone.name}` }))] }),
                 ),
                 () => {
-                    const results = filteredVoices();
-                    return results.length ? _.div({ class: 'at-libraryVoiceResults' }, results.map((voice) => _.button({
-                        type: 'button',
-                        class: 'at-libraryVoiceResult',
-                        onclick: () => chooseVoice(voice, close),
-                    },
-                        _.div({ class: 'at-libraryVoiceResultHead' }, _.strong(voice.name), _.span(`${voice.type} · ${voice.language.toUpperCase()}`)),
-                        _.small(voice.description || 'No description'),
-                        _.div({ class: 'at-libraryVoiceToneChips' }, voice.samples.map((sample) => _.span(
-                            { style: { '--at-tone-color': sample.tone?.color || '#64748b' } },
-                            `#${sample.tone?.id || sample.tone_id} · ${sample.tone?.name || 'Tone'}`,
-                        ))),
+                    const results = filteredVoiceSamples();
+                    return results.length ? _.div({ class: 'at-libraryVoiceResults' }, results.map(({ voice, sample }) => _.article({ class: 'at-libraryVoiceResult' },
+                        _.div({ class: 'at-libraryVoiceResultCopy' },
+                            _.div({ class: 'at-libraryVoiceResultHead' }, _.strong(voice.name), _.span(`${voice.type} · ${voice.language.toUpperCase()}`)),
+                            _.small(sample.description || voice.description || 'Voice reference'),
+                            _.div({ class: 'at-libraryVoiceToneChips' }, _.span(
+                                { style: { '--at-tone-color': sample.tone?.color || '#64748b' } },
+                                `#${sample.tone?.id || sample.tone_id} · ${sample.tone?.name || 'Tone'}`,
+                            ), sample.original_name ? _.span({ class: 'at-libraryVoiceSampleName' }, sample.original_name) : null),
+                        ),
+                        _.audio({ class: 'at-libraryVoicePreview', controls: true, preload: 'metadata', src: sample.audio_url }),
+                        _.Btn({ dense: true, color: 'primary', icon: 'person_add', loading: assigning, onClick: () => chooseVoice(voice, sample, close) }, 'Use voice'),
                     ))) : _.div({ class: 'at-libraryVoiceEmpty' }, 'No library voice matches these filters.');
                 },
                 () => dialogStatus.value ? _.Alert(dialogStatus.value) : null,
@@ -1454,6 +1508,9 @@ function createAudio() {
                 () => blockVoiceAssignment.value?.voice_profile?.role === 'character'
                     ? _.Btn({ color: 'secondary', icon: 'edit', onClick: () => openCharacterDialog(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1], blockVoiceAssignment.value.voice_profile) }, 'Edit character')
                     : _.Btn({ color: 'secondary', icon: 'record_voice_over', onClick: () => openLibraryVoiceDialog(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'Choose voice'),
+                () => blockVoiceAssignment.value?.voice_profile?.role === 'character'
+                    ? _.Btn({ color: 'secondary', icon: 'link_off', title: 'Remove this character only from the selected paragraph', onClick: () => assignProfileToActiveBlock(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1], null) }, 'Clear character')
+                    : null,
             ),
         ),
         _.div({ class: 'at-audioGenerationBar' },

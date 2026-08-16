@@ -1306,7 +1306,7 @@ class DashboardBookController extends Controller
     public function insertAudioGroupTimeline(Request $request, string $keyBook, string $blockUuid, BookAudioJob $job): JsonResponse
     {
         $validated = $request->validate([
-            'placement' => ['nullable', Rule::in(['playhead', 'end', 'paragraph'])],
+            'placement' => ['nullable', Rule::in(['playhead', 'end', 'paragraph', 'replace'])],
             'start_ms' => ['nullable', 'integer', 'min:0', 'max:86400000'],
             'lane' => ['nullable', 'integer', 'min:0', 'max:40'],
         ]);
@@ -1317,7 +1317,7 @@ class DashboardBookController extends Controller
         $duration = $segments->sum(fn (BookAudioSegment $segment) => (int) $segment->duration_ms + (int) $segment->pause_after_ms);
         $placement = $validated['placement'] ?? 'paragraph';
 
-        [$item, $start, $shiftedItems] = DB::transaction(function () use ($book, $job, $blockUuid, $segments, $duration, $validated, $placement): array {
+        [$item, $start, $shiftedItems, $replaced] = DB::transaction(function () use ($book, $job, $blockUuid, $segments, $duration, $validated, $placement): array {
             $voiceItems = $book->audioTimelineItems()
                 ->whereNull('parent_timeline_item_id')
                 ->where('track', 'voice')
@@ -1327,6 +1327,38 @@ class DashboardBookController extends Controller
 
             $start = max(0, (int) ($validated['start_ms'] ?? 0));
             $shiftedItems = 0;
+
+            if ($placement === 'replace') {
+                $replacements = $voiceItems
+                    ->filter(fn (BookAudioTimelineItem $item) => ($item->audioJob?->block_uuid ?? $item->audioSegment?->block_uuid) === $blockUuid)
+                    ->sortBy('start_ms')
+                    ->values();
+                abort_if($replacements->isEmpty(), 422, 'There is no generated audio for this paragraph in the Voice timeline.');
+
+                $item = $replacements->first();
+                $start = (int) $item->start_ms;
+                $oldEnd = $start + (int) $item->duration_ms;
+                $durationDifference = $duration - (int) $item->duration_ms;
+                $replacementIds = $replacements->pluck('id')->all();
+                foreach ($voiceItems->filter(fn (BookAudioTimelineItem $candidate) => ! in_array($candidate->id, $replacementIds, true) && (int) $candidate->start_ms >= $oldEnd) as $itemToShift) {
+                    $itemToShift->start_ms = max(0, (int) $itemToShift->start_ms + $durationDifference);
+                    $itemToShift->save();
+                    $shiftedItems++;
+                }
+
+                $replacements->slice(1)->each->delete();
+                $item->forceFill([
+                    'book_audio_segment_id' => $segments->first()->id,
+                    'book_audio_job_id' => $job->id,
+                    'is_group' => true,
+                    'label' => $job->voiceProfile?->name ?: 'Narration group',
+                    'duration_ms' => $duration,
+                    'trim_start_ms' => 0,
+                    'trim_end_ms' => 0,
+                ])->save();
+
+                return [$item, $start, $shiftedItems, true];
+            }
 
             if ($placement === 'end') {
                 $start = (int) $voiceItems->max(fn (BookAudioTimelineItem $item) => (int) $item->start_ms + (int) $item->duration_ms);
@@ -1358,10 +1390,10 @@ class DashboardBookController extends Controller
                 'duration_ms' => $duration, 'sort_order' => $book->audioTimelineItems()->count(),
             ]);
 
-            return [$item, $start, $shiftedItems];
+            return [$item, $start, $shiftedItems, false];
         });
 
-        return response()->json(['data' => ['item_id' => $item->id, 'start_ms' => $start, 'shifted_items' => $shiftedItems]], 201);
+        return response()->json(['data' => ['item_id' => $item->id, 'start_ms' => $start, 'shifted_items' => $shiftedItems, 'replaced' => $replaced]], 201);
     }
 
     public function insertAllAudioSummary(string $keyBook): JsonResponse
@@ -1902,6 +1934,7 @@ class DashboardBookController extends Controller
     {
         $validated = $request->validate([
             'audio_library_voice_id' => ['required', 'integer'],
+            'audio_library_voice_sample_id' => ['nullable', 'integer'],
             'tone_id' => ['nullable', 'integer'],
         ]);
 
@@ -1924,7 +1957,8 @@ class DashboardBookController extends Controller
             ->with('samples.toneDefinition')
             ->findOrFail($validated['audio_library_voice_id']);
         $sample = $libraryVoice->samples
-            ->when(isset($validated['tone_id']), fn ($samples) => $samples->where('tone_id', $validated['tone_id']))
+            ->when(isset($validated['audio_library_voice_sample_id']), fn ($samples) => $samples->where('id', $validated['audio_library_voice_sample_id']))
+            ->when(! isset($validated['audio_library_voice_sample_id']) && isset($validated['tone_id']), fn ($samples) => $samples->where('tone_id', $validated['tone_id']))
             ->first() ?? $libraryVoice->samples->first();
 
         if (! $sample || ! Storage::disk('public')->exists($sample->audio_path)) {
@@ -1934,9 +1968,8 @@ class DashboardBookController extends Controller
         }
 
         try {
-            if (! filled($libraryVoice->provider_voice_id)) {
-                $libraryVoice->forceFill([
-                    'provider' => 'at-coqui',
+            if (! filled($sample->provider_voice_id)) {
+                $sample->forceFill([
                     'provider_voice_id' => $coqui->registerVoice($libraryVoice->name, Storage::disk('public')->path($sample->audio_path)),
                 ])->save();
             }
@@ -1948,7 +1981,8 @@ class DashboardBookController extends Controller
 
         $profile = $book->voiceProfiles()
             ->where('voice_provider', 'coqui-local')
-            ->where('voice_id', $libraryVoice->provider_voice_id)
+            ->where('settings_json->audio_library_voice_id', $libraryVoice->id)
+            ->where('settings_json->audio_library_voice_sample_id', $sample->id)
             ->first();
 
         if (! $profile) {
@@ -1957,13 +1991,15 @@ class DashboardBookController extends Controller
                 'name' => $libraryVoice->name,
                 'role' => 'narrator',
                 'voice_provider' => 'coqui-local',
-                'voice_id' => $libraryVoice->provider_voice_id,
+                'voice_id' => $sample->provider_voice_id,
                 'language' => $libraryVoice->language ?: $book->lang,
                 'notes' => $libraryVoice->description,
                 'settings_json' => [
                     'audio_library_voice_id' => $libraryVoice->id,
+                    'audio_library_voice_sample_id' => $sample->id,
                     'tone_id' => $sample->tone_id,
                     'voice_name' => $libraryVoice->name,
+                    'sample_name' => $sample->original_name,
                     'tone_name' => $sample->toneDefinition?->name,
                 ],
                 'created_by' => auth()->id(),
@@ -1973,8 +2009,10 @@ class DashboardBookController extends Controller
                 'settings_json' => [
                     ...($profile->settings_json ?? []),
                     'audio_library_voice_id' => $libraryVoice->id,
+                    'audio_library_voice_sample_id' => $sample->id,
                     'tone_id' => $sample->tone_id,
                     'voice_name' => $libraryVoice->name,
+                    'sample_name' => $sample->original_name,
                     'tone_name' => $sample->toneDefinition?->name,
                 ],
             ])->save();

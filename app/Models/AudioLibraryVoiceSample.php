@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AudioLibraryVoiceSample extends Model
 {
-    protected $fillable = ['audio_library_voice_id', 'tone_id', 'tone', 'description', 'audio_path', 'original_name', 'duration_ms'];
+    protected $fillable = ['audio_library_voice_id', 'tone_id', 'tone', 'description', 'audio_path', 'original_name', 'duration_ms', 'provider_voice_id'];
 
     public function voice(): BelongsTo
     {

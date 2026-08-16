@@ -698,7 +698,6 @@
 
 .at-libraryVoiceResults {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: .7rem;
     max-height: 420px;
     overflow: auto
@@ -706,20 +705,30 @@
 
 .at-libraryVoiceResult {
     display: grid;
-    gap: .5rem;
-    padding: .85rem;
+    grid-template-columns: minmax(12rem, 1fr) minmax(13rem, 18rem) auto;
+    align-items: center;
+    gap: 1rem;
+    padding: .7rem .85rem;
     border: 1px solid #dbe3ee;
     border-radius: .6rem;
     background: #f8fafc;
-    color: #182033;
-    font: inherit;
-    text-align: left;
-    cursor: pointer
+    color: #182033
 }
 
 .at-libraryVoiceResult:hover {
     border-color: #2563eb;
     background: #eff6ff
+}
+
+.at-libraryVoiceResultCopy {
+    display: grid;
+    gap: .34rem;
+    min-width: 0
+}
+
+.at-libraryVoicePreview {
+    width: 100%;
+    height: 2rem
 }
 
 .at-libraryVoiceResultHead {
@@ -748,6 +757,12 @@
     font-size: .66rem
 }
 
+.at-libraryVoiceToneChips .at-libraryVoiceSampleName {
+    border-color: #dbe3ee;
+    color: #475569;
+    background: #fff;
+}
+
 .at-libraryVoiceEmpty {
     padding: 2.5rem 1rem;
     color: #64748b;
@@ -757,6 +772,17 @@
 .at-libraryVoiceActions {
     display: flex;
     justify-content: flex-end
+}
+
+@media (max-width: 720px) {
+    .at-libraryVoiceResult {
+        grid-template-columns: 1fr auto;
+        gap: .7rem
+    }
+
+    .at-libraryVoicePreview {
+        grid-column: 1 / -1
+    }
 }
 
 .at-audioPreviewCard {
