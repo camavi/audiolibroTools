@@ -19,6 +19,8 @@ const audioSegments = _.rod([]);
 const audioGroups = _.rod([]);
 const expandedAudioGroupIds = _.rod([]);
 const audioGenerating = _.rod(false);
+const bookAudioGenerating = _.rod(false);
+const allAudioInserting = _.rod(false);
 const selectedLibraryVoice = _.rod(null);
 const voiceProfiles = _.rod([]);
 const blockVoiceAssignment = _.rod(null);
@@ -74,6 +76,12 @@ function audioData(payload) {
 
 function estimatedSeconds() {
     return Math.max(3, Math.ceil(wordCount(activeBlock()?.text_plain) / 2.35));
+}
+
+function bookAudioMetrics() {
+    const blocks = audiobookBlocks.value.filter((block) => String(block.text_plain || '').trim());
+    const words = blocks.reduce((total, block) => total + wordCount(block.text_plain), 0);
+    return { blocks: blocks.length, words, seconds: Math.max(0, Math.ceil(words / 2.35)), credits: blocks.length };
 }
 
 function editorNodeText(node) {
@@ -907,6 +915,88 @@ function openPublishDialog(keyBook) {
     }).open();
 }
 
+function openGenerateBookAudioDialog(keyBook) {
+    const regenerate = _.rod(false);
+    const status = _.rod(null);
+    const generate = async () => {
+        if (bookAudioGenerating.value) return;
+        bookAudioGenerating.value = true;
+        status.value = null;
+        try {
+            const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio/generate-all`, {
+                regenerate_existing: regenerate.value,
+                provider_key: 'coqui-local',
+                model: 'xtts-v2',
+            }, { timeout: 900000, retry: { attempts: 0 } });
+            const result = audioData(payload);
+            const firstFailure = result.failed_blocks?.[0]?.message;
+            status.value = {
+                type: result.failed_blocks?.length ? 'warning' : 'success',
+                message: `${result.completed_blocks || 0} blocks generated${result.skipped_blocks ? ` · ${result.skipped_blocks} already available` : ''}${result.unconfigured_blocks ? ` · ${result.unconfigured_blocks} need a voice` : ''}${result.failed_blocks?.length ? ` · ${result.failed_blocks.length} failed` : ''}.${firstFailure ? ` First error: ${firstFailure}` : ''}`,
+            };
+            await loadBlockAudio(keyBook);
+        } catch (error) {
+            status.value = { type: 'danger', message: error.message || 'Unable to generate the book audio.' };
+        } finally {
+            bookAudioGenerating.value = false;
+        }
+    };
+
+    _.Dialog({
+        size: 'md',
+        stickyActions: true,
+        slots: {
+            header: _.div(_.h3('Generate book audio'), _.span({ class: 'text-muted' }, 'Create narrated audio for every saved text block in this book.')),
+            content: ({ close }) => _.div({ class: 'at-bookAudioGenerateDialog' },
+                _.Checkbox({ label: 'Regenerate audio already generated', model: regenerate }),
+                _.small({ class: 'at-bookAudioGenerateNote' }, () => regenerate.value ? 'Every block will receive a new audio master.' : 'Only blocks without a completed audio master will be generated.'),
+                () => {
+                    const metrics = bookAudioMetrics();
+                    return _.div({ class: 'at-bookAudioMetrics' },
+                        _.div(_.span('Text blocks'), _.strong(String(metrics.blocks))),
+                        _.div(_.span('Selected text'), _.strong(`${metrics.words} words`)),
+                        _.div(_.span('Estimated duration'), _.strong(`~${metrics.seconds}s`)),
+                        _.div(_.span('AT estimate'), _.strong(`${metrics.credits} credits`)),
+                    );
+                },
+                () => status.value ? _.Alert(status.value) : null,
+                _.div({ class: 'at-characterDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close'), _.Btn({ color: 'primary', icon: 'play_circle', loading: bookAudioGenerating, onClick: generate }, 'Generate book audio')),
+            ),
+        },
+    }).open();
+}
+
+function openInsertAllAudioDialog(keyBook) {
+    const replaceExisting = _.rod(false);
+    const count = _.rod(null);
+    const status = _.rod(null);
+    _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio/insert-all-summary`)
+        .then((payload) => { count.value = Number(audioData(payload).latest_audio_count || 0); })
+        .catch(() => { status.value = { type: 'danger', message: 'Unable to load generated audio.' }; });
+    const insert = async (close) => {
+        if (allAudioInserting.value) return;
+        allAudioInserting.value = true;
+        try {
+            const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio/insert-all`, { replace_existing: replaceExisting.value });
+            const result = audioData(payload);
+            await loadTimeline(keyBook);
+            audioStatus.value = { type: 'success', message: `${result.inserted} latest audio master${result.inserted === 1 ? '' : 's'} inserted${result.skipped ? ` · ${result.skipped} already in timeline` : ''}.` };
+            close();
+        } catch (error) { status.value = { type: 'danger', message: error.message || 'Unable to insert generated audio.' }; }
+        finally { allAudioInserting.value = false; }
+    };
+    _.Dialog({ size: 'md', stickyActions: true, slots: {
+        header: _.div(_.h3('Insert all generated audio'), _.span({ class: 'text-muted' }, 'Insert the latest completed master for every paragraph in book order.')),
+        content: ({ close }) => _.div({ class: 'at-bookAudioGenerateDialog' },
+            () => _.div({ class: 'at-bookAudioMetrics' }, _.div(_.span('Latest audio'), _.strong(count.value === null ? 'Loading…' : String(count.value))), _.div(_.span('Track'), _.strong('Voice')), _.div(_.span('Order'), _.strong('Paragraph')), _.div(_.span('Existing'), _.strong(replaceExisting.value ? 'Replace' : 'Keep'))),
+            _.Checkbox({ label: 'Replace generated audio already in timeline', model: replaceExisting }),
+            _.small({ class: 'at-bookAudioGenerateNote' }, () => replaceExisting.value ? 'Replaces generated masters linked to the same paragraph. Music, FX and manual clips stay untouched.' : 'Inserts only paragraphs that do not already have generated audio in the timeline.'),
+            () => status.value ? _.Alert(status.value) : null,
+            _.div({ class: 'at-characterDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close'), _.Btn({ color: 'primary', icon: 'playlist_add', loading: allAudioInserting, disabled: () => count.value === 0, onClick: () => insert(close) }, 'Insert all audio')),
+        ),
+    } }).open();
+}
+
 function audioTabs() {
     const tabs = [
         ['text', 'Style text'],
@@ -931,6 +1021,20 @@ function audioDirection() {
 }
 
 function openAudioDirectionDialog() {
+    const keyBook = bookKey();
+    const defaultVoiceId = _.rod(String(audiobookBook.value?.audio_settings_json?.default_voice_profile_id || ''));
+    const saving = _.rod(false);
+    const status = _.rod(null);
+    const save = async (close) => {
+        saving.value = true;
+        status.value = null;
+        try {
+            await _.http.patchJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-settings`, { default_voice_profile_id: defaultVoiceId.value || null });
+            audiobookBook.value = { ...audiobookBook.value, audio_settings_json: { ...(audiobookBook.value?.audio_settings_json || {}), default_voice_profile_id: defaultVoiceId.value || null } };
+            close();
+        } catch (error) { status.value = { type: 'danger', message: error.message || 'Unable to save the default voice.' }; }
+        finally { saving.value = false; }
+    };
     _.Dialog({
         size: 'lg',
         stickyActions: true,
@@ -940,8 +1044,10 @@ function openAudioDirectionDialog() {
                 _.span({ class: 'text-muted' }, 'Set the narrator and delivery direction used when this block is generated.'),
             ),
             content: ({ close }) => _.div({ class: 'at-audioDirectionDialog' },
+                _.Select({ label: 'Default voice', icon: 'record_voice_over', model: defaultVoiceId, options: () => [{ value: '', label: 'No default voice' }, ...voiceProfiles.value.filter((profile) => profile.voice_id).map((profile) => ({ value: String(profile.id), label: `${profile.name} · ${profile.settings_json?.tone_name || 'Default tone'}` }))] }),
                 audioDirection(),
-                _.div({ class: 'at-characterDialogActions' }, _.Btn({ color: 'primary', icon: 'check', onClick: close }, 'Done')),
+                () => status.value ? _.Alert(status.value) : null,
+                _.div({ class: 'at-characterDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Cancel'), _.Btn({ color: 'primary', icon: 'check', loading: saving, onClick: () => save(close) }, 'Save direction')),
             ),
         },
     }).open();
@@ -1849,6 +1955,8 @@ export default function audiobookEdit(ctx) {
             _.div(_.span({ class: 'at-audiobookEyebrow' }, 'Audiobook studio'), _.h2(() => audiobookBook.value?.name || 'Loading audiobook…')),
             _.div({ class: 'at-audiobookTopbarActions' },
                 _.Btn({ color: 'secondary', icon: 'graphic_eq', onClick: openAudioDirectionDialog }, 'Audio direction'),
+                _.Btn({ color: 'secondary', icon: 'queue_play_next', loading: bookAudioGenerating, onClick: () => openGenerateBookAudioDialog(keyBook) }, 'Generate book audio'),
+                _.Btn({ color: 'secondary', icon: 'playlist_add', loading: allAudioInserting, onClick: () => openInsertAllAudioDialog(keyBook) }, 'Insert all audio'),
                 _.Btn({ color: 'secondary', icon: 'format_list_bulleted', onClick: (event) => openAudiobookIndexMenu(event.currentTarget, keyBook) }, 'Book index'),
             ),
         ),

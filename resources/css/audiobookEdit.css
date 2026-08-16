@@ -115,6 +115,50 @@
     gap: 1rem;
 }
 
+.at-bookAudioGenerateDialog {
+    display: grid;
+    gap: .9rem;
+}
+
+.at-bookAudioGenerateNote {
+    margin-top: -.5rem;
+    color: #64748b;
+    font-size: .73rem;
+}
+
+.at-bookAudioMetrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    overflow: hidden;
+    border: 1px solid #dbe3ee;
+    border-radius: .65rem;
+    background: #f8fafc;
+}
+
+.at-bookAudioMetrics>div {
+    display: grid;
+    gap: .2rem;
+    min-width: 0;
+    padding: .7rem .75rem;
+}
+
+.at-bookAudioMetrics>div+div {
+    border-left: 1px solid #dbe3ee;
+}
+
+.at-bookAudioMetrics span {
+    color: #64748b;
+    font-size: .65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.at-bookAudioMetrics strong {
+    color: #1e293b;
+    font-size: .84rem;
+    white-space: nowrap;
+}
+
 .at-audioTimelineActions {
     display: flex;
     gap: .35rem
@@ -1139,6 +1183,19 @@
         align-items: flex-start;
         flex-direction: column;
         gap: .25rem;
+    }
+
+    .at-bookAudioMetrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .at-bookAudioMetrics>div:nth-child(3) {
+        border-left: 0;
+        border-top: 1px solid #dbe3ee;
+    }
+
+    .at-bookAudioMetrics>div:nth-child(4) {
+        border-top: 1px solid #dbe3ee;
     }
 }
 

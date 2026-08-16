@@ -85,6 +85,10 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::post('/books/{keyBook}/blocks/{blockUuid}/library-voice', [DashboardBookController::class, 'selectLibraryVoice'])->name('books.blocks.library-voice.select');
     Route::get('/books/{keyBook}/blocks/{blockUuid}/audio', [DashboardBookController::class, 'blockAudio'])->name('books.blocks.audio');
     Route::post('/books/{keyBook}/blocks/{blockUuid}/audio/generate', [DashboardBookController::class, 'generateBlockAudio'])->name('books.blocks.audio.generate');
+    Route::patch('/books/{keyBook}/audio-settings', [DashboardBookController::class, 'updateAudioSettings'])->name('books.audio-settings.update');
+    Route::post('/books/{keyBook}/audio/generate-all', [DashboardBookController::class, 'generateBookAudio'])->name('books.audio.generate-all');
+    Route::get('/books/{keyBook}/audio/insert-all-summary', [DashboardBookController::class, 'insertAllAudioSummary'])->name('books.audio.insert-all.summary');
+    Route::post('/books/{keyBook}/audio/insert-all', [DashboardBookController::class, 'insertAllAudioTimeline'])->name('books.audio.insert-all');
     Route::delete('/books/{keyBook}/blocks/{blockUuid}/audio/{job}', [DashboardBookController::class, 'deleteAudioGroup'])->name('books.blocks.audio.delete');
     Route::post('/books/{keyBook}/blocks/{blockUuid}/audio/{job}/insert-timeline', [DashboardBookController::class, 'insertAudioGroupTimeline'])->name('books.blocks.audio.insert-timeline');
     Route::post('/books/{keyBook}/audio-timeline/group', [DashboardBookController::class, 'groupAudioTimelineItems'])->name('books.audio-timeline.group');

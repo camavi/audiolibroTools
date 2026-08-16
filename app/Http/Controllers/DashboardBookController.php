@@ -400,6 +400,7 @@ class DashboardBookController extends Controller
                     'name' => $book->name,
                     'description' => $book->description,
                     'lang' => $book->lang,
+                    'audio_settings_json' => $book->audio_settings_json ?? [],
                 ],
                 'document' => [
                     'type' => 'doc',
@@ -1363,6 +1364,37 @@ class DashboardBookController extends Controller
         return response()->json(['data' => ['item_id' => $item->id, 'start_ms' => $start, 'shifted_items' => $shiftedItems]], 201);
     }
 
+    public function insertAllAudioSummary(string $keyBook): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $latest = $book->audioJobs()->where('status', 'completed')->latest('id')->get()->unique('block_uuid');
+
+        return response()->json(['data' => ['latest_audio_count' => $latest->count()]]);
+    }
+
+    public function insertAllAudioTimeline(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate(['replace_existing' => ['nullable', 'boolean']]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $replace = (bool) ($validated['replace_existing'] ?? false);
+        $latest = $book->audioJobs()->where('status', 'completed')->latest('id')->get()->unique('block_uuid')->keyBy('block_uuid');
+        $inserted = 0;
+        $skipped = 0;
+
+        foreach ($book->blocks()->get() as $block) {
+            $job = $latest->get($block->block_uuid);
+            if (! $job) continue;
+            $existing = $book->audioTimelineItems()->whereNull('parent_timeline_item_id')->with(['audioJob:id,block_uuid', 'audioSegment:id,block_uuid'])->get()
+                ->filter(fn (BookAudioTimelineItem $item) => ($item->audioJob?->block_uuid ?? $item->audioSegment?->block_uuid) === $block->block_uuid);
+            if ($existing->isNotEmpty() && ! $replace) { $skipped++; continue; }
+            if ($replace) $existing->each->delete();
+            $this->insertAudioGroupTimeline(Request::create('/', 'POST', ['placement' => 'paragraph']), $keyBook, $block->block_uuid, $job);
+            $inserted++;
+        }
+
+        return response()->json(['data' => ['inserted' => $inserted, 'skipped' => $skipped, 'latest_audio_count' => $latest->count()]]);
+    }
+
     public function deleteAudioGroup(string $keyBook, string $blockUuid, BookAudioJob $job): JsonResponse
     {
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
@@ -2003,7 +2035,11 @@ class DashboardBookController extends Controller
             ->latest('id')
             ->first();
 
-        if (! $assignment || ! $assignment->voiceProfile) {
+        $voiceProfile = $assignment?->voiceProfile;
+        if (! $voiceProfile && ($defaultProfileId = data_get($book->audio_settings_json, 'default_voice_profile_id'))) {
+            $voiceProfile = $book->voiceProfiles()->find($defaultProfileId);
+        }
+        if (! $voiceProfile?->voice_id) {
             return response()->json([
                 'message' => 'The selected block has no voice assigned.',
                 'errors' => [
@@ -2026,7 +2062,7 @@ class DashboardBookController extends Controller
             'book_id' => $book->id,
             'book_block_id' => $block->id,
             'book_block_version_id' => $block->currentVersion->id,
-            'book_voice_profile_id' => $assignment->book_voice_profile_id,
+            'book_voice_profile_id' => $voiceProfile->id,
             'block_uuid' => $block->block_uuid,
             'status' => 'completed',
             'provider_key' => $providerKey,
@@ -2037,8 +2073,8 @@ class DashboardBookController extends Controller
                 'language' => $language,
                 'audio_settings' => $settings,
                 'parts' => $parts,
-                'voice_profile_id' => $assignment->book_voice_profile_id,
-                'voice_id' => $assignment->voiceProfile->voice_id,
+                'voice_profile_id' => $voiceProfile->id,
+                'voice_id' => $voiceProfile->voice_id,
             ],
             'result_json' => ['parts' => count($parts)],
             'started_at' => now(),
@@ -2053,7 +2089,7 @@ class DashboardBookController extends Controller
                 $audioPath = "mock://books/{$book->key_book}/blocks/{$block->block_uuid}/audio/{$index}";
                 $result = ['mock' => true, 'duration_ms' => $durationMs];
                 if ($providerKey === 'coqui-local') {
-                    $result = $coqui->synthesize($part['text'], $language, $assignment->voiceProfile->voice_id);
+                    $result = $coqui->synthesize($part['text'], $language, $voiceProfile->voice_id);
                     $audioPath = "audiobooks/{$book->key_book}/segments/".Str::uuid().'.wav';
                     Storage::disk('public')->put($audioPath, $coqui->download($result['audio_url']));
                     $durationMs = (int) ($result['duration_ms'] ?? $durationMs);
@@ -2061,17 +2097,17 @@ class DashboardBookController extends Controller
                 $segments->push(BookAudioSegment::query()->create([
                     'book_id' => $book->id, 'book_block_id' => $block->id,
                     'book_block_version_id' => $block->currentVersion->id,
-                    'book_voice_profile_id' => $assignment->book_voice_profile_id,
+                    'book_voice_profile_id' => $voiceProfile->id,
                     'book_audio_job_id' => $job->id, 'block_uuid' => $block->block_uuid,
                     'status' => 'completed', 'provider_key' => $providerKey, 'model' => $model,
-                    'voice_id' => $assignment->voiceProfile->voice_id, 'audio_path' => $audioPath,
+                    'voice_id' => $voiceProfile->voice_id, 'audio_path' => $audioPath,
                     'duration_ms' => $durationMs, 'segment_index' => $index,
                     'source_start' => $part['start'], 'source_end' => $part['end'], 'pause_after_ms' => $part['pause_after_ms'],
                     'text_plain' => $part['source_text'], 'content_hash' => $block->currentVersion->content_hash,
                     'metadata_json' => [
                         'source' => $source, 'spoken_text' => $part['text'],
-                        'voice_profile_name' => $assignment->voiceProfile->name,
-                        'voice_provider' => $assignment->voiceProfile->voice_provider,
+                        'voice_profile_name' => $voiceProfile->name,
+                        'voice_provider' => $voiceProfile->voice_provider,
                         'alignment_status' => $result['alignment']['status'] ?? 'unavailable',
                         'alignment_language' => $result['alignment']['language'] ?? $language,
                         'word_timings' => $this->attachWordSourceOffsets(
@@ -2100,6 +2136,79 @@ class DashboardBookController extends Controller
                 'created' => true,
             ],
         ], 201);
+    }
+
+    public function generateBookAudio(Request $request, string $keyBook, CoquiTtsService $coqui): JsonResponse
+    {
+        set_time_limit(0);
+
+        $validated = $request->validate([
+            'regenerate_existing' => ['nullable', 'boolean'],
+            'provider_key' => ['nullable', 'in:mock,coqui-local'],
+            'model' => ['nullable', 'string', 'max:120'],
+        ]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $regenerate = (bool) ($validated['regenerate_existing'] ?? false);
+        $defaultProfileId = data_get($book->audio_settings_json, 'default_voice_profile_id');
+        $hasDefaultVoice = $defaultProfileId && $book->voiceProfiles()->whereKey($defaultProfileId)->whereNotNull('voice_id')->exists();
+        $blocks = $book->blocks()
+            ->where('status', '!=', 'deleted')
+            ->with(['currentVersion', 'voiceAssignments.voiceProfile'])
+            ->get()
+            ->filter(fn (BookBlock $block) => $block->currentVersion && trim((string) $block->text_plain) !== '')
+            ->values();
+        $configuredBlocks = $blocks->filter(fn (BookBlock $block) => $hasDefaultVoice || $block->voiceAssignments->contains(fn (BookBlockVoiceAssignment $assignment) =>
+            (int) $assignment->book_block_version_id === (int) $block->current_version_id
+            && $assignment->voiceProfile?->voice_id
+        ))->values();
+        $completedVersions = BookAudioJob::query()->where('book_id', $book->id)->where('status', 'completed')->pluck('book_block_version_id')->filter()->flip();
+        $targets = $configuredBlocks->filter(fn (BookBlock $block) => $regenerate || ! $completedVersions->has($block->current_version_id))->values();
+        $completed = 0;
+        $skipped = $configuredBlocks->count() - $targets->count();
+        $unconfigured = $blocks->count() - $configuredBlocks->count();
+        $failed = [];
+
+        foreach ($targets as $block) {
+            if (! $block->currentVersion) {
+                $failed[] = ['block_uuid' => $block->block_uuid, 'message' => 'This block has no saved version.'];
+                continue;
+            }
+
+            // Symfony's first argument is the query bag. Put these values in
+            // the request body so this internal call exactly matches the
+            // normal "Generate audio" form submission.
+            $generationRequest = $request->duplicate([], [
+                'provider_key' => $validated['provider_key'] ?? 'coqui-local',
+                'model' => $validated['model'] ?? 'xtts-v2',
+            ]);
+            $response = $this->generateBlockAudio($generationRequest, $keyBook, $block->block_uuid, $coqui);
+            if ($response->getStatusCode() < 300) {
+                $completed++;
+            } else {
+                $failed[] = ['block_uuid' => $block->block_uuid, 'message' => $response->getData(true)['message'] ?? 'Generation failed.'];
+            }
+        }
+
+        return response()->json(['data' => [
+            'total_blocks' => $blocks->count(),
+            'target_blocks' => $targets->count(),
+            'completed_blocks' => $completed,
+            'skipped_blocks' => $skipped,
+            'unconfigured_blocks' => $unconfigured,
+            'failed_blocks' => $failed,
+        ]]);
+    }
+
+    public function updateAudioSettings(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate(['default_voice_profile_id' => ['nullable', 'integer']]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $profileId = $validated['default_voice_profile_id'] ?? null;
+        abort_unless(! $profileId || $book->voiceProfiles()->whereKey($profileId)->whereNotNull('voice_id')->exists(), 422, 'Choose a configured voice.');
+        $settings = $book->audio_settings_json ?? [];
+        $settings['default_voice_profile_id'] = $profileId;
+        $book->forceFill(['audio_settings_json' => $settings])->save();
+        return response()->json(['data' => ['default_voice_profile_id' => $profileId]]);
     }
 
     public function storeBlockTranslation(
