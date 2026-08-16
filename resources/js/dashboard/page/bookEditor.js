@@ -76,9 +76,11 @@ const voiceAssignmentActionStatus = _.rod('idle');
 const selectedVoiceProfileId = _.rod('');
 const voiceProfileName = _.rod('');
 const voiceProfileRole = _.rod('character');
-const voiceProfileProvider = _.rod('');
-const voiceProfileVoiceId = _.rod('');
-const voiceProfileLanguage = _.rod('');
+const voiceProfileIcon = _.rod('person');
+const voiceProfileLibraryVoiceId = _.rod('');
+const voiceProfileLibraryOptions = _.rod([]);
+const voiceProfileLibraryVoices = _.rod([]);
+const voiceProfileToneId = _.rod('');
 const voiceProfileNotes = _.rod('');
 const voiceProfileDialogStatus = _.rod(null);
 const savingVoiceProfile = _.rod(false);
@@ -140,6 +142,8 @@ let loadBlockVoiceAssignment = () => { };
 let saveBlockVoiceAssignment = () => { };
 let clearBlockVoiceAssignment = () => { };
 let openVoiceProfileDialog = () => { };
+let openCharacterManagementDialog = () => { };
+let openDirectVoiceDialog = () => { };
 let loadBlockAudio = () => { };
 let generateBlockAudio = () => { };
 let loadBlockTranslations = () => { };
@@ -2486,13 +2490,6 @@ function voicesPanel(block, keyBook) {
     const assignedProfile = assignment?.voice_profile
         || profiles.find((profile) => String(profile.id) === String(selectedVoiceProfileId.value))
         || null;
-    const profileOptions = [
-        { label: 'No voice assigned', value: '' },
-        ...profiles.map((profile) => ({
-            label: `${profile.name}${profile.role ? ` · ${profile.role}` : ''}`,
-            value: String(profile.id),
-        })),
-    ];
 
     if (voiceProfilesStatus.value === 'loading') {
         return _.div({ class: 'at-rightWorkspace-section' },
@@ -2521,21 +2518,12 @@ function voicesPanel(block, keyBook) {
         block?.dirty ? _.div({ class: 'at-rightWorkspace-note warning' }, 'Save the selected block before assigning a voice.') : null,
         block && !block.current_version_id ? _.div({ class: 'at-rightWorkspace-note warning' }, 'This block needs a saved version before voice assignment can be tracked.') : null,
         _.div({ class: 'at-voiceCurrent' },
-            _.span('Current voice'),
+            _.span(assignedProfile?.role === 'character' ? 'Current character' : 'Current direct voice'),
             assignedProfile
                 ? _.strong(`${assignedProfile.name}${assignedProfile.voice_id ? ` · ${assignedProfile.voice_id}` : ''}`)
                 : _.strong('Not assigned'),
-            assignedProfile?.voice_provider ? _.small(assignedProfile.voice_provider) : null
+            assignedProfile?.voice_provider ? _.small(`${assignedProfile.voice_provider}${assignedProfile.settings_json?.tone_id ? ` · Tone #${assignedProfile.settings_json.tone_id}` : ''}`) : null
         ),
-        _.Select({
-            label: 'Assign to selected block',
-            icon: 'record_voice_over',
-            model: selectedVoiceProfileId,
-            options: () => profileOptions,
-            onChange: (value) => {
-                selectedVoiceProfileId.value = selectChangeValue(value, selectedVoiceProfileId.value);
-            },
-        }),
         () => voiceAssignmentError.value ? _.div({ class: 'at-chatError' }, voiceAssignmentError.value) : null,
         _.div({ class: 'at-rightWorkspace-actions is-top' },
             _.button({
@@ -2544,46 +2532,25 @@ function voicesPanel(block, keyBook) {
                 disabled: () => !block
                     || block.dirty
                     || !block.current_version_id
-                    || !selectedVoiceProfileId.value
                     || voiceAssignmentActionStatus.value !== 'idle',
-                onclick: () => saveBlockVoiceAssignment(block),
-            }, voiceAssignmentActionStatus.value === 'saving' ? 'Assigning...' : 'Assign voice'),
+                onclick: () => openCharacterManagementDialog(block, keyBook),
+            }, 'Assign character'),
             _.button({
                 type: 'button',
                 class: 'at-rightWorkspace-action',
-                disabled: () => !block
-                    || !assignment
-                    || voiceAssignmentActionStatus.value !== 'idle',
+                disabled: () => !block || block.dirty || !block.current_version_id || voiceAssignmentActionStatus.value !== 'idle',
+                onclick: () => openDirectVoiceDialog(block, keyBook),
+            }, 'Choose direct voice'),
+            _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-action',
+                disabled: () => !assignment || voiceAssignmentActionStatus.value !== 'idle',
                 onclick: () => clearBlockVoiceAssignment(block),
-            }, voiceAssignmentActionStatus.value === 'clearing' ? 'Clearing...' : 'Clear'),
-            _.button({
-                type: 'button',
-                class: 'at-rightWorkspace-action',
-                onclick: () => openVoiceProfileDialog(keyBook),
-            }, 'Create character')
+            }, voiceAssignmentActionStatus.value === 'clearing' ? 'Clearing...' : 'Clear')
         ),
         voiceAssignmentStatus.value === 'loading'
             ? _.div({ class: 'at-chatNotice' }, 'Loading block voice...')
-            : null,
-        profiles.length
-            ? _.div({ class: 'at-voiceList' }, profiles.map((profile) => _.div({
-                class: assignedProfile?.id === profile.id ? 'at-voiceItem is-active' : 'at-voiceItem',
-            },
-                _.div({ class: 'at-voiceItem-head' },
-                    _.strong(profile.name),
-                    _.span(profile.role || 'character')
-                ),
-                _.div({ class: 'at-voiceItem-meta' },
-                    profile.voice_provider || 'No provider',
-                    profile.voice_id ? ` · ${profile.voice_id}` : '',
-                    profile.language ? ` · ${profile.language}` : ''
-                ),
-                profile.notes ? _.p(profile.notes) : null
-            )))
-            : _.div({ class: 'at-rightWorkspace-emptyState' },
-                _.strong('No voices yet'),
-                _.p('Create a narrator or character voice profile before assigning it to blocks.')
-            )
+            : null
     );
 }
 
@@ -4922,7 +4889,7 @@ function editorText(keyBook) {
             });
     };
 
-    const voiceProfileForm = (bookKey, close) => _.form({
+    const voiceProfileForm = (bookKey, close, existing = null) => _.form({
         action: '#',
         method: 'post',
         onSubmit: async (event) => {
@@ -4941,14 +4908,17 @@ function editorText(keyBook) {
             voiceProfileDialogStatus.value = null;
 
             try {
-                const payload = await _.http.postJSON(`/dashboard/api/books/${bookKey}/voices`, {
+                const body = {
                     name: voiceProfileName.value.trim(),
                     role: voiceProfileRole.value || 'character',
-                    voice_provider: voiceProfileProvider.value.trim() || null,
-                    voice_id: voiceProfileVoiceId.value.trim() || null,
-                    language: voiceProfileLanguage.value.trim() || null,
+                    icon: voiceProfileIcon.value || 'person',
+                    audio_library_voice_id: voiceProfileLibraryVoiceId.value ? Number(voiceProfileLibraryVoiceId.value) : null,
+                    tone_id: voiceProfileToneId.value ? Number(voiceProfileToneId.value) : null,
                     notes: voiceProfileNotes.value.trim() || null,
-                });
+                };
+                const payload = existing
+                    ? await _.http.patchJSON(`/dashboard/api/books/${bookKey}/voices/${existing.id}`, body)
+                    : await _.http.postJSON(`/dashboard/api/books/${bookKey}/voices`, body);
                 const data = normalizeDataPayload(payload);
 
                 if (data.profile) {
@@ -4995,26 +4965,32 @@ function editorText(keyBook) {
                     voiceProfileRole.value = selectChangeValue(value, voiceProfileRole.value);
                 },
             }),
-            _.Input({
+            _.Select({
                 class: 'cms-col-24',
-                label: 'Voice provider',
-                icon: 'hub',
-                model: voiceProfileProvider,
-                placeholder: 'OpenAI, ElevenLabs, local, ...',
+                label: 'Character icon',
+                icon: 'face',
+                model: voiceProfileIcon,
+                options: [
+                    { value: 'person', label: 'Person' }, { value: 'face', label: 'Face' },
+                    { value: 'auto_stories', label: 'Story' }, { value: 'psychology', label: 'Mind' },
+                ],
             }),
-            _.Input({
+            _.Select({
                 class: 'cms-col-24',
-                label: 'Voice ID',
-                icon: 'fingerprint',
-                model: voiceProfileVoiceId,
-                placeholder: 'Provider voice identifier',
+                label: 'Voice from audio library',
+                icon: 'record_voice_over',
+                model: voiceProfileLibraryVoiceId,
+                options: () => [{ value: '', label: 'Set voice later' }, ...voiceProfileLibraryOptions.value],
             }),
-            _.Input({
+            _.Select({
                 class: 'cms-col-24',
-                label: 'Language',
-                icon: 'translate',
-                model: voiceProfileLanguage,
-                placeholder: 'it, en, es...',
+                label: 'Voice tone',
+                icon: 'graphic_eq',
+                model: voiceProfileToneId,
+                options: () => {
+                    const voice = voiceProfileLibraryVoices.value.find((item) => String(item.id) === String(voiceProfileLibraryVoiceId.value));
+                    return [{ value: '', label: 'Default tone' }, ...(voice?.samples || []).map((sample) => ({ value: String(sample.tone_id || sample.tone?.id), label: sample.tone?.name || `Tone #${sample.tone_id || sample.tone?.id}` }))];
+                },
             }),
             _.Textarea({
                 class: 'cms-col-24',
@@ -5029,29 +5005,123 @@ function editorText(keyBook) {
                 : null),
             _.div({ class: 'cms-col-24', align: 'right' },
                 _.Btn({ type: 'button', class: 'cms-m-r-sm', color: 'secondary', onClick: close }, 'Close'),
-                _.Btn({ type: 'submit', color: 'primary', loading: savingVoiceProfile }, 'Create voice')
+                _.Btn({ type: 'submit', color: 'primary', loading: savingVoiceProfile }, existing ? 'Save character' : 'Create voice')
             )
         )
     );
 
-    openVoiceProfileDialog = (bookKey = keyBook) => {
-        voiceProfileName.value = '';
-        voiceProfileRole.value = 'character';
-        voiceProfileProvider.value = '';
-        voiceProfileVoiceId.value = '';
-        voiceProfileLanguage.value = '';
-        voiceProfileNotes.value = '';
+    openVoiceProfileDialog = (bookKey = keyBook, existing = null) => {
+        voiceProfileName.value = existing?.name || '';
+        voiceProfileRole.value = existing?.role || 'character';
+        voiceProfileIcon.value = existing?.settings_json?.icon || 'person';
+        voiceProfileLibraryVoiceId.value = String(existing?.settings_json?.audio_library_voice_id || '');
+        voiceProfileToneId.value = String(existing?.settings_json?.tone_id || '');
+        voiceProfileNotes.value = existing?.notes || '';
         voiceProfileDialogStatus.value = null;
+        _.http.getJSON('/dashboard/api/audio-library/voices')
+            .then((payload) => {
+                const data = normalizeDataPayload(payload);
+                voiceProfileLibraryVoices.value = data.voices || [];
+                voiceProfileLibraryOptions.value = (data.voices || []).map((voice) => ({ value: String(voice.id), label: `${voice.name} · ${(voice.language || '—').toUpperCase()}` }));
+            })
+            .catch(() => { voiceProfileLibraryVoices.value = []; voiceProfileLibraryOptions.value = []; });
 
         _.Dialog({
             size: 'lg',
             stickyActions: true,
             slots: {
                 header: _.div(
-                    _.h3('Create voice profile'),
-                    _.span({ class: 'text-muted' }, 'Define a narrator or character voice for this book.'),
+                    _.h3(existing ? 'Edit character' : 'Create voice profile'),
+                    _.span({ class: 'text-muted' }, 'Define the character details and voice used in every assigned paragraph.'),
                 ),
-                content: ({ close }) => voiceProfileForm(bookKey, close),
+                content: ({ close }) => voiceProfileForm(bookKey, close, existing),
+            },
+        }).open();
+    };
+
+    openCharacterManagementDialog = (block, bookKey = keyBook) => {
+        const removeCharacter = async (profile) => {
+            if (!window.confirm(`Delete ${profile.name}? Paragraphs using this character will no longer have it assigned.`)) return;
+            try {
+                await _.http.delJSON(`/dashboard/api/books/${bookKey}/voices/${profile.id}`);
+                voiceProfiles.value = voiceProfiles.value.filter((item) => Number(item.id) !== Number(profile.id));
+                if (Number(voiceAssignment.value?.voice_profile_id) === Number(profile.id)) {
+                    voiceAssignment.value = null;
+                    selectedVoiceProfileId.value = '';
+                }
+            } catch (error) {
+                voiceAssignmentError.value = requestErrorMessage(error, 'Unable to delete character.');
+            }
+        };
+        _.Dialog({
+            size: 'lg', stickyActions: true,
+            slots: {
+                header: _.div({ class: 'at-characterDialogHeader' }, _.h3('Assign character'), _.span('Manage your cast, then assign one character to this paragraph.')),
+                content: ({ close }) => _.div({ class: 'at-characterManageDialog' },
+                    () => {
+                        const characters = voiceProfiles.value.filter((profile) => profile.role === 'character');
+                        return characters.length ? _.div({ class: 'at-characterAssignRows' }, characters.map((profile) => _.article({ class: 'at-characterAssignRow' },
+                            _.div({ class: 'at-characterAssignIdentity' },
+                                _.div({ class: 'at-characterAssignIcon' }, _.Icon ? _.Icon({ name: profile.settings_json?.icon || 'person' }) : null),
+                                _.div(_.strong(profile.name), _.span(profile.notes || 'No character details')),
+                            ),
+                            _.div({ class: 'at-characterAssignVoice' },
+                                _.span(profile.voice_id ? 'Voice ready' : 'Voice missing'),
+                                _.strong(profile.settings_json?.voice_name || profile.voice_provider || 'No voice connected'),
+                                _.small(profile.settings_json?.tone_name || (profile.settings_json?.tone_id ? `Tone #${profile.settings_json.tone_id}` : 'Default tone')),
+                            ),
+                            _.div({ class: 'at-characterAssignActions' },
+                                _.Btn({ dense: true, color: 'primary', icon: 'person_add', title: `Assign ${profile.name}`, onClick: () => { selectedVoiceProfileId.value = String(profile.id); saveBlockVoiceAssignment(block); close(); } }, 'Assign'),
+                                _.Btn({ dense: true, color: 'secondary', icon: 'edit', title: `Edit ${profile.name}`, onClick: () => openVoiceProfileDialog(bookKey, profile) }),
+                                _.Btn({ dense: true, color: 'danger', icon: 'delete_outline', title: `Delete ${profile.name}`, onClick: () => removeCharacter(profile) }),
+                            ),
+                        ))) : _.div({ class: 'at-rightWorkspace-emptyState' }, _.strong('No characters yet'), _.p('Create a character and connect its voice from the Audio Library.'));
+                    },
+                    _.div({ class: 'at-characterManageActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close'), _.Btn({ color: 'primary', icon: 'person_add', onClick: () => openVoiceProfileDialog(bookKey) }, 'Create character')),
+                ),
+            },
+        }).open();
+    };
+
+    openDirectVoiceDialog = (block, bookKey = keyBook) => {
+        const libraryVoices = _.rod([]);
+        const loading = _.rod(true);
+        const status = _.rod(null);
+        _.http.getJSON('/dashboard/api/audio-library/voices')
+            .then((payload) => { libraryVoices.value = normalizeDataPayload(payload).voices || []; })
+            .catch((error) => { status.value = { type: 'danger', message: requestErrorMessage(error, 'Unable to load audio voices.') }; })
+            .finally(() => { loading.value = false; });
+        _.Dialog({
+            size: 'lg', stickyActions: true,
+            slots: {
+                header: _.div(_.h3('Choose direct voice'), _.span({ class: 'text-muted' }, 'This assigns a voice only to this paragraph, without assigning a character.')),
+                content: ({ close }) => _.div({ class: 'at-characterManageDialog' },
+                    () => loading.value ? _.div({ class: 'at-chatNotice' }, 'Loading audio library…') : libraryVoices.value.length ? _.div({ class: 'at-directVoiceRows' }, libraryVoices.value.map((voice) => _.article({ class: 'at-directVoiceRow' },
+                        _.div({ class: 'at-directVoiceIdentity' },
+                            _.div(_.h3(voice.name), _.span(`${voice.type || 'voice'} · ${(voice.language || '').toUpperCase()}`)),
+                            _.p(voice.description || 'No voice description.'),
+                        ),
+                        _.div({ class: 'at-directVoiceToneList' }, voice.samples?.length
+                            ? voice.samples.map((sample) => _.div({ class: 'at-directVoiceToneRow' },
+                                _.span({ class: 'at-directVoiceToneDot', style: { backgroundColor: sample.tone?.color || '#64748b' } }),
+                                _.div({ class: 'at-directVoiceToneCopy' }, _.strong(sample.tone ? `#${sample.tone.id} · ${sample.tone.name}` : `Tone #${sample.tone_id || '—'}`), _.small(sample.description || sample.tone?.description || sample.original_name || 'Audio sample')),
+                                _.audio({ controls: true, preload: 'metadata', src: sample.audio_url }),
+                                _.Btn({ dense: true, color: 'primary', icon: 'check', title: `Use ${voice.name} with ${sample.tone?.name || 'this tone'}`, onClick: async () => {
+                                try {
+                                    const payload = await _.http.postJSON(`/dashboard/api/books/${bookKey}/blocks/${encodeURIComponent(block.block_uuid)}/library-voice`, { audio_library_voice_id: voice.id, tone_id: sample.tone_id || sample.tone?.id || null });
+                                    const data = normalizeDataPayload(payload);
+                                    voiceAssignment.value = data.assignment || null;
+                                    selectedVoiceProfileId.value = data.assignment?.voice_profile_id ? String(data.assignment.voice_profile_id) : '';
+                                    close();
+                                } catch (error) { status.value = { type: 'danger', message: requestErrorMessage(error, 'Unable to assign this direct voice.') }; }
+                                } }),
+                            ))
+                            : _.span({ class: 'at-directVoiceNoTone' }, 'No tone sample available'),
+                        ),
+                    ))) : _.div({ class: 'at-rightWorkspace-emptyState' }, _.strong('No audio voices'), _.p('Add a voice in Audio Library first.')),
+                    () => status.value ? _.Alert(status.value) : null,
+                    _.div({ class: 'at-characterManageActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close')),
+                ),
             },
         }).open();
     };

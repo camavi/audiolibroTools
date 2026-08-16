@@ -1451,6 +1451,254 @@
     -webkit-line-clamp: 3;
 }
 
+.at-voiceItem-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 7px;
+}
+
+.at-characterManageDialog {
+    display: grid;
+    gap: 12px;
+    min-width: min(100%, 620px);
+}
+
+.at-characterDialogHeader {
+    display: grid;
+    gap: 4px;
+}
+
+.at-characterDialogHeader h3 {
+    margin: 0;
+    color: #182033;
+    font-size: 18px;
+    line-height: 1.2;
+}
+
+.at-characterDialogHeader span {
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.at-characterAssignRows {
+    display: grid;
+    gap: 8px;
+    max-height: min(52vh, 430px);
+    overflow: auto;
+    padding: 1px;
+}
+
+.at-characterAssignRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(150px, .8fr) auto;
+    align-items: center;
+    gap: 14px;
+    padding: 11px 12px;
+    border: 1px solid #dbe3ee;
+    border-radius: 8px;
+    background: #fbfcfe;
+    transition: border-color 160ms ease, background 160ms ease;
+}
+
+.at-characterAssignRow:hover {
+    border-color: #b9cdf4;
+    background: #f6f9ff;
+}
+
+.at-characterAssignIdentity {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 10px;
+}
+
+.at-characterAssignIcon {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    place-items: center;
+    border-radius: 8px;
+    background: #eaf1ff;
+    color: #3b72e8;
+}
+
+.at-characterAssignIdentity > div:last-child {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.at-characterAssignIdentity strong {
+    overflow: hidden;
+    color: #1e293b;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.at-characterAssignIdentity span {
+    overflow: hidden;
+    color: #71819a;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.at-characterAssignVoice {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+    padding-left: 12px;
+    border-left: 1px solid #e2e8f0;
+}
+
+.at-characterAssignVoice > span {
+    color: #3c7a57;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.at-characterAssignVoice strong,
+.at-characterAssignVoice small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.at-characterAssignVoice strong {
+    color: #334155;
+    font-size: 12px;
+}
+
+.at-characterAssignVoice small {
+    color: #64748b;
+    font-size: 11px;
+}
+
+.at-characterAssignActions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.at-characterAssignActions .cms-btn,
+.at-characterManageActions .cms-btn {
+    min-height: 32px;
+    font-size: 12px;
+}
+
+.at-characterManageActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-top: 2px;
+}
+
+.at-directVoiceRows {
+    display: grid;
+    gap: 9px;
+}
+
+.at-directVoiceRow {
+    display: grid;
+    grid-template-columns: minmax(170px, .7fr) minmax(0, 2fr);
+    gap: 16px;
+    align-items: center;
+    padding: 13px 15px;
+    border: 1px solid #dbe3ee;
+    border-radius: 10px;
+    background: #f8fafc;
+}
+
+.at-directVoiceIdentity h3 {
+    margin: 0;
+    color: #182033;
+    font-size: 15px;
+}
+
+.at-directVoiceIdentity span,
+.at-directVoiceIdentity p {
+    display: block;
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 12px;
+}
+
+.at-directVoiceToneList {
+    display: grid;
+}
+
+.at-directVoiceToneRow {
+    display: grid;
+    grid-template-columns: 10px minmax(110px, .7fr) minmax(180px, 1fr) auto;
+    gap: 9px;
+    align-items: center;
+    padding: 6px 0;
+}
+
+.at-directVoiceToneRow + .at-directVoiceToneRow {
+    border-top: 1px solid #e2e8f0;
+}
+
+.at-directVoiceToneDot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+}
+
+.at-directVoiceToneCopy strong,
+.at-directVoiceToneCopy small {
+    display: block;
+}
+
+.at-directVoiceToneCopy strong {
+    color: #334155;
+    font-size: 12px;
+}
+
+.at-directVoiceToneCopy small {
+    margin-top: 2px;
+    color: #64748b;
+    font-size: 11px;
+}
+
+.at-directVoiceToneRow audio {
+    width: 100%;
+    height: 30px;
+}
+
+.at-directVoiceNoTone {
+    color: #64748b;
+    font-size: 11px;
+}
+
+@media (max-width: 720px) {
+    .at-characterAssignRow {
+        grid-template-columns: 1fr auto;
+    }
+
+    .at-characterAssignVoice {
+        grid-column: 1 / -1;
+        padding-top: 8px;
+        padding-left: 44px;
+        border-top: 1px solid #e2e8f0;
+        border-left: 0;
+    }
+
+    .at-directVoiceRow {
+        grid-template-columns: 1fr;
+    }
+
+    .at-directVoiceToneRow {
+        grid-template-columns: 10px minmax(100px, .7fr) minmax(140px, 1fr) auto;
+    }
+}
+
 .at-audioList {
     display: grid;
     gap: 9px;

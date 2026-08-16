@@ -188,39 +188,80 @@
 .at-audioCostGrid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: .6rem
+    gap: .55rem
 }
 
-.at-audioCostGrid div {
-    padding: .75rem;
-    border: 1px solid #dbe3ee;
-    border-radius: .55rem;
-    background: #f8fafc
+.at-audioGenerationBar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    gap: .65rem
+}
+
+.at-audioMetric {
+    min-width: 0;
+    padding: .7rem .75rem;
+    border: 1px solid #e1e8f2;
+    border-radius: .5rem;
+    background: #fbfcfe
 }
 
 .at-audioCostGrid span {
     display: block;
-    color: #64748b;
-    font-size: .7rem
+    color: #71819a;
+    font-size: .65rem;
+    font-weight: 700;
+    letter-spacing: .025em
 }
 
 .at-audioCostGrid strong {
+    display: block;
+    margin-top: .18rem;
+    color: #1d2a3e;
     font-size: .9rem
 }
 
 .at-audioCreate {
     display: grid;
-    gap: 1rem
+    gap: .8rem
 }
 
 .at-audioGeneratedGroups {
     display: grid;
-    gap: .5rem;
-    padding: .75rem;
-    border: 1px solid #dbe3ee;
-    border-radius: .6rem;
-    background: #f8fafc;
+    gap: .45rem;
+    padding: .7rem;
+    border: 1px solid #e0e7f0;
+    border-radius: .65rem;
+    background: #fbfcfe;
     font-size: .78rem
+}
+
+.at-audioListDialog {
+    display: grid;
+    gap: .9rem
+}
+
+.at-audioListDialogActions {
+    display: flex;
+    justify-content: flex-end
+}
+
+.at-audioListEmpty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .45rem;
+    min-height: 8rem;
+    border: 1px dashed #cfd9e7;
+    border-radius: .6rem;
+    color: #71819a;
+    font-size: .78rem
+}
+
+.at-audioListButton {
+    justify-self: start;
+    min-height: 2.2rem;
+    font-size: .74rem
 }
 
 .at-audioGeneratedGroupsHeader,
@@ -233,14 +274,14 @@
 
 .at-audioGeneratedGroupsHeader small,
 .at-audioGeneratedMasterInfo small {
-    color: #64748b
+    color: #71819a
 }
 
 .at-audioGeneratedGroup {
     display: block;
     overflow: hidden;
-    border: 1px solid #dbe3ee;
-    border-radius: .45rem;
+    border: 1px solid #e0e7f0;
+    border-radius: .5rem;
     background: #fff;
     color: #475569
 }
@@ -248,7 +289,7 @@
 .at-audioGeneratedMaster {
     display: flex;
     align-items: center;
-    min-height: 3.35rem;
+    min-height: 3.2rem;
     gap: .55rem;
     padding: .45rem .55rem
 }
@@ -261,12 +302,12 @@
     border: 0;
     border-radius: .35rem;
     background: transparent;
-    color: #475569;
+    color: #596b84;
     cursor: pointer
 }
 
 .at-audioGroupToggle:hover {
-    background: #eef4ff;
+    background: #edf4ff;
     color: #2563eb
 }
 
@@ -287,6 +328,11 @@
     display: flex;
     align-items: center;
     gap: .35rem
+}
+
+.at-audioGeneratedMasterActions .cms-btn {
+    min-height: 2rem;
+    font-size: .72rem
 }
 
 .at-audioGroupUsed {
@@ -338,35 +384,253 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: .85rem;
-    border: 1px solid #cbdcf9;
-    border-radius: .6rem;
-    background: #f4f8ff
+    gap: .8rem;
+    padding: .8rem .85rem;
+    border: 1px solid #cdddfb;
+    border-radius: .65rem;
+    background: linear-gradient(135deg, #f7faff, #f0f5ff)
 }
 
-.at-audioVoiceSelect span,
-.at-audioVoiceSelect small {
+.at-audioVoiceSelectCopy {
+    display: grid;
+    min-width: 0;
+    gap: .13rem
+}
+
+.at-audioVoiceSelectCopy span,
+.at-audioVoiceSelectCopy small {
     display: block
 }
 
-.at-audioVoiceSelect span {
-    color: #2563eb;
-    font-size: .7rem;
+.at-audioVoiceSelectCopy span {
+    color: #3568c9;
+    font-size: .64rem;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase
+}
+
+.at-audioVoiceSelectCopy strong {
+    color: #1d2a3e;
+    font-size: .92rem
+}
+
+.at-audioVoiceSelectCopy small {
+    overflow: hidden;
+    color: #5d708d;
+    font-size: .71rem;
+    text-overflow: ellipsis;
+    white-space: nowrap
+}
+
+.at-audioVoiceSelect .cms-btn {
+    flex: 0 0 auto;
+    min-height: 2.25rem;
+    font-size: .72rem
+}
+
+.at-audioVoiceSelectActions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: .35rem
+}
+
+.at-voicesPanel,
+.at-characterDialog,
+.at-paragraphCharacterDialog {
+    display: grid;
+    gap: .8rem
+}
+
+.at-voicesPanelHead,
+.at-characterDialogActions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .7rem
+}
+
+.at-audioCharacterDialogHeader {
+    display: grid;
+    gap: .2rem
+}
+
+.at-audioCharacterDialogHeader h3 {
+    margin: 0;
+    color: #182033;
+    font-size: 1.1rem
+}
+
+.at-audioCharacterDialogHeader span {
+    color: #64748b;
+    font-size: .75rem
+}
+
+.at-audioCharacterAssignRows {
+    display: grid;
+    gap: .5rem;
+    max-height: min(52vh, 26rem);
+    overflow: auto
+}
+
+.at-audioCharacterAssignRow {
+    display: grid;
+    grid-template-columns: minmax(0, 0.75fr) minmax(8rem, 0.8fr) minmax(8rem, 0.6fr);
+    align-items: center;
+    gap: .8rem;
+    padding: .65rem .7rem;
+    border: 1px solid #e0e7f0;
+    border-radius: .55rem;
+    background: #fbfcfe
+}
+
+.at-audioCharacterIdentity {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: .55rem
+}
+
+.at-audioCharacterIdentity>div:last-child {
+    display: grid;
+    min-width: 0;
+    gap: .12rem
+}
+
+.at-audioCharacterIdentity strong,
+.at-audioCharacterIdentity span,
+.at-audioCharacterVoice strong,
+.at-audioCharacterVoice small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap
+}
+
+.at-audioCharacterIdentity strong {
+    color: #25344a;
+    font-size: .78rem
+}
+
+.at-audioCharacterIdentity span {
+    color: #71819a;
+}
+
+.at-audioCharacterVoice {
+    display: grid;
+    min-width: 0;
+    gap: .1rem;
+    padding-left: .7rem;
+    border-left: 1px solid #e0e7f0
+}
+
+.at-audioCharacterVoice>span {
+    color: #3b7d59;
+    font-size: .6rem;
+    font-weight: 800;
+    letter-spacing: .05em;
+    text-transform: uppercase
+}
+
+.at-audioCharacterVoice strong {
+    color: #3c4d66;
+    font-size: .72rem
+}
+
+.at-audioCharacterVoice small {
+    color: #71819a;
+    font-size: .66rem
+}
+
+.at-audioCharacterActions {
+    text-align: right
+}
+
+.at-audioCharacterActions .cms-btn {
+    min-height: 2rem;
+    font-size: .7rem
+}
+
+.at-voicesPanelHead>div {
+    display: grid;
+    gap: .08rem
+}
+
+.at-voicesPanelHead span {
+    color: #667a96;
+    font-size: .64rem;
     font-weight: 800;
     letter-spacing: .08em;
     text-transform: uppercase
 }
 
-.at-audioVoiceSelect strong {
-    display: block;
-    margin: .18rem 0;
-    font-size: .95rem
+.at-characterList {
+    display: grid;
+    gap: .5rem
 }
 
-.at-audioVoiceSelect small {
-    color: #64748b;
-    font-size: .75rem
+.at-characterCard,
+.at-characterChoice {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    width: 100%;
+    padding: .65rem;
+    border: 1px solid #e0e7f0;
+    border-radius: .55rem;
+    background: #fbfcfe;
+    color: #25344a;
+    text-align: left
+}
+
+.at-characterChoice {
+    cursor: pointer
+}
+
+.at-characterChoice:hover {
+    border-color: #adc7f8;
+    background: #f4f8ff
+}
+
+.at-characterIcon {
+    display: grid;
+    width: 2.2rem;
+    height: 2.2rem;
+    flex: 0 0 2.2rem;
+    place-items: center;
+    border-radius: .5rem;
+    background: #eaf1ff;
+    color: #3d72dd
+}
+
+.at-characterCopy,
+.at-characterChoice>div {
+    display: grid;
+    min-width: 0;
+    flex: 1;
+    gap: .1rem
+}
+
+.at-characterCopy span,
+.at-characterChoice small {
+    color: #5f738f;
+    font-size: .7rem
+}
+
+.at-characterCopy small,
+.at-characterChoice span {
+    overflow: hidden;
+    color: #71819a;
+    font-size: .68rem;
+    text-overflow: ellipsis;
+    white-space: nowrap
+}
+
+.at-audioGenerateButton {
+    align-self: stretch;
+    min-width: 10.75rem;
+    border-radius: .5rem !important;
+    font-size: .78rem
 }
 
 .at-libraryVoiceDialog {
@@ -863,6 +1127,25 @@
 
     .at-audioForm--compact {
         grid-template-columns: 1fr
+    }
+}
+
+@media(max-width:700px) {
+    .at-audioGenerationBar {
+        grid-template-columns: 1fr
+    }
+
+    .at-audioGenerateButton {
+        min-height: 2.4rem
+    }
+
+    .at-audioVoiceSelect {
+        align-items: flex-start;
+        flex-direction: column
+    }
+
+    .at-audioVoiceSelectActions {
+        width: 100%
     }
 }
 

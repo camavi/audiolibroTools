@@ -1052,7 +1052,7 @@ class DashboardBookController extends Controller
         ]);
     }
 
-    public function storeVoiceProfile(Request $request, string $keyBook): JsonResponse
+    public function storeVoiceProfile(Request $request, string $keyBook, CoquiTtsService $coqui): JsonResponse
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:160'],
@@ -1061,20 +1061,30 @@ class DashboardBookController extends Controller
             'voice_id' => ['nullable', 'string', 'max:160'],
             'language' => ['nullable', 'string', 'max:20'],
             'notes' => ['nullable', 'string', 'max:5000'],
+            'icon' => ['nullable', 'string', 'max:80'],
+            'audio_library_voice_id' => ['nullable', 'integer'],
+            'tone_id' => ['nullable', 'integer'],
         ]);
 
         $book = Book::query()
             ->where('key_book', $keyBook)
             ->firstOrFail();
 
+        $libraryVoice = ! empty($validated['audio_library_voice_id'])
+            ? $this->prepareLibraryVoice($validated['audio_library_voice_id'], $validated['tone_id'] ?? null, $coqui)
+            : null;
         $profile = BookVoiceProfile::query()->create([
             'book_id' => $book->id,
             'name' => trim($validated['name']),
             'role' => $validated['role'] ?? 'character',
-            'voice_provider' => $validated['voice_provider'] ?? null,
-            'voice_id' => $validated['voice_id'] ?? null,
-            'language' => $validated['language'] ?? $book->lang,
-            'notes' => $validated['notes'] ?? null,
+            'voice_provider' => $libraryVoice['provider'] ?? ($validated['voice_provider'] ?? null),
+            'voice_id' => $libraryVoice['voice_id'] ?? ($validated['voice_id'] ?? null),
+            'language' => $validated['language'] ?? $libraryVoice['language'] ?? $book->lang,
+            'notes' => $validated['notes'] ?? $libraryVoice['description'] ?? null,
+            'settings_json' => [
+                'icon' => $validated['icon'] ?? 'person',
+                ...($libraryVoice['settings'] ?? []),
+            ],
             'created_by' => auth()->id(),
         ]);
 
@@ -1084,6 +1094,43 @@ class DashboardBookController extends Controller
                 'created' => true,
             ],
         ], 201);
+    }
+
+    public function updateVoiceProfile(Request $request, string $keyBook, BookVoiceProfile $voiceProfile, CoquiTtsService $coqui): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => ['sometimes', 'required', 'string', 'max:160'],
+            'role' => ['sometimes', 'required', 'string', 'in:narrator,character,ambient,system'],
+            'language' => ['nullable', 'string', 'max:20'],
+            'notes' => ['nullable', 'string', 'max:5000'],
+            'icon' => ['nullable', 'string', 'max:80'],
+            'audio_library_voice_id' => ['nullable', 'integer'],
+            'tone_id' => ['nullable', 'integer'],
+        ]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        abort_unless($voiceProfile->book_id === $book->id, 404);
+        $libraryVoice = ! empty($validated['audio_library_voice_id'])
+            ? $this->prepareLibraryVoice($validated['audio_library_voice_id'], $validated['tone_id'] ?? null, $coqui)
+            : null;
+        $voiceProfile->fill([
+            ...collect($validated)->only(['name', 'role', 'language', 'notes'])->all(),
+            ...($libraryVoice ? ['voice_provider' => $libraryVoice['provider'], 'voice_id' => $libraryVoice['voice_id']] : []),
+            'settings_json' => [
+                ...($voiceProfile->settings_json ?? []),
+                ...($libraryVoice['settings'] ?? []),
+                ...(array_key_exists('icon', $validated) ? ['icon' => $validated['icon'] ?: 'person'] : []),
+            ],
+        ])->save();
+        return response()->json(['data' => ['profile' => $this->serializeVoiceProfile($voiceProfile->fresh())]]);
+    }
+
+    public function deleteVoiceProfile(string $keyBook, BookVoiceProfile $voiceProfile): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        abort_unless($voiceProfile->book_id === $book->id, 404);
+        abort_unless($voiceProfile->role === 'character', 422, 'Only character profiles can be deleted here.');
+        $voiceProfile->delete();
+        return response()->json(['data' => ['deleted' => true]]);
     }
 
     public function blockVoiceAssignment(string $keyBook, string $blockUuid): JsonResponse
@@ -1799,7 +1846,7 @@ class DashboardBookController extends Controller
 
         $libraryVoice = AudioLibraryVoice::query()
             ->where('account_id', auth()->id())
-            ->with('samples')
+            ->with('samples.toneDefinition')
             ->findOrFail($validated['audio_library_voice_id']);
         $sample = $libraryVoice->samples
             ->when(isset($validated['tone_id']), fn ($samples) => $samples->where('tone_id', $validated['tone_id']))
@@ -1841,9 +1888,21 @@ class DashboardBookController extends Controller
                 'settings_json' => [
                     'audio_library_voice_id' => $libraryVoice->id,
                     'tone_id' => $sample->tone_id,
+                    'voice_name' => $libraryVoice->name,
+                    'tone_name' => $sample->toneDefinition?->name,
                 ],
                 'created_by' => auth()->id(),
             ]);
+        } else {
+            $profile->forceFill([
+                'settings_json' => [
+                    ...($profile->settings_json ?? []),
+                    'audio_library_voice_id' => $libraryVoice->id,
+                    'tone_id' => $sample->tone_id,
+                    'voice_name' => $libraryVoice->name,
+                    'tone_name' => $sample->toneDefinition?->name,
+                ],
+            ])->save();
         }
 
         $assignment = BookBlockVoiceAssignment::query()->updateOrCreate([
@@ -2326,6 +2385,35 @@ class DashboardBookController extends Controller
             'block_type' => $block->type,
             'block_sort_order' => $block->sort_order,
             'block_text_plain' => $block->text_plain,
+        ];
+    }
+
+    private function prepareLibraryVoice(int $libraryVoiceId, ?int $toneId, CoquiTtsService $coqui): array
+    {
+        $libraryVoice = AudioLibraryVoice::query()
+            ->where('account_id', auth()->id())
+            ->with('samples.toneDefinition')
+            ->findOrFail($libraryVoiceId);
+        $sample = $libraryVoice->samples
+            ->when($toneId, fn ($samples) => $samples->where('tone_id', $toneId))
+            ->first() ?? $libraryVoice->samples->first();
+        abort_if(! $sample || ! Storage::disk('public')->exists($sample->audio_path), 422, 'This library voice needs an uploaded audio sample before it can be used.');
+        try {
+            if (! filled($libraryVoice->provider_voice_id)) {
+                $libraryVoice->forceFill([
+                    'provider' => 'at-coqui',
+                    'provider_voice_id' => $coqui->registerVoice($libraryVoice->name, Storage::disk('public')->path($sample->audio_path)),
+                ])->save();
+            }
+        } catch (\Throwable $exception) {
+            abort(502, 'AT could not prepare this voice for generation: '.$exception->getMessage());
+        }
+        return [
+            'provider' => 'coqui-local',
+            'voice_id' => $libraryVoice->provider_voice_id,
+            'language' => $libraryVoice->language,
+            'description' => $libraryVoice->description,
+            'settings' => ['audio_library_voice_id' => $libraryVoice->id, 'voice_name' => $libraryVoice->name, 'tone_id' => $sample->tone_id, 'tone_name' => $sample->toneDefinition?->name],
         ];
     }
 

@@ -20,6 +20,9 @@ const audioGroups = _.rod([]);
 const expandedAudioGroupIds = _.rod([]);
 const audioGenerating = _.rod(false);
 const selectedLibraryVoice = _.rod(null);
+const voiceProfiles = _.rod([]);
+const blockVoiceAssignment = _.rod(null);
+const voiceProfilesLoading = _.rod(false);
 const timelineCues = _.rod([]);
 const timelineZoom = _.rod(1);
 const timelineItems = _.rod([]);
@@ -100,6 +103,19 @@ function selectAudiobookBlock(index, keyBook, openCreateAudio = true) {
     window.requestAnimationFrame(() => document.querySelector(`[data-audiobook-block-index="${index}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
 }
 
+async function loadVoiceProfiles(keyBook) {
+    if (!keyBook || voiceProfilesLoading.value) return;
+    voiceProfilesLoading.value = true;
+    try {
+        const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/voices`);
+        voiceProfiles.value = audioData(payload).profiles || [];
+    } catch (error) {
+        audioStatus.value = { type: 'danger', message: error.message || 'Unable to load characters and voices.' };
+    } finally {
+        voiceProfilesLoading.value = false;
+    }
+}
+
 function loadAudiobook(keyBook) {
     if (!keyBook || audiobookBook.value?.key_book === keyBook) return;
 
@@ -109,6 +125,7 @@ function loadAudiobook(keyBook) {
             audiobookBook.value = data.book;
             audiobookBlocks.value = data.blocks;
             activeBlockIndex.value = 0;
+            loadVoiceProfiles(keyBook);
             loadBlockAudio(keyBook);
         })
         .catch((error) => {
@@ -660,6 +677,8 @@ async function loadBlockAudio(keyBook) {
         const data = audioData(payload);
         audioSegments.value = data.segments || [];
         audioGroups.value = data.groups || [];
+        blockVoiceAssignment.value = data.assignment || null;
+        selectedLibraryVoice.value = data.assignment?.voice_profile || null;
     } catch (error) {
         audioStatus.value = { type: 'danger', message: error.message || 'Unable to load generated audio clips.' };
     }
@@ -671,8 +690,8 @@ async function generateSelectedAudio(keyBook) {
     const providerKey = 'coqui-local';
     const model = 'xtts-v2';
 
-    if (!selectedLibraryVoice.value) {
-        audioStatus.value = { type: 'danger', message: 'Select an AT library voice before generating audio.' };
+    if (!blockVoiceAssignment.value?.voice_profile?.voice_id) {
+        audioStatus.value = { type: 'danger', message: 'Assign a direct voice, or configure a voice for the selected character before generating audio.' };
         return;
     }
 
@@ -760,6 +779,50 @@ function deleteAudioGroup(keyBook, jobId) {
     }).open();
 }
 
+function audioGroupsList(keyBook) {
+    return () => audioGroups.value.length
+        ? _.div({ class: 'at-audioGeneratedGroups' },
+            _.div({ class: 'at-audioGeneratedGroupsHeader' }, _.strong('Available audio'), _.small(`${audioGroups.value.length} master${audioGroups.value.length === 1 ? '' : 's'}`)),
+            ...audioGroups.value.map((group) => _.div({ class: 'at-audioGeneratedGroup' },
+                _.div({ class: 'at-audioGeneratedMaster' },
+                    _.button({ type: 'button', class: 'at-audioGroupToggle', title: isAudioGroupExpanded(group.id) ? 'Collapse clips' : 'Show clips', onclick: () => toggleAudioGroup(group.id) }, _.Icon ? _.Icon({ name: isAudioGroupExpanded(group.id) ? 'expand_more' : 'chevron_right' }) : '›'),
+                    _.div({ class: 'at-audioGeneratedMasterInfo' },
+                        _.strong(group.label || 'Narration'),
+                        _.small(`${group.segments.length} clips · ~${Math.ceil(group.duration_ms / 1000)}s · ${audioGroupDate(group.created_at)}`),
+                    ),
+                    group.in_timeline
+                        ? _.span({ class: 'at-audioGroupUsed' }, 'In timeline')
+                        : _.div({ class: 'at-audioGeneratedMasterActions' },
+                            _.Btn({ color: 'secondary', icon: 'playlist_add', onClick: () => insertAudioGroup(keyBook, group.id) }, 'Insert timeline'),
+                            _.Btn({ color: 'danger', icon: 'delete', title: 'Delete generated audio', onClick: () => deleteAudioGroup(keyBook, group.id) }),
+                        ),
+                ),
+                () => isAudioGroupExpanded(group.id) ? _.div({ class: 'at-audioGeneratedChildren' },
+                    ...group.segments.map((segment, index) => _.div({ class: 'at-audioGeneratedChild' },
+                        _.span(`Clip ${index + 1}`),
+                        _.span(`${wordCount(segment.text_plain)} words`),
+                        _.span(`~${Math.ceil((Number(segment.duration_ms || 0) + Number(segment.pause_after_ms || 0)) / 1000)}s`),
+                    )),
+                ) : null,
+            )),
+        )
+        : _.div({ class: 'at-audioListEmpty' }, _.Icon ? _.Icon({ name: 'audio_file' }) : null, _.span('No audio has been generated for this block yet.'));
+}
+
+function openAudioListDialog(keyBook) {
+    _.Dialog({
+        size: 'lg',
+        stickyActions: true,
+        slots: {
+            header: _.div(_.h3('List of audio'), _.span({ class: 'text-muted' }, 'Choose a generated master to insert into the Voice track.')),
+            content: ({ close }) => _.div({ class: 'at-audioListDialog' },
+                audioGroupsList(keyBook),
+                _.div({ class: 'at-audioListDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close')),
+            ),
+        },
+    }).open();
+}
+
 async function publishAudiobook(keyBook) {
     if (publishRunning.value) return;
     publishRunning.value = true;
@@ -807,6 +870,7 @@ function openPublishDialog(keyBook) {
 function audioTabs() {
     const tabs = [
         ['editing', 'Audio direction'],
+        ['voices', 'Voices'],
         ['text', 'Style text'],
         ['block', 'Style block'],
         ['create', 'Create audio'],
@@ -842,6 +906,131 @@ function blockStyle() {
         _.Input({ label: 'Block padding', type: 'number', model: blockPadding, suffix: 'px' }),
         _.Select({ label: 'Block alignment', options: [{ label: 'Left', value: 'left' }, { label: 'Justified', value: 'justify' }, { label: 'Centered', value: 'center' }] }),
         _.div({ class: 'at-audioHint' }, 'Block style remains separate from the manuscript. It changes only the audiobook player experience.'),
+    );
+}
+
+function characterProfiles() {
+    return voiceProfiles.value.filter((profile) => profile.role === 'character');
+}
+
+async function assignProfileToActiveBlock(keyBook, profileId) {
+    const block = activeBlock();
+    if (!keyBook || !block?.block_uuid) return;
+    try {
+        const payload = await _.http.patchJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/voice-assignment`, { voice_profile_id: profileId || null });
+        const data = audioData(payload);
+        blockVoiceAssignment.value = data.assignment || null;
+        selectedLibraryVoice.value = data.assignment?.voice_profile || null;
+        audioStatus.value = { type: 'success', message: profileId ? 'Character assigned to this paragraph.' : 'Character assignment cleared. You can now choose a direct voice.' };
+    } catch (error) {
+        audioStatus.value = { type: 'danger', message: error.message || 'Unable to update the paragraph speaker.' };
+    }
+}
+
+function openCharacterDialog(keyBook, existing = null) {
+    const name = _.rod(existing?.name || '');
+    const notes = _.rod(existing?.notes || '');
+    const icon = _.rod(existing?.settings_json?.icon || 'person');
+    const libraryVoiceId = _.rod(String(existing?.settings_json?.audio_library_voice_id || ''));
+    const toneId = _.rod(String(existing?.settings_json?.tone_id || ''));
+    const saving = _.rod(false);
+    const status = _.rod(null);
+    const iconOptions = [
+        { value: 'person', label: 'Person' }, { value: 'face', label: 'Face' },
+        { value: 'auto_stories', label: 'Story' }, { value: 'psychology', label: 'Mind' },
+    ];
+    const save = async (close) => {
+        if (!name.value.trim()) { status.value = { type: 'warning', message: 'Character name is required.' }; return; }
+        saving.value = true;
+        status.value = null;
+        try {
+            const body = { name: name.value.trim(), role: 'character', notes: notes.value.trim() || null, icon: icon.value, audio_library_voice_id: libraryVoiceId.value ? Number(libraryVoiceId.value) : null, tone_id: toneId.value ? Number(toneId.value) : null };
+            const payload = existing
+                ? await _.http.patchJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/voices/${encodeURIComponent(existing.id)}`, body)
+                : await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/voices`, body);
+            const profile = audioData(payload).profile;
+            if (profile) voiceProfiles.value = [...voiceProfiles.value.filter((item) => Number(item.id) !== Number(profile.id)), profile].sort((a, b) => a.name.localeCompare(b.name));
+            close();
+        } catch (error) {
+            status.value = { type: 'danger', message: error.message || 'Unable to save this character.' };
+        } finally { saving.value = false; }
+    };
+    const libraryVoices = _.rod([]);
+    const loadLibrary = async () => {
+        try {
+            const payload = await _.http.getJSON('/dashboard/api/audio-library/voices');
+            const voices = audioData(payload).voices || [];
+            libraryVoices.value = voices;
+            return voices.map((voice) => ({ value: String(voice.id), label: `${voice.name} · ${voice.language?.toUpperCase() || '—'}` }));
+        } catch { return []; }
+    };
+    const libraryOptions = _.rod([]);
+    loadLibrary().then((options) => { libraryOptions.value = options; });
+    _.Dialog({
+        size: 'md', stickyActions: true,
+        slots: {
+            header: _.div(_.h3(existing ? 'Edit character' : 'Create character'), _.span({ class: 'text-muted' }, 'A character keeps its voice, icon and performance details across paragraphs.')),
+            content: ({ close }) => _.div({ class: 'at-characterDialog' },
+                _.Input({ label: 'Character name', icon: 'badge', model: name, placeholder: 'e.g. Elena' }),
+                _.Select({ label: 'Icon', icon: 'face', model: icon, options: iconOptions }),
+                _.Select({ label: 'Voice from library', icon: 'record_voice_over', model: libraryVoiceId, options: () => [{ value: '', label: 'Set later' }, ...libraryOptions.value] }),
+                _.Select({
+                    label: 'Voice tone', icon: 'graphic_eq', model: toneId, options: () => {
+                        const voice = libraryVoices.value.find((item) => String(item.id) === String(libraryVoiceId.value));
+                        return [{ value: '', label: 'Default tone' }, ...(voice?.samples || []).map((sample) => ({ value: String(sample.tone_id || sample.tone?.id), label: sample.tone?.name || `Tone #${sample.tone_id || sample.tone?.id}` }))];
+                    }
+                }),
+                _.Textarea({ label: 'Character details', icon: 'notes', model: notes, rows: 4, placeholder: 'Age, accent, delivery and narrative notes.' }),
+                () => status.value ? _.Alert(status.value) : null,
+                _.div({ class: 'at-characterDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Cancel'), _.Btn({ color: 'primary', icon: 'save', loading: saving, onClick: () => save(close) }, existing ? 'Save character' : 'Create character')),
+            ),
+        },
+    }).open();
+}
+
+async function deleteCharacterProfile(keyBook, profile) {
+    if (!window.confirm(`Delete ${profile.name}? Paragraphs using this character will no longer have it assigned.`)) return;
+    try {
+        await _.http.delJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/voices/${encodeURIComponent(profile.id)}`);
+        voiceProfiles.value = voiceProfiles.value.filter((item) => Number(item.id) !== Number(profile.id));
+        if (Number(blockVoiceAssignment.value?.voice_profile_id) === Number(profile.id)) {
+            blockVoiceAssignment.value = null;
+            selectedLibraryVoice.value = null;
+        }
+        audioStatus.value = { type: 'success', message: 'Character deleted.' };
+    } catch (error) { audioStatus.value = { type: 'danger', message: error.message || 'Unable to delete this character.' }; }
+}
+
+function openParagraphCharacterDialog(keyBook) {
+    _.Dialog({
+        size: 'lg', stickyActions: true,
+        slots: {
+            header: _.div({ class: 'at-audioCharacterDialogHeader' }, _.h3('Assign character'), _.span('Manage your cast, then assign one character to this paragraph.')),
+            content: ({ close }) => _.div({ class: 'at-paragraphCharacterDialog' },
+                () => characterProfiles().length ? _.div({ class: 'at-audioCharacterAssignRows' }, characterProfiles().map((profile) => _.article({ class: 'at-audioCharacterAssignRow' },
+                    _.div({ class: 'at-audioCharacterIdentity' }, _.div({ class: 'at-characterIcon' }, _.Icon ? _.Icon({ name: profile.settings_json?.icon || 'person' }) : null), _.div(_.strong(profile.name), _.span(profile.notes || 'No character details'))),
+                    _.div({ class: 'at-audioCharacterVoice' }, _.span(profile.voice_id ? 'Voice ready' : 'Voice missing'), _.strong(profile.settings_json?.voice_name || profile.voice_provider || 'No voice connected'), _.small(profile.settings_json?.tone_name || (profile.settings_json?.tone_id ? `Tone #${profile.settings_json.tone_id}` : 'Default tone'))),
+                    _.div({ class: 'at-audioCharacterActions' },
+                        _.Btn({ dense: true, color: 'primary', icon: 'person_add', onClick: async () => { await assignProfileToActiveBlock(keyBook, profile.id); close(); } }, 'Assign'),
+                        _.Btn({ dense: true, color: 'secondary', icon: 'edit', title: `Edit ${profile.name}`, onClick: () => openCharacterDialog(keyBook, profile) }),
+                        _.Btn({ dense: true, color: 'danger', icon: 'delete_outline', title: `Delete ${profile.name}`, onClick: () => deleteCharacterProfile(keyBook, profile) }),
+                    ),
+                ))) : _.div({ class: 'at-audioListEmpty' }, _.span('No characters yet. Create one from the Voices tab.')),
+                _.div({ class: 'at-characterDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close'), _.Btn({ color: 'primary', icon: 'person_add', onClick: () => { close(); openCharacterDialog(keyBook); } }, 'Create character')),
+            ),
+        },
+    }).open();
+}
+
+function voicesPanel() {
+    return _.div({ class: 'at-voicesPanel' },
+        _.div({ class: 'at-voicesPanelHead' }, _.div(_.span('Cast'), _.strong('Characters')), _.Btn({ color: 'primary', icon: 'person_add', onClick: () => openCharacterDialog(bookKey()) }, 'Create character')),
+        () => voiceProfilesLoading.value ? _.div({ class: 'at-audioListEmpty' }, _.span('Loading characters…'))
+            : characterProfiles().length ? _.div({ class: 'at-characterList' }, characterProfiles().map((profile) => _.article({ class: 'at-characterCard' },
+                _.div({ class: 'at-characterIcon' }, _.Icon ? _.Icon({ name: profile.settings_json?.icon || 'person' }) : null),
+                _.div({ class: 'at-characterCopy' }, _.strong(profile.name), _.span(profile.voice_id ? 'Voice configured' : 'Voice not configured'), profile.notes ? _.small(profile.notes) : null),
+                _.Btn({ dense: true, color: 'secondary', icon: 'edit', title: `Edit ${profile.name}`, onClick: () => openCharacterDialog(bookKey(), profile) }),
+            ))) : _.div({ class: 'at-audioListEmpty' }, _.span('Create your first character to reuse its voice across paragraphs.')),
     );
 }
 
@@ -1024,7 +1213,9 @@ async function openLibraryVoiceDialog(keyBook) {
                 audio_library_voice_id: voice.id,
                 tone_id: requestedToneId,
             }, { timeout: 900000, retry: { attempts: 0 } });
-            selectedLibraryVoice.value = { ...voice, selected_tone_id: requestedToneId };
+            const data = audioData(await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/voice-assignment`));
+            blockVoiceAssignment.value = data.assignment || null;
+            selectedLibraryVoice.value = data.assignment?.voice_profile || { ...voice, selected_tone_id: requestedToneId };
             voiceName.value = voice.name;
             audioStatus.value = { type: 'success', message: `${voice.name} is assigned to this block and ready for AT generation.` };
             close();
@@ -1074,47 +1265,38 @@ function createAudio() {
 
     return _.div({ class: 'at-audioCreate' },
         _.div({ class: 'at-audioVoiceSelect' },
-            _.div(_.span('AT voice'), _.strong(() => selectedLibraryVoice.value?.name || 'No voice selected'), _.small(() => selectedLibraryVoice.value ? `${selectedLibraryVoice.value.type} · ${selectedLibraryVoice.value.language.toUpperCase()}` : 'Choose a saved voice reference from your AT audio library.')),
-            _.Btn({ color: 'secondary', icon: 'record_voice_over', onClick: () => openLibraryVoiceDialog(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'Choose voice'),
+            _.div({ class: 'at-audioVoiceSelectCopy' },
+                _.span(() => blockVoiceAssignment.value?.voice_profile?.role === 'character' ? 'Character' : 'AT voice'),
+                _.strong(() => blockVoiceAssignment.value?.voice_profile?.name || 'No voice selected'),
+                _.small(() => {
+                    const profile = blockVoiceAssignment.value?.voice_profile;
+                    if (!profile) return 'Assign a character, or choose a direct voice from your AT audio library.';
+                    return profile.role === 'character' ? (profile.voice_id ? 'Character voice configured' : 'Choose a voice in the character settings.') : `${profile.voice_provider || 'AT voice'} · ${(profile.language || '').toUpperCase()}`;
+                }),
+            ),
+            _.div({ class: 'at-audioVoiceSelectActions' },
+                _.Btn({ color: 'secondary', icon: 'person', onClick: () => openParagraphCharacterDialog(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'Choose character'),
+                () => blockVoiceAssignment.value?.voice_profile?.role === 'character'
+                    ? _.Btn({ color: 'secondary', icon: 'edit', onClick: () => openCharacterDialog(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1], blockVoiceAssignment.value.voice_profile) }, 'Edit character')
+                    : _.Btn({ color: 'secondary', icon: 'record_voice_over', onClick: () => openLibraryVoiceDialog(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'Choose voice'),
+            ),
         ),
-        _.div({ class: 'at-audioCostGrid' },
-            _.div(_.span('Selected text'), _.strong(`${words} words`)),
-            _.div(_.span('Estimated duration'), _.strong(`~${seconds}s`)),
-            _.div(_.span('AT estimate'), _.strong('1 credit')),
+        _.div({ class: 'at-audioGenerationBar' },
+            _.div({ class: 'at-audioCostGrid' },
+                _.div({ class: 'at-audioMetric' }, _.span('Selected text'), _.strong(`${words} words`)),
+                _.div({ class: 'at-audioMetric' }, _.span('Estimated duration'), _.strong(`~${seconds}s`)),
+                _.div({ class: 'at-audioMetric' }, _.span('AT estimate'), _.strong('1 credit')),
+            ),
+            _.Btn({ class: 'at-audioGenerateButton', color: 'primary', icon: 'play_circle', loading: audioGenerating, onClick: () => generateSelectedAudio(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'Generate audio'),
         ),
-        _.Alert({ type: 'info', title: 'AT generation', message: 'Audiobook Tools prepares the selected voice reference in its managed Coqui engine, then creates a real WAV clip in the Voice track.' }),
-        _.Btn({ color: 'primary', dense: true, icon: 'play_circle', loading: audioGenerating, onClick: () => generateSelectedAudio(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'Generate selected audio'),
-        () => audioGroups.value.length ? _.div({ class: 'at-audioGeneratedGroups' },
-            _.div({ class: 'at-audioGeneratedGroupsHeader' }, _.strong('Generated audio'), _.small(`${audioGroups.value.length} master${audioGroups.value.length === 1 ? '' : 's'}`)),
-            ...audioGroups.value.map((group) => _.div({ class: 'at-audioGeneratedGroup' },
-                _.div({ class: 'at-audioGeneratedMaster' },
-                    _.button({ type: 'button', class: 'at-audioGroupToggle', title: isAudioGroupExpanded(group.id) ? 'Collapse clips' : 'Show clips', onclick: () => toggleAudioGroup(group.id) }, _.Icon ? _.Icon({ name: isAudioGroupExpanded(group.id) ? 'expand_more' : 'chevron_right' }) : '›'),
-                    _.div({ class: 'at-audioGeneratedMasterInfo' },
-                        _.strong(group.label || 'Narration'),
-                        _.small(`${group.segments.length} clips · ~${Math.ceil(group.duration_ms / 1000)}s · ${audioGroupDate(group.created_at)}`),
-                    ),
-                    group.in_timeline
-                        ? _.span({ class: 'at-audioGroupUsed' }, 'In timeline')
-                        : _.div({ class: 'at-audioGeneratedMasterActions' },
-                            _.Btn({ color: 'secondary', icon: 'playlist_add', onClick: () => insertAudioGroup(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1], group.id) }, 'Insert timeline'),
-                            _.Btn({ color: 'danger', icon: 'delete', title: 'Delete generated audio', onClick: () => deleteAudioGroup(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1], group.id) }),
-                        ),
-                ),
-                () => isAudioGroupExpanded(group.id) ? _.div({ class: 'at-audioGeneratedChildren' },
-                    ...group.segments.map((segment, index) => _.div({ class: 'at-audioGeneratedChild' },
-                        _.span(`Clip ${index + 1}`),
-                        _.span(`${wordCount(segment.text_plain)} words`),
-                        _.span(`~${Math.ceil((Number(segment.duration_ms || 0) + Number(segment.pause_after_ms || 0)) / 1000)}s`),
-                    )),
-                ) : null,
-            )),
-        ) : null,
+        () => audioGroups.value.length ? _.Btn({ class: 'at-audioListButton', color: 'secondary', icon: 'library_music', onClick: () => openAudioListDialog(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'List of audio') : null,
     );
 }
 
 function editorCard() {
     const content = () => ({
         editing: audioDirection,
+        voices: voicesPanel,
         text: textStyle,
         block: blockStyle,
         create: createAudio,
