@@ -13,6 +13,7 @@ class AudioTextSegmenterTest extends TestCase
             'comma_ms' => 120,
             'semicolon_ms' => 420,
             'sentence_ms' => 700,
+            'min_words' => 1,
         ]);
 
         $this->assertSame(['Ciao', 'mondo', 'fine'], array_column($parts, 'text'));
@@ -22,11 +23,35 @@ class AudioTextSegmenterTest extends TestCase
 
     public function test_it_returns_unicode_character_offsets_for_the_manuscript(): void
     {
-        $parts = (new AudioTextSegmenter())->split('È, ciao.');
+        $parts = (new AudioTextSegmenter())->split('È, ciao.', ['min_words' => 1]);
 
         $this->assertSame(0, $parts[0]['start']);
         $this->assertSame(2, $parts[0]['end']);
         // "È," is two Unicode characters even though its UTF-8 byte length is three.
         $this->assertSame(2, $parts[1]['start']);
     }
+
+    public function test_it_groups_punctuation_splits_until_the_minimum_word_count(): void
+    {
+        $parts = (new AudioTextSegmenter())->split(
+            'Uno due tre, quattro cinque sei. Sette otto nove dieci undici dodici; tredici quattordici.',
+            ['min_words' => 12],
+        );
+
+        $this->assertCount(1, $parts);
+        $this->assertSame('Uno due tre, quattro cinque sei. Sette otto nove dieci undici dodici; tredici quattordici', $parts[0]['text']);
+        $this->assertSame(500, $parts[0]['pause_after_ms']);
+    }
+
+    public function test_it_merges_a_short_last_group_with_the_previous_group(): void
+    {
+        $parts = (new AudioTextSegmenter())->split(
+            'Uno due tre quattro cinque sei sette otto nove dieci undici dodici. Tredici quattordici.',
+            ['min_words' => 12],
+        );
+
+        $this->assertCount(1, $parts);
+        $this->assertSame('Uno due tre quattro cinque sei sette otto nove dieci undici dodici. Tredici quattordici', $parts[0]['text']);
+    }
+
 }

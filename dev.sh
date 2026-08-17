@@ -3,14 +3,16 @@
 set -e
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COQUI_TTS_DIR="${COQUI_TTS_DIR:-$ROOT_DIR/../serverTTS}"
-COQUI_TTS_URL="${COQUI_TTS_URL:-http://127.0.0.1:8020}"
-ALIGNMENT_URL="${ALIGNMENT_URL:-http://127.0.0.1:8021}"
-ALIGNMENT_VENV="${ALIGNMENT_VENV:-$COQUI_TTS_DIR/ai/alignment/.venv}"
+QWEN_TTS_DIR="${QWEN_TTS_DIR:-$ROOT_DIR/../Qwen3-TTS}"
+QWEN_TTS_URL="${QWEN_TTS_URL:-http://127.0.0.1:8020}"
 
-if [ ! -x "$COQUI_TTS_DIR/scripts/run-dev.sh" ]; then
-    echo "Coqui TTS launcher not found: $COQUI_TTS_DIR/scripts/run-dev.sh" >&2
-    echo "Set COQUI_TTS_DIR to the serverTTS directory or restore the service." >&2
+qwen_service_ready() {
+    curl -fsS "$QWEN_TTS_URL/v1/health" | grep -q '"api_version": 6'
+}
+
+if [ ! -x "$QWEN_TTS_DIR/scripts/run-dev.sh" ]; then
+    echo "Qwen3-TTS launcher not found: $QWEN_TTS_DIR/scripts/run-dev.sh" >&2
+    echo "Set QWEN_TTS_DIR to the Qwen3-TTS directory or restore the service." >&2
     exit 1
 fi
 
@@ -37,29 +39,24 @@ LARAVEL_PID=$!
 npm run dev &
 FRONT_PID=$!
 
-# Avvia Coqui XTTS solo se non è già disponibile. Questo permette di
+# Avvia Qwen3-TTS solo se non è già disponibile. Questo permette di
 # rilanciare lo stack senza interrompere una sintesi già in corso.
-COQUI_TTS_PID=""
-ALIGNMENT_PID=""
-if ! curl -fsS "$ALIGNMENT_URL/v1/health" >/dev/null; then
-    "$ALIGNMENT_VENV/bin/python" "$COQUI_TTS_DIR/service/alignment_service.py" &
-    ALIGNMENT_PID=$!
+QWEN_TTS_PID=""
+if curl -fsS "$QWEN_TTS_URL/v1/health" >/dev/null && ! qwen_service_ready; then
+    echo "An older Qwen3-TTS service is running at $QWEN_TTS_URL. Stop it and restart ./dev.sh to load the current API." >&2
+    exit 1
 fi
 
-if ! curl -fsS "$COQUI_TTS_URL/v1/health" >/dev/null; then
-    "$COQUI_TTS_DIR/scripts/run-dev.sh" &
-    COQUI_TTS_PID=$!
+if ! qwen_service_ready; then
+    "$QWEN_TTS_DIR/scripts/run-dev.sh" &
+    QWEN_TTS_PID=$!
 fi
 
 cleanup() {
     kill "$LARAVEL_PID" "$FRONT_PID" 2>/dev/null || true
 
-    if [ -n "$COQUI_TTS_PID" ]; then
-        kill "$COQUI_TTS_PID" 2>/dev/null || true
-    fi
-
-    if [ -n "$ALIGNMENT_PID" ]; then
-        kill "$ALIGNMENT_PID" 2>/dev/null || true
+    if [ -n "$QWEN_TTS_PID" ]; then
+        kill "$QWEN_TTS_PID" 2>/dev/null || true
     fi
 }
 
@@ -68,7 +65,7 @@ trap cleanup EXIT INT TERM
 
 TTS_READY=false
 for _ in {1..30}; do
-    if curl -fsS "$COQUI_TTS_URL/v1/health" >/dev/null; then
+    if qwen_service_ready; then
         TTS_READY=true
         break
     fi
@@ -76,25 +73,10 @@ for _ in {1..30}; do
 done
 
 if [ "$TTS_READY" != true ]; then
-    echo "Coqui TTS did not become ready at $COQUI_TTS_URL within 30 seconds." >&2
+    echo "Qwen3-TTS did not become ready at $QWEN_TTS_URL within 30 seconds." >&2
     exit 1
 fi
 
-ALIGNMENT_READY=false
-for _ in {1..15}; do
-    if curl -fsS "$ALIGNMENT_URL/v1/health" >/dev/null; then
-        ALIGNMENT_READY=true
-        break
-    fi
-    sleep 1
-done
-
-if [ "$ALIGNMENT_READY" != true ]; then
-    echo "WhisperX alignment did not become ready at $ALIGNMENT_URL within 15 seconds." >&2
-    exit 1
-fi
-
-echo "Coqui TTS ready: $COQUI_TTS_URL"
-echo "WhisperX alignment ready: $ALIGNMENT_URL"
+echo "Qwen3-TTS ready: $QWEN_TTS_URL"
 
 wait

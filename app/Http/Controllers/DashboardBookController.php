@@ -27,7 +27,7 @@ use App\Services\Ai\EditorAiCorrectionService;
 use App\Services\Ai\EditorAiTranslationService;
 use App\Services\Ai\EditorAiVersionService;
 use App\Services\BookBlockService;
-use App\Services\CoquiTtsService;
+use App\Services\QwenTtsService;
 use App\Services\AudioTextSegmenter;
 use App\Services\Credits\TranslationCreditService;
 use Illuminate\Http\JsonResponse;
@@ -1053,7 +1053,7 @@ class DashboardBookController extends Controller
         ]);
     }
 
-    public function storeVoiceProfile(Request $request, string $keyBook, CoquiTtsService $coqui): JsonResponse
+    public function storeVoiceProfile(Request $request, string $keyBook, QwenTtsService $qwen): JsonResponse
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:160'],
@@ -1072,7 +1072,7 @@ class DashboardBookController extends Controller
             ->firstOrFail();
 
         $libraryVoice = ! empty($validated['audio_library_voice_id'])
-            ? $this->prepareLibraryVoice($validated['audio_library_voice_id'], $validated['tone_id'] ?? null, $coqui)
+            ? $this->prepareLibraryVoice($validated['audio_library_voice_id'], $validated['tone_id'] ?? null, $qwen)
             : null;
         $profile = BookVoiceProfile::query()->create([
             'book_id' => $book->id,
@@ -1097,7 +1097,7 @@ class DashboardBookController extends Controller
         ], 201);
     }
 
-    public function updateVoiceProfile(Request $request, string $keyBook, BookVoiceProfile $voiceProfile, CoquiTtsService $coqui): JsonResponse
+    public function updateVoiceProfile(Request $request, string $keyBook, BookVoiceProfile $voiceProfile, QwenTtsService $qwen): JsonResponse
     {
         $validated = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:160'],
@@ -1111,7 +1111,7 @@ class DashboardBookController extends Controller
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
         abort_unless($voiceProfile->book_id === $book->id, 404);
         $libraryVoice = ! empty($validated['audio_library_voice_id'])
-            ? $this->prepareLibraryVoice($validated['audio_library_voice_id'], $validated['tone_id'] ?? null, $coqui)
+            ? $this->prepareLibraryVoice($validated['audio_library_voice_id'], $validated['tone_id'] ?? null, $qwen)
             : null;
         $voiceProfile->fill([
             ...collect($validated)->only(['name', 'role', 'language', 'notes'])->all(),
@@ -1930,7 +1930,7 @@ class DashboardBookController extends Controller
         ]);
     }
 
-    public function selectLibraryVoice(Request $request, string $keyBook, string $blockUuid, CoquiTtsService $coqui): JsonResponse
+    public function selectLibraryVoice(Request $request, string $keyBook, string $blockUuid, QwenTtsService $qwen): JsonResponse
     {
         $validated = $request->validate([
             'audio_library_voice_id' => ['required', 'integer'],
@@ -1966,11 +1966,16 @@ class DashboardBookController extends Controller
                 'message' => 'This library voice needs an uploaded audio sample before it can be used.',
             ], 422);
         }
+        if (! filled($sample->reference_text)) {
+            return response()->json([
+                'message' => 'Add the words spoken in this audio sample before cloning it with Qwen.',
+            ], 422);
+        }
 
         try {
             if (! filled($sample->provider_voice_id)) {
                 $sample->forceFill([
-                    'provider_voice_id' => $coqui->registerVoice($libraryVoice->name, Storage::disk('public')->path($sample->audio_path)),
+                    'provider_voice_id' => $qwen->registerVoice($libraryVoice->name, Storage::disk('public')->path($sample->audio_path), $sample->reference_text),
                 ])->save();
             }
         } catch (\Throwable $exception) {
@@ -1980,7 +1985,7 @@ class DashboardBookController extends Controller
         }
 
         $profile = $book->voiceProfiles()
-            ->where('voice_provider', 'coqui-local')
+            ->where('voice_provider', 'qwen-local')
             ->where('settings_json->audio_library_voice_id', $libraryVoice->id)
             ->where('settings_json->audio_library_voice_sample_id', $sample->id)
             ->first();
@@ -1990,7 +1995,7 @@ class DashboardBookController extends Controller
                 'book_id' => $book->id,
                 'name' => $libraryVoice->name,
                 'role' => 'narrator',
-                'voice_provider' => 'coqui-local',
+                'voice_provider' => 'qwen-local',
                 'voice_id' => $sample->provider_voice_id,
                 'language' => $libraryVoice->language ?: $book->lang,
                 'notes' => $libraryVoice->description,
@@ -2037,15 +2042,15 @@ class DashboardBookController extends Controller
         ]);
     }
 
-    public function generateBlockAudio(Request $request, string $keyBook, string $blockUuid, CoquiTtsService $coqui): JsonResponse
+    public function generateBlockAudio(Request $request, string $keyBook, string $blockUuid, QwenTtsService $qwen): JsonResponse
     {
-        // XTTS plus multilingual word alignment may take longer than PHP's
+        // Qwen3-TTS model loading and synthesis may take longer than PHP's
         // development default. The UI already keeps this request open while a
         // master audio group is generated.
         set_time_limit(0);
 
         $validated = $request->validate([
-            'provider_key' => ['nullable', 'in:mock,coqui-local'],
+            'provider_key' => ['nullable', 'in:mock,qwen-local'],
             'model' => ['nullable', 'string', 'max:120'],
         ]);
 
@@ -2087,14 +2092,14 @@ class DashboardBookController extends Controller
         }
 
         $providerKey = $validated['provider_key'] ?? 'mock';
-        $model = $validated['model'] ?? ($providerKey === 'coqui-local' ? config('tts.coqui.model') : 'mock-tts-v1');
+        $model = $validated['model'] ?? ($providerKey === 'qwen-local' ? config('tts.qwen.model') : 'mock-tts-v1');
         $text = $block->currentVersion->text_plain ?: $block->text_plain ?: '';
         $settings = [...AudioTextSegmenter::DEFAULT_PAUSES, ...($book->audio_settings_json ?? [])];
         $parts = app(AudioTextSegmenter::class)->split($text, $settings);
         $bookLocale = strtolower(str_replace('_', '-', (string) ($book->lang ?: config('app.locale', 'en'))));
         $localeKey = explode('-', $bookLocale)[0] ?: 'en';
         $language = config("audiobook.locales.{$localeKey}.tts_code") ?: $localeKey;
-        $source = $providerKey === 'coqui-local' ? 'coqui' : 'mock';
+        $source = $providerKey === 'qwen-local' ? 'qwen' : 'mock';
 
         $job = BookAudioJob::query()->create([
             'book_id' => $book->id,
@@ -2126,10 +2131,13 @@ class DashboardBookController extends Controller
                 $durationMs = max(700, mb_strlen($part['text']) * 45);
                 $audioPath = "mock://books/{$book->key_book}/blocks/{$block->block_uuid}/audio/{$index}";
                 $result = ['mock' => true, 'duration_ms' => $durationMs];
-                if ($providerKey === 'coqui-local') {
-                    $result = $coqui->synthesize($part['text'], $language, $voiceProfile->voice_id);
+                if ($providerKey === 'qwen-local') {
+                    // Qwen needs the terminal punctuation as an explicit end
+                    // of utterance cue. Sending the stripped display text can
+                    // make it cut off the final word of a segment.
+                    $result = $qwen->synthesize($this->ttsReadyText($part['source_text']), $language, $voiceProfile->voice_id, $model);
                     $audioPath = "audiobooks/{$book->key_book}/segments/".Str::uuid().'.wav';
-                    Storage::disk('public')->put($audioPath, $coqui->download($result['audio_url']));
+                    Storage::disk('public')->put($audioPath, $qwen->download($result['audio_url']));
                     $durationMs = (int) ($result['duration_ms'] ?? $durationMs);
                 }
                 $segments->push(BookAudioSegment::query()->create([
@@ -2159,7 +2167,7 @@ class DashboardBookController extends Controller
             }
         } catch (\Throwable $exception) {
             $job->forceFill(['status' => 'failed', 'error_message' => $exception->getMessage(), 'completed_at' => now()])->save();
-            return response()->json(['message' => 'Coqui TTS generation failed: '.$exception->getMessage()], 502);
+            return response()->json(['message' => 'Qwen TTS generation failed: '.$exception->getMessage()], 502);
         }
         $totalDuration = $segments->sum(fn (BookAudioSegment $segment) => (int) $segment->duration_ms + (int) $segment->pause_after_ms);
         $job->forceFill(['result_json' => ['parts' => $segments->count(), 'duration_ms' => $totalDuration], 'completed_at' => now()])->save();
@@ -2176,13 +2184,23 @@ class DashboardBookController extends Controller
         ], 201);
     }
 
-    public function generateBookAudio(Request $request, string $keyBook, CoquiTtsService $coqui): JsonResponse
+    private function ttsReadyText(string $text): string
+    {
+        $text = rtrim($text);
+
+        // A final quote, parenthesis, comma, semicolon, or plain word does
+        // not reliably tell Qwen to complete the utterance. Keep the original
+        // manuscript untouched, but give the synthesizer an unambiguous stop.
+        return preg_match('/[.!?…][\\]\\[\\)\\}”’"”]*$/u', $text) === 1 ? $text : $text.'.';
+    }
+
+    public function generateBookAudio(Request $request, string $keyBook, QwenTtsService $qwen): JsonResponse
     {
         set_time_limit(0);
 
         $validated = $request->validate([
             'regenerate_existing' => ['nullable', 'boolean'],
-            'provider_key' => ['nullable', 'in:mock,coqui-local'],
+            'provider_key' => ['nullable', 'in:mock,qwen-local'],
             'model' => ['nullable', 'string', 'max:120'],
         ]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
@@ -2216,10 +2234,10 @@ class DashboardBookController extends Controller
             // the request body so this internal call exactly matches the
             // normal "Generate audio" form submission.
             $generationRequest = $request->duplicate([], [
-                'provider_key' => $validated['provider_key'] ?? 'coqui-local',
-                'model' => $validated['model'] ?? 'xtts-v2',
+                'provider_key' => $validated['provider_key'] ?? 'qwen-local',
+                'model' => $validated['model'] ?? config('tts.qwen.model'),
             ]);
-            $response = $this->generateBlockAudio($generationRequest, $keyBook, $block->block_uuid, $coqui);
+            $response = $this->generateBlockAudio($generationRequest, $keyBook, $block->block_uuid, $qwen);
             if ($response->getStatusCode() < 300) {
                 $completed++;
             } else {
@@ -2578,7 +2596,7 @@ class DashboardBookController extends Controller
         ];
     }
 
-    private function prepareLibraryVoice(int $libraryVoiceId, ?int $toneId, CoquiTtsService $coqui): array
+    private function prepareLibraryVoice(int $libraryVoiceId, ?int $toneId, QwenTtsService $qwen): array
     {
         $libraryVoice = AudioLibraryVoice::query()
             ->where('account_id', auth()->id())
@@ -2588,18 +2606,19 @@ class DashboardBookController extends Controller
             ->when($toneId, fn ($samples) => $samples->where('tone_id', $toneId))
             ->first() ?? $libraryVoice->samples->first();
         abort_if(! $sample || ! Storage::disk('public')->exists($sample->audio_path), 422, 'This library voice needs an uploaded audio sample before it can be used.');
+        abort_if(! filled($sample->reference_text), 422, 'Add the words spoken in this audio sample before cloning it with Qwen.');
         try {
-            if (! filled($libraryVoice->provider_voice_id)) {
+            if ($libraryVoice->provider !== 'at-qwen' || ! filled($libraryVoice->provider_voice_id)) {
                 $libraryVoice->forceFill([
-                    'provider' => 'at-coqui',
-                    'provider_voice_id' => $coqui->registerVoice($libraryVoice->name, Storage::disk('public')->path($sample->audio_path)),
+                    'provider' => 'at-qwen',
+                    'provider_voice_id' => $qwen->registerVoice($libraryVoice->name, Storage::disk('public')->path($sample->audio_path), $sample->reference_text),
                 ])->save();
             }
         } catch (\Throwable $exception) {
             abort(502, 'AT could not prepare this voice for generation: '.$exception->getMessage());
         }
         return [
-            'provider' => 'coqui-local',
+            'provider' => 'qwen-local',
             'voice_id' => $libraryVoice->provider_voice_id,
             'language' => $libraryVoice->language,
             'description' => $libraryVoice->description,

@@ -225,7 +225,7 @@ function openBookSettingsDialog(keyBook) {
                     _.Select({ class: 'cms-col-12', label: 'Book language', icon: 'language', model: lang, options: [{ value: '', label: 'Not set' }, ...bookLanguageOptions] }),
                     _.Textarea({ class: 'cms-col-24', label: 'Description', icon: 'notes', rows: 4, model: description }),
                     _.Input({ class: 'cms-col-24', label: 'Cover image URL', icon: 'image', model: coverImg, placeholder: 'https://… or /storage/…' }),
-                    _.div({ class: 'cms-col-24' }, _.h4('Audiobook timing'), _.small({ class: 'text-muted' }, 'Pauses are used by future grouped Coqui generations. Values are milliseconds.')),
+                    _.div({ class: 'cms-col-24' }, _.h4('Audiobook timing'), _.small({ class: 'text-muted' }, 'Pauses are used by future grouped Qwen generations. Values are milliseconds.')),
                     _.Input({ class: 'cms-col-6', label: 'Comma ,', type: 'number', min: 0, suffix: 'ms', model: commaPause }),
                     _.Input({ class: 'cms-col-6', label: 'Semicolon ; :', type: 'number', min: 0, suffix: 'ms', model: semicolonPause }),
                     _.Input({ class: 'cms-col-6', label: 'Sentence . ! ?', type: 'number', min: 0, suffix: 'ms', model: sentencePause }),

@@ -4624,6 +4624,16 @@ function editorText(keyBook) {
         }
 
         const contextKey = `${keyBook}:${block.block_uuid}:${block.current_version_id || 'new'}`;
+        if (block.dirty || !block.current_version_id) {
+            if (voiceAssignmentContextKey.value !== contextKey) {
+                voiceAssignmentContextKey.value = contextKey;
+                voiceAssignment.value = null;
+                selectedVoiceProfileId.value = '';
+                voiceAssignmentError.value = null;
+                voiceAssignmentStatus.value = 'ready';
+            }
+            return;
+        }
         if (!force && voiceAssignmentContextKey.value === contextKey && voiceAssignmentStatus.value !== 'error') return;
 
         voiceAssignmentContextKey.value = contextKey;
@@ -4647,8 +4657,14 @@ function editorText(keyBook) {
             .catch((error) => {
                 if (voiceAssignmentContextKey.value !== contextKey) return;
 
+                const statusCode = error?.response?.status || error?.status;
                 voiceAssignment.value = null;
                 selectedVoiceProfileId.value = '';
+                if (statusCode === 404) {
+                    voiceAssignmentError.value = null;
+                    voiceAssignmentStatus.value = 'ready';
+                    return;
+                }
                 voiceAssignmentError.value = requestErrorMessage(error, 'Unable to load voice assignment.');
                 voiceAssignmentStatus.value = 'error';
             });

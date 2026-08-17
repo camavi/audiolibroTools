@@ -21,6 +21,7 @@ const expandedAudioGroupIds = _.rod([]);
 const previewingAudioGroupId = _.rod(null);
 let generatedAudioPreview = null;
 const audioGenerating = _.rod(false);
+const qwenModel = _.rod('quality');
 const bookAudioGenerating = _.rod(false);
 const allAudioInserting = _.rod(false);
 const selectedLibraryVoice = _.rod(null);
@@ -573,7 +574,7 @@ function startTimelinePlayback(render) {
     if (timelineIsPlaying.value) return;
     const available = timelineItems.value.some((item) => timelineAudioUrl(item));
     if (!available) audioStatus.value = { type: 'info', message: 'The playhead is running. There are no playable audio files in the timeline yet.' };
-    // Coqui creates many short WAV parts. Preloading them prevents a network
+    // Qwen creates many short WAV parts. Preloading them prevents a network
     // and decoder gap each time playback moves to the next spoken segment.
     preloadTimelinePlayers();
     timelineIsPlaying.value = true;
@@ -723,6 +724,13 @@ async function ungroupSelectedTimelineItem(keyBook) {
 async function loadBlockAudio(keyBook) {
     const block = activeBlock();
     if (!keyBook || !block?.block_uuid) return;
+    if (!block.current_version_id) {
+        audioSegments.value = [];
+        audioGroups.value = [];
+        blockVoiceAssignment.value = null;
+        selectedLibraryVoice.value = null;
+        return;
+    }
 
     try {
         const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio`);
@@ -732,6 +740,14 @@ async function loadBlockAudio(keyBook) {
         blockVoiceAssignment.value = data.assignment || null;
         selectedLibraryVoice.value = data.assignment?.voice_profile || null;
     } catch (error) {
+        const statusCode = error?.response?.status || error?.status;
+        if (statusCode === 404) {
+            audioSegments.value = [];
+            audioGroups.value = [];
+            blockVoiceAssignment.value = null;
+            selectedLibraryVoice.value = null;
+            return;
+        }
         audioStatus.value = { type: 'danger', message: error.message || 'Unable to load generated audio clips.' };
     }
 }
@@ -739,8 +755,8 @@ async function loadBlockAudio(keyBook) {
 async function generateSelectedAudio(keyBook) {
     const block = activeBlock();
     if (!keyBook || !block?.block_uuid || audioGenerating.value) return;
-    const providerKey = 'coqui-local';
-    const model = 'xtts-v2';
+    const providerKey = 'qwen-local';
+    const model = qwenModel.value;
 
     if (!blockVoiceAssignment.value?.voice_profile?.voice_id) {
         audioStatus.value = { type: 'danger', message: 'Assign a direct voice, or configure a voice for the selected character before generating audio.' };
@@ -748,12 +764,12 @@ async function generateSelectedAudio(keyBook) {
     }
 
     audioGenerating.value = true;
-    audioStatus.value = { type: 'info', message: 'Coqui is generating the WAV file. Longer paragraphs can take a minute or more.' };
+    audioStatus.value = { type: 'info', message: 'Qwen is generating the WAV file. Longer paragraphs can take a minute or more.' };
     try {
         const generated = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/generate`, {
             provider_key: providerKey,
             model,
-        }, providerKey === 'coqui-local' ? { timeout: 900000, retry: { attempts: 0 } } : undefined);
+        }, providerKey === 'qwen-local' ? { timeout: 900000, retry: { attempts: 0 } } : undefined);
         const data = audioData(generated);
         await loadBlockAudio(keyBook);
         audioStatus.value = { type: 'success', message: `Audio group generated with ${data.segments?.length || 1} timed clips. Insert it in the timeline when you are ready.` };
@@ -970,6 +986,7 @@ function openPublishDialog(keyBook) {
 
 function openGenerateBookAudioDialog(keyBook) {
     const regenerate = _.rod(false);
+    const model = _.rod(qwenModel.value);
     const status = _.rod(null);
     const generate = async () => {
         if (bookAudioGenerating.value) return;
@@ -978,8 +995,8 @@ function openGenerateBookAudioDialog(keyBook) {
         try {
             const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio/generate-all`, {
                 regenerate_existing: regenerate.value,
-                provider_key: 'coqui-local',
-                model: 'xtts-v2',
+                provider_key: 'qwen-local',
+                model: model.value,
             }, { timeout: 900000, retry: { attempts: 0 } });
             const result = audioData(payload);
             const firstFailure = result.failed_blocks?.[0]?.message;
@@ -1002,6 +1019,7 @@ function openGenerateBookAudioDialog(keyBook) {
             header: _.div(_.h3('Generate book audio'), _.span({ class: 'text-muted' }, 'Create narrated audio for every saved text block in this book.')),
             content: ({ close }) => _.div({ class: 'at-bookAudioGenerateDialog' },
                 _.Checkbox({ label: 'Regenerate audio already generated', model: regenerate }),
+                _.Select({ label: 'Qwen model', model, options: [{ value: 'fast', label: 'Fast · 0.6B' }, { value: 'quality', label: 'Quality · 1.7B' }] }),
                 _.small({ class: 'at-bookAudioGenerateNote' }, () => regenerate.value ? 'Every block will receive a new audio master.' : 'Only blocks without a completed audio master will be generated.'),
                 () => {
                     const metrics = bookAudioMetrics();
@@ -1078,12 +1096,52 @@ function openAudioDirectionDialog() {
     const defaultVoiceId = _.rod(String(audiobookBook.value?.audio_settings_json?.default_voice_profile_id || ''));
     const saving = _.rod(false);
     const status = _.rod(null);
+    const libraryVoices = _.rod([]);
+    const libraryLoading = _.rod(true);
+    const libraryChoice = new Map();
+    _.http.getJSON('/dashboard/api/audio-library/voices')
+        .then((payload) => { libraryVoices.value = audioData(payload).voices || []; })
+        .catch((error) => { status.value = { type: 'warning', message: error.message || 'Audio Library could not be loaded.' }; })
+        .finally(() => { libraryLoading.value = false; });
+    const voiceOptions = () => {
+        const profiles = voiceProfiles.value.filter((profile) => profile.voice_id)
+            .map((profile) => ({ value: String(profile.id), label: `Book voice · ${profile.name} · ${profile.settings_json?.tone_name || 'Default tone'}` }));
+        const library = libraryVoices.value.flatMap((voice) => (voice.samples || []).map((sample) => {
+            const value = `library:${voice.id}:${sample.tone_id || sample.tone?.id || ''}`;
+            libraryChoice.set(value, { voice, sample });
+            return { value, label: `Audio Library · ${voice.name} · ${sample.tone?.name || sample.tone || 'Default tone'}` };
+        }));
+        return [{ value: '', label: 'No default voice' }, ...profiles, ...library];
+    };
     const save = async (close) => {
         saving.value = true;
         status.value = null;
         try {
-            await _.http.patchJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-settings`, { default_voice_profile_id: defaultVoiceId.value || null });
-            audiobookBook.value = { ...audiobookBook.value, audio_settings_json: { ...(audiobookBook.value?.audio_settings_json || {}), default_voice_profile_id: defaultVoiceId.value || null } };
+            let profileId = defaultVoiceId.value || null;
+            if (String(profileId).startsWith('library:')) {
+                const selected = libraryChoice.get(profileId);
+                if (!selected) throw new Error('The selected Audio Library voice is no longer available.');
+                const existing = voiceProfiles.value.find((profile) => Number(profile.settings_json?.audio_library_voice_id) === Number(selected.voice.id)
+                    && Number(profile.settings_json?.tone_id) === Number(selected.sample.tone_id || selected.sample.tone?.id));
+                if (existing?.id) {
+                    profileId = String(existing.id);
+                } else {
+                    const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/voices`, {
+                        name: selected.voice.name,
+                        role: 'narrator',
+                        language: selected.voice.language,
+                        notes: selected.voice.description || null,
+                        audio_library_voice_id: selected.voice.id,
+                        tone_id: selected.sample.tone_id || selected.sample.tone?.id || null,
+                    }, { timeout: 900000, retry: { attempts: 0 } });
+                    const profile = audioData(payload).profile;
+                    if (!profile?.id) throw new Error('The Audio Library voice could not be configured for this book.');
+                    voiceProfiles.value = [...voiceProfiles.value, profile];
+                    profileId = String(profile.id);
+                }
+            }
+            await _.http.patchJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-settings`, { default_voice_profile_id: profileId });
+            audiobookBook.value = { ...audiobookBook.value, audio_settings_json: { ...(audiobookBook.value?.audio_settings_json || {}), default_voice_profile_id: profileId } };
             close();
         } catch (error) { status.value = { type: 'danger', message: error.message || 'Unable to save the default voice.' }; }
         finally { saving.value = false; }
@@ -1097,7 +1155,8 @@ function openAudioDirectionDialog() {
                 _.span({ class: 'text-muted' }, 'Set the narrator and delivery direction used when this block is generated.'),
             ),
             content: ({ close }) => _.div({ class: 'at-audioDirectionDialog' },
-                _.Select({ label: 'Default voice', icon: 'record_voice_over', model: defaultVoiceId, options: () => [{ value: '', label: 'No default voice' }, ...voiceProfiles.value.filter((profile) => profile.voice_id).map((profile) => ({ value: String(profile.id), label: `${profile.name} · ${profile.settings_json?.tone_name || 'Default tone'}` }))] }),
+                _.Select({ label: 'Default voice', icon: 'record_voice_over', model: defaultVoiceId, options: voiceOptions }),
+                () => libraryLoading.value ? _.small({ class: 'text-muted' }, 'Loading Audio Library voices…') : _.small({ class: 'text-muted' }, 'Audio Library selections are configured as the book narrator automatically.'),
                 audioDirection(),
                 () => status.value ? _.Alert(status.value) : null,
                 _.div({ class: 'at-characterDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Cancel'), _.Btn({ color: 'primary', icon: 'check', loading: saving, onClick: () => save(close) }, 'Save direction')),
@@ -1519,6 +1578,7 @@ function createAudio() {
                 _.div({ class: 'at-audioMetric' }, _.span('Estimated duration'), _.strong(`~${seconds}s`)),
                 _.div({ class: 'at-audioMetric' }, _.span('AT estimate'), _.strong('1 credit')),
             ),
+            _.Select({ label: 'Qwen model', model: qwenModel, options: [{ value: 'fast', label: 'Fast · 0.6B' }, { value: 'quality', label: 'Quality · 1.7B' }] }),
             _.Btn({ class: 'at-audioGenerateButton', color: 'primary', icon: 'play_circle', loading: audioGenerating, onClick: () => generateSelectedAudio(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'Generate audio'),
         ),
         () => audioGroups.value.length ? _.Btn({ class: 'at-audioListButton', color: 'secondary', icon: 'library_music', onClick: () => openAudioListDialog(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'List of audio') : null,

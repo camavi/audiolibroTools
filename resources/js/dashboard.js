@@ -34,7 +34,7 @@ const navGroups = [
     { label: 'Organization', key: 'organization', icon: 'hub' },
     { label: 'Settings', key: 'setting', icon: 'settings', link: '/dashboard/setting' },
     { label: 'Prompts AI', key: 'prompts-ai', icon: 'psychology' },
-    { label: 'Upload audio', key: 'upload-audio', icon: 'upload_file', link: '/dashboard/upload-audio' },
+    { label: 'Audio', key: 'upload-audio', icon: 'graphic_eq', link: '/dashboard/upload-audio' },
     { label: 'Logout', key: 'logout', icon: 'logout' },
 ];
 
