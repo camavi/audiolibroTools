@@ -53,6 +53,7 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::get('/audio-media', [AudioMediaController::class, 'index'])->name('audio-media.index');
     Route::post('/audio-media', [AudioMediaController::class, 'store'])->name('audio-media.store');
     Route::get('/audio-media/{asset}/stream', [AudioMediaController::class, 'stream'])->name('audio-media.stream');
+    Route::get('/book-audio-segments/{segment}/stream', [DashboardBookController::class, 'streamAudioSegment'])->name('book-audio-segments.stream');
     Route::get('/books', [DashboardBookController::class, 'index'])->name('books.index');
     Route::post('/books', [DashboardBookController::class, 'store'])->name('books.store');
     Route::get('/books/{keyBook}', [DashboardBookController::class, 'show'])->name('books.show');

@@ -48,6 +48,7 @@ const pendingTimelineWaveforms = new Set();
 let timelineAudioContext = null;
 let timelineFrame = null;
 let timelineStartedAt = 0;
+let timelinePausedAt = null;
 let renderTimeline = null;
 let timelineSaveTimer = null;
 const timelineTracks = [
@@ -472,8 +473,16 @@ function trackCanPlay(track) {
     const hasSolo = Object.values(states).some((state) => state.solo);
     return !states[track]?.muted && (!hasSolo || states[track]?.solo);
 }
+function pauseTimelinePlayers() {
+    timelinePlayers.forEach((audio) => {
+        audio.pause();
+        if (audio._atSeekFallback) window.clearTimeout(audio._atSeekFallback);
+        audio._atSeekFallback = null;
+    });
+}
 function stopTimelinePlayers() {
-    timelinePlayers.forEach((audio) => { audio.pause(); });
+    pauseTimelinePlayers();
+    timelinePlayers.forEach((audio) => { audio._atTimelineActive = false; });
     timelinePlayers.clear();
 }
 function timelinePartPlayerKey(item, part) {
@@ -485,25 +494,59 @@ function prepareTimelinePlayer(key, url) {
     audio = new Audio(url);
     audio.preload = 'auto';
     audio._atTimelineActive = false;
-    audio._atPendingMediaTime = null;
-    // A seek issued before metadata is available is not reliable in every
-    // browser. Keep the requested position and apply it as soon as this WAV
-    // is seekable, instead of retrying it on every animation frame.
+    audio._atTimelineTargetTime = 0;
+    audio._atWaitingForSeek = false;
+    audio._atSeekFallback = null;
+    // Wait for the browser to finish seeking before calling play(). Starting
+    // first can make some browsers briefly (or permanently) play from zero.
     audio.addEventListener('loadedmetadata', () => {
-        if (!Number.isFinite(audio._atPendingMediaTime)) return;
-        try { audio.currentTime = audio._atPendingMediaTime; } catch { }
-        audio._atPendingMediaTime = null;
+        resumeTimelinePlayerAfterSeek(audio);
     });
+    audio.addEventListener('seeked', () => resumeTimelinePlayerAfterSeek(audio));
+    audio.addEventListener('canplay', () => resumeTimelinePlayerAfterSeek(audio));
     audio.load();
     timelinePlayers.set(key, audio);
     return audio;
 }
-function seekTimelinePlayer(audio, mediaTime) {
-    if (audio.readyState < 1) {
-        audio._atPendingMediaTime = mediaTime;
+function playTimelinePlayer(audio) {
+    if (audio._atTimelineActive && timelineIsPlaying.value && audio.paused) audio.play().catch(() => { });
+}
+function resumeTimelinePlayerAfterSeek(audio) {
+    if (!audio._atTimelineActive || !timelineIsPlaying.value || !audio._atWaitingForSeek) return;
+    const target = Number(audio._atTimelineTargetTime || 0);
+    // The transport continues to advance while metadata loads. Seek once more
+    // when necessary so the resumed sound follows the visible playhead.
+    if (Math.abs(audio.currentTime - target) > .04) {
+        try { audio.currentTime = target; } catch { }
         return;
     }
-    try { audio.currentTime = mediaTime; } catch { }
+    audio._atWaitingForSeek = false;
+    if (audio._atSeekFallback) window.clearTimeout(audio._atSeekFallback);
+    audio._atSeekFallback = null;
+    playTimelinePlayer(audio);
+}
+function seekTimelinePlayer(audio, mediaTime) {
+    const duration = Number(audio.duration);
+    const maximum = Number.isFinite(duration) && duration > 0 ? Math.max(0, duration - .01) : Infinity;
+    audio._atTimelineTargetTime = Math.min(maximum, Math.max(0, mediaTime));
+    if (audio.readyState < 1) {
+        audio._atWaitingForSeek = true;
+        return false;
+    }
+    if (Math.abs(audio.currentTime - audio._atTimelineTargetTime) <= .04) {
+        audio._atWaitingForSeek = false;
+        return true;
+    }
+    audio._atWaitingForSeek = true;
+    if (audio._atSeekFallback) window.clearTimeout(audio._atSeekFallback);
+    try { audio.currentTime = audio._atTimelineTargetTime; } catch {
+        audio._atWaitingForSeek = false;
+        return true;
+    }
+    // Some WAV/browser combinations update currentTime but do not dispatch
+    // seeked. Do not leave the transport silent while it waits for that event.
+    audio._atSeekFallback = window.setTimeout(() => resumeTimelinePlayerAfterSeek(audio), 180);
+    return false;
 }
 function preloadTimelinePlayers() {
     timelineItems.value.forEach((item) => timelinePlayableParts(item).forEach((part) => {
@@ -551,9 +594,11 @@ function syncTimelinePlayers(playhead, seek = false) {
         // then restarts the WAV over and over, producing a short sound followed
         // by silence. A clip only needs a seek when it becomes active or after
         // a deliberate playhead jump/loop.
-        if (seek || !audio._atTimelineActive) seekTimelinePlayer(audio, mediaTime);
+        const needsSeek = seek || !audio._atTimelineActive;
         audio._atTimelineActive = true;
-        if (audio.paused) audio.play().catch(() => { });
+        if (needsSeek && !seekTimelinePlayer(audio, mediaTime)) return;
+        if (audio._atWaitingForSeek) return;
+        playTimelinePlayer(audio);
     }));
     timelinePlayers.forEach((audio, key) => {
         if (!activeKeys.has(key)) { audio.pause(); audio._atTimelineActive = false; }
@@ -563,15 +608,36 @@ function syncTimelinePlayers(playhead, seek = false) {
         readingPlayback.value = nextReading;
     }
 }
-function stopTimelinePlayback() {
+function pauseTimelinePlayback() {
     if (timelineFrame) window.cancelAnimationFrame(timelineFrame);
     timelineFrame = null;
     timelineIsPlaying.value = false;
-    stopTimelinePlayers();
+    // Keep the decoded media alive. Recreating an HTMLAudioElement at resume
+    // can start it at zero before metadata makes the requested seek available.
+    pauseTimelinePlayers();
+    timelinePausedAt = timelinePlayhead.value;
     readingPlayback.value = null;
+}
+function stopTimelinePlayback() {
+    pauseTimelinePlayback();
+    stopTimelinePlayers();
+    timelinePlayhead.value = 0;
+    timelinePausedAt = null;
+}
+function setTimelinePlayhead(seconds) {
+    timelinePlayhead.value = Math.max(0, timelineSnap(seconds));
+    // A click is an explicit seek, not a continuation of the last Pause.
+    timelinePausedAt = null;
+    if (!timelineIsPlaying.value) return;
+    timelineStartedAt = performance.now() - timelinePlayhead.value * 1000;
+    syncTimelinePlayers(timelinePlayhead.value, true);
 }
 function startTimelinePlayback(render) {
     if (timelineIsPlaying.value) return;
+    // A real resume must use the browser's retained currentTime. This avoids
+    // re-seeking a WAV after Pause, which can cause playback to restart at 0.
+    const resumePausedPlayers = timelinePausedAt !== null && Math.abs(timelinePlayhead.value - timelinePausedAt) < .04;
+    timelinePausedAt = null;
     const available = timelineItems.value.some((item) => timelineAudioUrl(item));
     if (!available) audioStatus.value = { type: 'info', message: 'The playhead is running. There are no playable audio files in the timeline yet.' };
     // Qwen creates many short WAV parts. Preloading them prevents a network
@@ -587,13 +653,13 @@ function startTimelinePlayback(render) {
             timelineStartedAt = now - loop.start * 1000;
             syncTimelinePlayers(next, true);
         }
-        if (next >= timelineEnd()) { timelinePlayhead.value = timelineEnd(); stopTimelinePlayback(); render(); return; }
+        if (next >= timelineEnd()) { timelinePlayhead.value = timelineEnd(); pauseTimelinePlayback(); render(); return; }
         timelinePlayhead.value = next;
         syncTimelinePlayers(next);
         render();
         timelineFrame = window.requestAnimationFrame(tick);
     };
-    syncTimelinePlayers(timelinePlayhead.value, true);
+    syncTimelinePlayers(timelinePlayhead.value, !resumePausedPlayers);
     timelineFrame = window.requestAnimationFrame(tick);
 }
 function addTimelineItem(track) {
@@ -1831,13 +1897,15 @@ function timelineCard() {
         const headerY = event.clientY - rect.top;
         if (headerY < 34) {
             const { seconds } = geometry(event);
-            timelinePlayhead.value = timelineSnap(seconds);
-            if (timelineIsPlaying.value) syncTimelinePlayers(timelinePlayhead.value, true);
+            setTimelinePlayhead(seconds);
             render(); return;
         }
         const { duration, track: trackAt, lane: laneAt, seconds } = geometry(event);
         const item = [...timelineItems.value].reverse().find((candidate) => candidate.track === trackAt && Number(candidate.lane || 0) === laneAt && seconds >= candidate.start_ms / 1000 && seconds <= (candidate.start_ms + candidate.duration_ms) / 1000);
         if (item) {
+            // Clicking the waveform is also a transport seek. Previously it
+            // only selected the clip, leaving Play at the old timeline point.
+            setTimelinePlayhead(seconds);
             const key = timelineItemKey(item);
             selectTimelineItem(item, event.shiftKey);
             if (!trackState.value[trackAt].locked) {
@@ -1860,8 +1928,7 @@ function timelineCard() {
         }
         selectedTimelineItemKey.value = null;
         selectedTimelineItemKeys.value = [];
-        timelinePlayhead.value = Math.max(0, timelineSnap(seconds));
-        if (timelineIsPlaying.value) syncTimelinePlayers(timelinePlayhead.value, true);
+        setTimelinePlayhead(seconds);
         const cue = Math.round(seconds);
         timelineCues.value = [...timelineCues.value, Math.max(0, cue)].sort((a, b) => a - b);
         render();
@@ -1984,8 +2051,9 @@ function timelineCard() {
             _.div({ class: 'at-audioTimelineTransport' },
                 _.div({ class: 'at-audioToolbarGroup at-audioToolbarGroup--transport' },
                     _.Btn({ dense: true, color: 'secondary', icon: 'skip_previous', title: 'Previous block', onClick: () => { activeBlockIndex.value = Math.max(0, activeBlockIndex.value - 1); } }),
-                    _.Btn({ dense: true, class: 'at-audioPlayButton', color: 'primary', icon: 'play_arrow', title: 'Play or pause timeline', onClick: () => timelineIsPlaying.value ? stopTimelinePlayback() : startTimelinePlayback(render) }),
-                    _.Btn({ dense: true, color: 'secondary', icon: 'stop', title: 'Stop timeline', onClick: () => { stopTimelinePlayback(); timelinePlayhead.value = 0; audioStatus.value = null; render(); } }),
+                    _.Btn({ dense: true, class: 'at-audioPlayButton', color: 'primary', icon: 'play_arrow', title: 'Play timeline', disabled: () => timelineIsPlaying.value, onClick: () => startTimelinePlayback(render) }),
+                    _.Btn({ dense: true, color: 'secondary', icon: 'pause', title: 'Pause timeline', disabled: () => !timelineIsPlaying.value, onClick: () => pauseTimelinePlayback() }),
+                    _.Btn({ dense: true, color: 'secondary', icon: 'stop', title: 'Stop timeline', onClick: () => { stopTimelinePlayback(); audioStatus.value = null; render(); } }),
                     _.Btn({ dense: true, color: 'secondary', icon: 'skip_next', title: 'Next block', onClick: () => { activeBlockIndex.value = Math.min(audiobookBlocks.value.length - 1, activeBlockIndex.value + 1); } }),
                 ),
                 _.span({ class: 'at-audioTimecode' }, () => `00:00:${String(Math.floor(timelinePlayhead.value)).padStart(2, '0')}`),

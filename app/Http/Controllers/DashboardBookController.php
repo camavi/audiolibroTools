@@ -1217,8 +1217,9 @@ class DashboardBookController extends Controller
             'timelineChildren.librarySample:id,audio_library_voice_id,audio_path,duration_ms,original_name',
             'timelineChildren.mediaAsset:id,account_id,audio_path,duration_ms,original_name',
         ];
-        $audioPath = static fn (BookAudioTimelineItem $item): ?string => $item->audioSegment?->audio_path
-            ?? ($item->mediaAsset ? route('dashboard.api.audio-media.stream', $item->mediaAsset) : ($item->librarySample ? route('dashboard.api.audio-library.samples.stream', $item->librarySample) : null));
+        $audioPath = static fn (BookAudioTimelineItem $item): ?string => $item->audioSegment
+            ? route('dashboard.api.book-audio-segments.stream', $item->audioSegment)
+            : ($item->mediaAsset ? route('dashboard.api.audio-media.stream', $item->mediaAsset) : ($item->librarySample ? route('dashboard.api.audio-library.samples.stream', $item->librarySample) : null));
         $items = $book->audioTimelineItems()
             // Compound children are represented by their persisted master.
             // The original clip rows remain intact and are returned inside it.
@@ -1233,7 +1234,7 @@ class DashboardBookController extends Controller
                 $data['block_uuid'] = $item->audioJob?->block_uuid ?? $item->audioSegment?->block_uuid;
                 $data['group_segments'] = $item->is_group && $item->audioJob
                     ? $item->audioJob->segments->sortBy('segment_index')->values()->map(fn (BookAudioSegment $segment) => [
-                        'id' => $segment->id, 'audio_path' => $segment->audio_path,
+                        'id' => $segment->id, 'audio_path' => route('dashboard.api.book-audio-segments.stream', $segment),
                         'duration_ms' => $segment->duration_ms, 'pause_after_ms' => $segment->pause_after_ms,
                         'text_plain' => $segment->text_plain, 'source_start' => $segment->source_start, 'source_end' => $segment->source_end,
                         'word_timings' => $segment->metadata_json['word_timings'] ?? [],
@@ -1264,6 +1265,19 @@ class DashboardBookController extends Controller
             });
 
         return response()->json(['data' => ['items' => $items]]);
+    }
+
+    public function streamAudioSegment(BookAudioSegment $segment)
+    {
+        abort_unless(Book::query()->whereKey($segment->book_id)->where('account_id', auth()->id())->exists(), 404);
+        abort_unless(Storage::disk('public')->exists($segment->audio_path), 404);
+
+        $path = Storage::disk('public')->path($segment->audio_path);
+
+        return response()->file($path, [
+            'Content-Type' => mime_content_type($path) ?: 'audio/wav',
+            'Accept-Ranges' => 'bytes',
+        ]);
     }
 
     public function saveAudioTimeline(Request $request, string $keyBook): JsonResponse
