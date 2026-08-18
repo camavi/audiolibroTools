@@ -225,6 +225,12 @@ function timelineLaneLayout() {
 function rangesOverlap(startA, durationA, startB, durationB) {
     return startA < startB + durationB && startA + durationA > startB;
 }
+function timelineTrackOverlaps(track, startMs, durationMs, ignoreKey = null) {
+    const ignoredKeys = new Set(Array.isArray(ignoreKey) ? ignoreKey : [ignoreKey]);
+    return timelineItems.value.some((item) => !ignoredKeys.has(timelineItemKey(item))
+        && item.track === track
+        && rangesOverlap(startMs, durationMs, Number(item.start_ms || 0), Number(item.duration_ms || 0)));
+}
 function firstAvailableTimelineLane(track, startMs, durationMs, ignoreKey = null, preferredLane = null) {
     const ignoredKeys = new Set(Array.isArray(ignoreKey) ? ignoreKey : [ignoreKey]);
     const lanes = Array.from({ length: 41 }, (_, lane) => lane);
@@ -1961,17 +1967,26 @@ function timelineCard() {
             if (drag.mode === 'move-group') {
                 const deltaMs = startMs - Number(drag.item.start_ms || 0);
                 const originals = new Map(drag.items.map((item) => [timelineItemKey(item), item]));
+                const overlaps = drag.items.some((original) => timelineTrackOverlaps(
+                    original.track,
+                    Math.max(0, Number(original.start_ms || 0) + deltaMs),
+                    Number(original.duration_ms || 0),
+                    dragKeys,
+                ));
+                if (overlaps) { render(); return; }
                 drag.changed ||= deltaMs !== 0;
                 timelineItems.value = timelineItems.value.map((item) => {
                     const original = originals.get(timelineItemKey(item));
                     if (!original) return item;
                     const nextStart = Math.max(0, Number(original.start_ms || 0) + deltaMs);
-                    const nextLane = firstAvailableTimelineLane(original.track, nextStart, Number(original.duration_ms || 0), dragKeys, Number(original.lane || 0));
-                    drag.changed ||= nextStart !== Number(original.start_ms || 0) || nextLane !== Number(original.lane || 0);
-                    return { ...item, start_ms: nextStart, lane: nextLane };
+                    drag.changed ||= nextStart !== Number(original.start_ms || 0);
+                    return { ...item, start_ms: nextStart };
                 });
             } else {
-                const nextLane = firstAvailableTimelineLane(track, startMs, Number(drag.item.duration_ms || 0), key, lane);
+                // Keep the lane selected by the user. Collisions are blocked
+                // instead of creating an automatic mix lane.
+                const nextLane = lane;
+                if (timelineTrackOverlaps(track, startMs, Number(drag.item.duration_ms || 0), key)) { render(); return; }
                 drag.changed ||= drag.item.track !== track || Number(drag.item.lane || 0) !== nextLane || drag.item.start_ms !== startMs;
                 updateTimelineItem(key, (item) => ({ ...item, track, lane: nextLane, start_ms: startMs }));
             }
@@ -1980,8 +1995,8 @@ function timelineCard() {
             updateTimelineItem(key, (item) => {
                 const delta = Math.round((start - drag.item.start_ms / 1000) * 1000);
                 const next = { ...item, start_ms: Math.round(start * 1000), duration_ms: Math.round((drag.end - start) * 1000), trim_start_ms: Math.max(0, Number(drag.item.trim_start_ms || 0) + delta) };
-                next.lane = firstAvailableTimelineLane(next.track, next.start_ms, next.duration_ms, key, Number(drag.item.lane || 0));
-                drag.changed ||= next.start_ms !== drag.item.start_ms || next.duration_ms !== drag.item.duration_ms || next.trim_start_ms !== Number(drag.item.trim_start_ms || 0) || Number(next.lane || 0) !== Number(drag.item.lane || 0);
+                if (timelineTrackOverlaps(next.track, next.start_ms, next.duration_ms, key)) return item;
+                drag.changed ||= next.start_ms !== drag.item.start_ms || next.duration_ms !== drag.item.duration_ms || next.trim_start_ms !== Number(drag.item.trim_start_ms || 0);
                 return next;
             });
         } else {
@@ -1989,8 +2004,8 @@ function timelineCard() {
             updateTimelineItem(key, (item) => {
                 const removed = Math.round((drag.item.start_ms / 1000 + drag.item.duration_ms / 1000 - end) * 1000);
                 const next = { ...item, duration_ms: Math.round((end - item.start_ms / 1000) * 1000), trim_end_ms: Math.max(0, Number(drag.item.trim_end_ms || 0) + removed) };
-                next.lane = firstAvailableTimelineLane(next.track, next.start_ms, next.duration_ms, key, Number(drag.item.lane || 0));
-                drag.changed ||= next.duration_ms !== drag.item.duration_ms || next.trim_end_ms !== Number(drag.item.trim_end_ms || 0) || Number(next.lane || 0) !== Number(drag.item.lane || 0);
+                if (timelineTrackOverlaps(next.track, next.start_ms, next.duration_ms, key)) return item;
+                drag.changed ||= next.duration_ms !== drag.item.duration_ms || next.trim_end_ms !== Number(drag.item.trim_end_ms || 0);
                 return next;
             });
         }
