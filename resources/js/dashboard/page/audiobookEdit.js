@@ -1873,8 +1873,17 @@ function openAudioGeneratorSettingsDialog(keyBook) {
 
             ),
             actions: ({ close }) => _.div({ class: 'at-audioGeneratorActions' },
-                _.Btn({ color: 'secondary', onClick: close }, 'Cancel'),
-                _.Btn({ color: 'primary', icon: 'save', loading: saving, onClick: () => save(close) }, 'Save generator settings'),
+                _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Cancel'),
+                _.Btn({
+                    type: 'button',
+                    color: 'primary',
+                    icon: 'save',
+                    loading: saving,
+                    onClick: (event) => {
+                        event?.preventDefault();
+                        void save(close);
+                    },
+                }, 'Save generator settings'),
             )
         },
     }).open();
