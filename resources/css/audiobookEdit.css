@@ -252,9 +252,26 @@
 
 .at-audioGenerationBar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: stretch;
     gap: .65rem
+}
+
+.at-audioGenerationControls {
+    display: grid;
+    grid-template-columns: 10.75rem minmax(10rem, 1fr) 10.75rem auto;
+    align-items: end;
+    gap: .65rem
+}
+
+.at-audioGenerationControls .cms-field,
+.at-audioGenerationControls .cms-btn {
+    min-width: 0
+}
+
+.at-audioGeneratorSettingsButton,
+.at-audioGenerateButton,
+.at-audioListButton {
+    min-height: 2.45rem;
+    white-space: nowrap
 }
 
 .at-audioGeneratorDialog {
@@ -631,8 +648,6 @@
 }
 
 .at-audioListButton {
-    justify-self: start;
-    min-height: 2.2rem;
     font-size: .74rem
 }
 
@@ -1446,8 +1461,8 @@
         grid-template-columns: 1fr
     }
 
-    .at-audioGenerationBar {
-        grid-template-columns: 1fr
+    .at-audioGenerationControls {
+        grid-template-columns: repeat(2, minmax(0, 1fr))
     }
 
     .at-audioGenerateButton {

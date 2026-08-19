@@ -1759,6 +1759,11 @@ function createAudio() {
     const seconds = estimatedSeconds();
 
     return _.div({ class: 'at-audioCreate' },
+        _.div({ class: 'at-audioCostGrid' },
+            _.div({ class: 'at-audioMetric' }, _.span('Selected text'), _.strong(`${words} words`)),
+            _.div({ class: 'at-audioMetric' }, _.span('Estimated duration'), _.strong(`~${seconds}s`)),
+            _.div({ class: 'at-audioMetric' }, _.span('AT estimate'), _.strong('1 credit')),
+        ),
         _.div({ class: 'at-audioVoiceSelect' },
             _.div({ class: 'at-audioVoiceSelectCopy' },
                 _.span(() => blockVoiceAssignment.value?.voice_profile?.role === 'character' ? 'Character' : 'AT voice'),
@@ -1780,16 +1785,13 @@ function createAudio() {
             ),
         ),
         _.div({ class: 'at-audioGenerationBar' },
-            _.div({ class: 'at-audioCostGrid' },
-                _.div({ class: 'at-audioMetric' }, _.span('Selected text'), _.strong(`${words} words`)),
-                _.div({ class: 'at-audioMetric' }, _.span('Estimated duration'), _.strong(`~${seconds}s`)),
-                _.div({ class: 'at-audioMetric' }, _.span('AT estimate'), _.strong('1 credit')),
+            _.div({ class: 'at-audioGenerationControls' },
+                _.Select({ label: 'Qwen model', model: qwenModel, options: [{ value: 'fast', label: 'Fast · 0.6B' }, { value: 'quality', label: 'Quality · 1.7B' }] }),
+                _.Btn({ class: 'at-audioGeneratorSettingsButton', color: 'secondary', icon: 'tune', title: 'Edit the text sent to the audio generator', onClick: () => openAudioGeneratorSettingsDialog(bookKey()) }, 'Generator settings'),
+                _.Btn({ class: 'at-audioGenerateButton', color: 'primary', icon: 'play_circle', loading: audioGenerating, onClick: () => generateSelectedAudio(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'Generate audio'),
+                () => audioGroups.value.length ? _.Btn({ class: 'at-audioListButton', color: 'secondary', icon: 'library_music', onClick: () => openAudioListDialog(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'List of audio') : null,
             ),
-            _.Select({ label: 'Qwen model', model: qwenModel, options: [{ value: 'fast', label: 'Fast · 0.6B' }, { value: 'quality', label: 'Quality · 1.7B' }] }),
-            _.Btn({ color: 'secondary', icon: 'tune', title: 'Edit the text sent to the audio generator', onClick: () => openAudioGeneratorSettingsDialog(bookKey()) }, 'Generator settings'),
-            _.Btn({ class: 'at-audioGenerateButton', color: 'primary', icon: 'play_circle', loading: audioGenerating, onClick: () => generateSelectedAudio(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'Generate audio'),
         ),
-        () => audioGroups.value.length ? _.Btn({ class: 'at-audioListButton', color: 'secondary', icon: 'library_music', onClick: () => openAudioListDialog(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'List of audio') : null,
     );
 }
 
