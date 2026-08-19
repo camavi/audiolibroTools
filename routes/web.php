@@ -86,6 +86,8 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::patch('/books/{keyBook}/blocks/{blockUuid}/voice-assignment', [DashboardBookController::class, 'updateBlockVoiceAssignment'])->name('books.blocks.voice-assignment.update');
     Route::post('/books/{keyBook}/blocks/{blockUuid}/library-voice', [DashboardBookController::class, 'selectLibraryVoice'])->name('books.blocks.library-voice.select');
     Route::get('/books/{keyBook}/blocks/{blockUuid}/audio', [DashboardBookController::class, 'blockAudio'])->name('books.blocks.audio');
+    Route::patch('/books/{keyBook}/blocks/{blockUuid}/audio/generator-settings', [DashboardBookController::class, 'updateBlockAudioGeneratorSettings'])->name('books.blocks.audio.generator-settings.update');
+    Route::post('/books/{keyBook}/blocks/{blockUuid}/audio/generator-settings/preview', [DashboardBookController::class, 'previewBlockAudioGeneratorSettings'])->name('books.blocks.audio.generator-settings.preview');
     Route::post('/books/{keyBook}/blocks/{blockUuid}/audio/generate', [DashboardBookController::class, 'generateBlockAudio'])->name('books.blocks.audio.generate');
     Route::patch('/books/{keyBook}/audio-settings', [DashboardBookController::class, 'updateAudioSettings'])->name('books.audio-settings.update');
     Route::post('/books/{keyBook}/audio/generate-all', [DashboardBookController::class, 'generateBookAudio'])->name('books.audio.generate-all');

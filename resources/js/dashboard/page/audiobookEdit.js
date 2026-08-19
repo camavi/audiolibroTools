@@ -27,6 +27,7 @@ const allAudioInserting = _.rod(false);
 const selectedLibraryVoice = _.rod(null);
 const voiceProfiles = _.rod([]);
 const blockVoiceAssignment = _.rod(null);
+const generatorSettings = _.rod(null);
 const voiceProfilesLoading = _.rod(false);
 const timelineCues = _.rod([]);
 const timelineZoom = _.rod(1);
@@ -800,6 +801,7 @@ async function loadBlockAudio(keyBook) {
         audioSegments.value = [];
         audioGroups.value = [];
         blockVoiceAssignment.value = null;
+        generatorSettings.value = null;
         selectedLibraryVoice.value = null;
         return;
     }
@@ -810,6 +812,7 @@ async function loadBlockAudio(keyBook) {
         audioSegments.value = data.segments || [];
         audioGroups.value = data.groups || [];
         blockVoiceAssignment.value = data.assignment || null;
+        generatorSettings.value = data.generator_settings || null;
         selectedLibraryVoice.value = data.assignment?.voice_profile || null;
     } catch (error) {
         const statusCode = error?.response?.status || error?.status;
@@ -817,6 +820,7 @@ async function loadBlockAudio(keyBook) {
             audioSegments.value = [];
             audioGroups.value = [];
             blockVoiceAssignment.value = null;
+            generatorSettings.value = null;
             selectedLibraryVoice.value = null;
             return;
         }
@@ -872,8 +876,8 @@ async function insertAudioGroup(keyBook, jobId, placement = 'paragraph') {
             type: 'success', message: result.replaced
                 ? `Audio replaced in the Voice track${shifted ? ` · ${shifted} later Voice clip${shifted === 1 ? '' : 's'} adjusted` : ''}.`
                 : placement === 'paragraph' && shifted
-                ? `Audio inserted in paragraph order. ${shifted} later Voice clip${shifted === 1 ? '' : 's'} moved right.`
-                : 'Audio group inserted into the Voice track.'
+                    ? `Audio inserted in paragraph order. ${shifted} later Voice clip${shifted === 1 ? '' : 's'} moved right.`
+                    : 'Audio group inserted into the Voice track.'
         };
         window.requestAnimationFrame(() => document.querySelector('.at-audioTimelineCard')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
         return true;
@@ -957,8 +961,8 @@ function audioGroupsList(keyBook, placement, close) {
                         group.in_timeline
                             ? _.span({ class: 'at-audioGroupUsed' }, 'In timeline')
                             : [
-                            _.Btn({ color: 'primary', icon: 'playlist_add', onClick: async () => { if (await insertAudioGroup(keyBook, group.id, placement.value)) { stopGeneratedAudioPreview(); close(); } } }, 'Insert'),
-                            _.Btn({ color: 'danger', icon: 'delete', title: 'Delete generated audio', onClick: () => deleteAudioGroup(keyBook, group.id) }),
+                                _.Btn({ color: 'primary', icon: 'playlist_add', onClick: async () => { if (await insertAudioGroup(keyBook, group.id, placement.value)) { stopGeneratedAudioPreview(); close(); } } }, 'Insert'),
+                                _.Btn({ color: 'danger', icon: 'delete', title: 'Delete generated audio', onClick: () => deleteAudioGroup(keyBook, group.id) }),
                             ],
                     ),
                 ),
@@ -1128,16 +1132,18 @@ function openInsertAllAudioDialog(keyBook) {
         } catch (error) { status.value = { type: 'danger', message: error.message || 'Unable to insert generated audio.' }; }
         finally { allAudioInserting.value = false; }
     };
-    _.Dialog({ size: 'md', stickyActions: true, slots: {
-        header: _.div(_.h3('Insert all generated audio'), _.span({ class: 'text-muted' }, 'Insert the latest completed master for every paragraph in book order.')),
-        content: ({ close }) => _.div({ class: 'at-bookAudioGenerateDialog' },
-            () => _.div({ class: 'at-bookAudioMetrics' }, _.div(_.span('Latest audio'), _.strong(count.value === null ? 'Loading…' : String(count.value))), _.div(_.span('Track'), _.strong('Voice')), _.div(_.span('Order'), _.strong('Paragraph')), _.div(_.span('Existing'), _.strong(replaceExisting.value ? 'Replace' : 'Keep'))),
-            _.Checkbox({ label: 'Replace generated audio already in timeline', model: replaceExisting }),
-            _.small({ class: 'at-bookAudioGenerateNote' }, () => replaceExisting.value ? 'Replaces generated masters linked to the same paragraph. Music, FX and manual clips stay untouched.' : 'Inserts only paragraphs that do not already have generated audio in the timeline.'),
-            () => status.value ? _.Alert(status.value) : null,
-            _.div({ class: 'at-characterDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close'), _.Btn({ color: 'primary', icon: 'playlist_add', loading: allAudioInserting, disabled: () => count.value === 0, onClick: () => insert(close) }, 'Insert all audio')),
-        ),
-    } }).open();
+    _.Dialog({
+        size: 'md', stickyActions: true, slots: {
+            header: _.div(_.h3('Insert all generated audio'), _.span({ class: 'text-muted' }, 'Insert the latest completed master for every paragraph in book order.')),
+            content: ({ close }) => _.div({ class: 'at-bookAudioGenerateDialog' },
+                () => _.div({ class: 'at-bookAudioMetrics' }, _.div(_.span('Latest audio'), _.strong(count.value === null ? 'Loading…' : String(count.value))), _.div(_.span('Track'), _.strong('Voice')), _.div(_.span('Order'), _.strong('Paragraph')), _.div(_.span('Existing'), _.strong(replaceExisting.value ? 'Replace' : 'Keep'))),
+                _.Checkbox({ label: 'Replace generated audio already in timeline', model: replaceExisting }),
+                _.small({ class: 'at-bookAudioGenerateNote' }, () => replaceExisting.value ? 'Replaces generated masters linked to the same paragraph. Music, FX and manual clips stay untouched.' : 'Inserts only paragraphs that do not already have generated audio in the timeline.'),
+                () => status.value ? _.Alert(status.value) : null,
+                _.div({ class: 'at-characterDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close'), _.Btn({ color: 'primary', icon: 'playlist_add', loading: allAudioInserting, disabled: () => count.value === 0, onClick: () => insert(close) }, 'Insert all audio')),
+            ),
+        }
+    }).open();
 }
 
 function audioTabs() {
@@ -1619,6 +1625,135 @@ async function openLibraryVoiceDialog(keyBook) {
     }).open();
 }
 
+function openAudioGeneratorSettingsDialog(keyBook) {
+    const block = activeBlock();
+    const settings = generatorSettings.value || {};
+    const originalText = settings.original_text || block?.text_plain || '';
+    const generatorText = _.rod(settings.generator_text || originalText);
+    const saving = _.rod(false);
+    const refreshing = _.rod(false);
+    const advancedRules = _.rod(false);
+    const status = _.rod(null);
+    const tones = Array.isArray(settings.tones) ? settings.tones : [];
+    const previewSettings = _.rod(settings);
+    const splitToneModels = _.rod((Array.isArray(settings.splits) ? settings.splits : []).map((split) => _.rod(String(split.tone_id || ''))));
+    const splitSettingKeys = ['comma_ms', 'semicolon_ms', 'sentence_ms', 'newline_ms', 'ellipsis_ms', 'dash_ms', 'min_words', 'split_characters'];
+    const splitSettingModels = Object.fromEntries(splitSettingKeys.map((key) => [key, _.rod(String(settings.split_settings?.[key] ?? ''))]));
+
+    const splitSettingsPayload = () => Object.fromEntries(splitSettingKeys.map((key) => [key, key === 'split_characters' ? splitSettingModels[key].value : Number(splitSettingModels[key].value)]));
+    const infoTip = (text) => _.Tooltip({
+        title: 'About this setting',
+        text,
+        placement: 'top',
+        delay: 120,
+    }, _.span({ class: 'at-audioGeneratorInfoTip' }, _.Icon({ name: 'info' })));
+    const baseInput = (label, help, model, props = {}) => _.div({ class: 'at-audioGeneratorInputWithTip' },
+        _.Input({ label, model, ...props }),
+        infoTip(help),
+    );
+    const advancedInput = (label, help, model) => _.div({ class: 'at-audioGeneratorInputWithTip' },
+        _.Input({ type: 'number', label, min: 0, max: 5000, model }),
+        infoTip(help),
+    );
+    const payloadForSettings = () => ({
+        generator_text: generatorText.value,
+        tone_id: null,
+        split_settings: splitSettingsPayload(),
+        split_tones: splitToneModels.value.map((model) => model.value ? Number(model.value) : null),
+    });
+
+    const refreshSplits = async () => {
+        refreshing.value = true;
+        status.value = null;
+        try {
+            const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/generator-settings/preview`, {
+                generator_text: generatorText.value,
+                split_settings: splitSettingsPayload(),
+            });
+            const nextSettings = audioData(payload).generator_settings || previewSettings.value;
+            previewSettings.value = nextSettings;
+            splitToneModels.value = (nextSettings.splits || []).map((split) => _.rod(String(split.tone_id || '')));
+            status.value = { type: 'success', message: 'Split preview updated. Review the tone for each split, then save the settings.' };
+        } catch (error) {
+            status.value = { type: 'danger', message: error.message || 'Unable to update the split list.' };
+        } finally { refreshing.value = false; }
+    };
+
+    const save = async (close) => {
+        saving.value = true;
+        status.value = null;
+        try {
+            const payload = await _.http.patchJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/generator-settings`, payloadForSettings());
+            generatorSettings.value = audioData(payload).generator_settings || generatorSettings.value;
+            audioStatus.value = { type: 'success', message: 'Generator text saved for this paragraph version.' };
+            close();
+        } catch (error) {
+            status.value = { type: 'danger', message: error.message || 'Unable to save the generator settings.' };
+        } finally { saving.value = false; }
+    };
+
+    _.Dialog({
+        size: 'xl',
+        stickyActions: true,
+        slots: {
+            header: _.div(_.h3('Text for audio generation'), _.span({ class: 'text-muted' }, 'Edit pronunciation text without changing the manuscript. It resets when the original paragraph is edited.')),
+            content: ({ close }) => _.div({ class: 'at-audioGeneratorDialog' },
+                _.div({ class: 'at-audioGeneratorTexts' },
+                    _.div({ class: 'at-audioGeneratorOriginal' }, _.strong('Original text'), _.div({ class: 'at-audioGeneratorText' }, originalText)),
+                    _.div({ class: 'at-audioGeneratorEditable' }, _.strong('Text sent to the generator'), _.Textarea({ label: false, model: generatorText, rows: 14, placeholder: 'Write the text the voice should pronounce.' })),
+                ),
+                _.div({ class: 'at-audioGeneratorSplitRules' },
+                    _.div({ class: 'at-audioGeneratorSplitRulesHead' },
+                        _.div(_.strong('Split rules for this paragraph'), _.small(() => previewSettings.value.is_split_customized ? 'Custom rules for this paragraph.' : 'Starts from the book defaults; saved changes apply only here.')),
+                        _.Btn({ dense: true, color: 'secondary', icon: 'refresh', loading: refreshing, disabled: saving, onClick: refreshSplits }, 'Update splits'),
+                    ),
+                    _.div({ class: 'at-audioGeneratorRuleSection' },
+                        _.div({ class: 'at-audioGeneratorRuleSectionHead' }, _.strong('Base'), infoTip('Choose which characters start a new audio request. Short requests are merged until they reach the minimum word count.')),
+                        _.div({ class: 'at-audioGeneratorSplitRulesGrid at-audioGeneratorSplitRulesGrid--base' },
+                            baseInput('Split characters', 'Each selected character ends one request and starts the next one.', splitSettingModels.split_characters, { placeholder: ',;:.!?…—-' }),
+                            baseInput('Minimum words per split', 'Shorter pieces are merged with the next text until this word count is reached.', splitSettingModels.min_words, { type: 'number', min: 1, max: 100 }),
+                        ),
+                    ),
+                    _.div({ class: 'at-audioGeneratorAdvancedToggle' },
+                        () => _.Btn({ dense: true, color: 'secondary', icon: advancedRules.value ? 'expand_less' : 'expand_more', title: 'Control the silence added after each type of split.', onClick: () => { advancedRules.value = !advancedRules.value; } }, advancedRules.value ? 'Hide advanced settings' : 'Advanced settings'),
+                        infoTip('Advanced settings control the pause after each split. They do not change where the text is divided.'),
+                    ),
+                    () => advancedRules.value ? _.div({ class: 'at-audioGeneratorRuleSection at-audioGeneratorRuleSection--advanced' },
+                        _.div({ class: 'at-audioGeneratorRuleSectionHead' }, _.strong('Advanced pause settings'), infoTip('Set the silence, in milliseconds, added after a split created by each punctuation mark.')),
+                        _.div({ class: 'at-audioGeneratorSplitRulesGrid' },
+                            advancedInput('Comma pause (ms)', 'Silence added after a comma.', splitSettingModels.comma_ms),
+                            advancedInput('Semicolon / colon (ms)', 'Silence added after a semicolon or colon.', splitSettingModels.semicolon_ms),
+                            advancedInput('Sentence pause (ms)', 'Silence added after a period, question mark, or exclamation mark.', splitSettingModels.sentence_ms),
+                            advancedInput('New line pause (ms)', 'Silence added after a line break.', splitSettingModels.newline_ms),
+                            advancedInput('Ellipsis pause (ms)', 'Silence added after an ellipsis.', splitSettingModels.ellipsis_ms),
+                            advancedInput('Dash pause (ms)', 'Silence added after a dash.', splitSettingModels.dash_ms),
+                        ),
+                    ) : null,
+                ),
+                () => {
+                    const currentSettings = previewSettings.value;
+                    const splits = Array.isArray(currentSettings.splits) ? currentSettings.splits : [];
+                    const models = splitToneModels.value;
+                    return _.div({ class: 'at-audioGeneratorSplits' },
+                        _.div({ class: 'at-audioGeneratorSplitsHead' }, _.strong(`Generator splits (${splits.length})`), _.small('These are the requests sent to the audio generator.')),
+                        ...splits.map((split, index) => _.article({ class: 'at-audioGeneratorSplit' },
+                            _.div({ class: 'at-audioGeneratorSplitCopy' }, _.strong(`Split ${index + 1}`), _.span(split.text), split.pause_after_ms ? _.small(`Pause after: ${split.pause_after_ms}ms`) : null),
+                            currentSettings.can_change_tone ? _.Select({ label: 'Tone', model: models[index], options: [{ value: '', label: 'Voice default' }, ...tones.map((tone) => ({ value: String(tone.id), label: tone.name }))] }) : null,
+                        )),
+                    );
+                },
+                !settings.can_change_tone && blockVoiceAssignment.value?.voice_profile ? _.small({ class: 'at-audioHint' }, 'This voice has one available tone, so its tone cannot be changed here.') : null,
+                () => status.value ? _.Alert(status.value) : null,
+
+            ),
+            actions: ({ close }) => _.div({ class: 'at-audioGeneratorActions' },
+                _.Btn({ color: 'secondary', onClick: close }, 'Cancel'),
+                _.Btn({ color: 'primary', icon: 'save', loading: saving, onClick: () => save(close) }, 'Save generator settings'),
+            )
+        },
+    }).open();
+}
+
 function createAudio() {
     const words = wordCount(activeBlock()?.text_plain);
     const seconds = estimatedSeconds();
@@ -1651,6 +1786,7 @@ function createAudio() {
                 _.div({ class: 'at-audioMetric' }, _.span('AT estimate'), _.strong('1 credit')),
             ),
             _.Select({ label: 'Qwen model', model: qwenModel, options: [{ value: 'fast', label: 'Fast · 0.6B' }, { value: 'quality', label: 'Quality · 1.7B' }] }),
+            _.Btn({ color: 'secondary', icon: 'tune', title: 'Edit the text sent to the audio generator', onClick: () => openAudioGeneratorSettingsDialog(bookKey()) }, 'Generator settings'),
             _.Btn({ class: 'at-audioGenerateButton', color: 'primary', icon: 'play_circle', loading: audioGenerating, onClick: () => generateSelectedAudio(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'Generate audio'),
         ),
         () => audioGroups.value.length ? _.Btn({ class: 'at-audioListButton', color: 'secondary', icon: 'library_music', onClick: () => openAudioListDialog(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'List of audio') : null,

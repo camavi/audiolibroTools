@@ -8,13 +8,19 @@ class AudioTextSegmenter
         'comma_ms' => 250, 'semicolon_ms' => 750, 'sentence_ms' => 500,
         'newline_ms' => 1000, 'ellipsis_ms' => 800, 'dash_ms' => 350,
         'min_words' => 12,
+        'split_characters' => ',;:.!?…—-',
     ];
 
     /** @return array<int, array{text:string,source_text:string,start:int,end:int,pause_after_ms:int}> */
     public function split(string $text, array $settings = []): array
     {
         $settings = [...self::DEFAULT_PAUSES, ...array_intersect_key($settings, self::DEFAULT_PAUSES)];
-        $parts = preg_split('/(?<=[,;:.!?…])|(?<=\R)|(?=\R)/u', $text, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_OFFSET_CAPTURE) ?: [];
+        $splitCharacters = preg_replace('/\s+/u', '', (string) $settings['split_characters']) ?? '';
+        $quotedCharacters = preg_quote($splitCharacters, '/');
+        $splitPattern = $quotedCharacters === ''
+            ? '/(?<=\R)|(?=\R)/u'
+            : '/(?<=['.$quotedCharacters.'])|(?<=\R)|(?=\R)/u';
+        $parts = preg_split($splitPattern, $text, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_OFFSET_CAPTURE) ?: [];
         $segments = [];
         foreach ($parts as [$sourceText, $offset]) {
             $sourceText = (string) $sourceText;
@@ -22,9 +28,10 @@ class AudioTextSegmenter
                 if ($segments) $segments[array_key_last($segments)]['pause_after_ms'] = max($segments[array_key_last($segments)]['pause_after_ms'], (int) $settings['newline_ms']);
                 continue;
             }
-            preg_match('/([,;:.!?…—-])\s*$/u', $sourceText, $delimiter);
+            $trailingPattern = $quotedCharacters === '' ? null : '/(['.$quotedCharacters.'])\s*$/u';
+            $trailingPattern ? preg_match($trailingPattern, $sourceText, $delimiter) : $delimiter = [];
             $mark = $delimiter[1] ?? '';
-            $spoken = trim(preg_replace('/[,;:.!?…—-]+\s*$/u', '', $sourceText) ?? $sourceText);
+            $spoken = trim($quotedCharacters === '' ? $sourceText : (preg_replace('/['.$quotedCharacters.']+\s*$/u', '', $sourceText) ?? $sourceText));
             if ($spoken === '') continue;
             $pause = match ($mark) {
                 ',' => (int) $settings['comma_ms'], ';', ':' => (int) $settings['semicolon_ms'],
@@ -54,7 +61,7 @@ class AudioTextSegmenter
                 // Keep the punctuation between the original split points: it
                 // becomes internal text for Qwen and preserves its prosody.
                 $current['source_text'] .= $segment['source_text'];
-                $current['text'] = trim(preg_replace('/[,;:.!?…—-]+\s*$/u', '', $current['source_text']) ?? $current['source_text']);
+                $current['text'] = trim($current['source_text']);
                 $current['end'] = $segment['end'];
                 $current['pause_after_ms'] = $segment['pause_after_ms'];
             }
@@ -69,7 +76,7 @@ class AudioTextSegmenter
             if ($groups) {
                 $last = array_key_last($groups);
                 $groups[$last]['source_text'] .= $current['source_text'];
-                $groups[$last]['text'] = trim(preg_replace('/[,;:.!?…—-]+\s*$/u', '', $groups[$last]['source_text']) ?? $groups[$last]['source_text']);
+                $groups[$last]['text'] = trim($groups[$last]['source_text']);
                 $groups[$last]['end'] = $current['end'];
                 $groups[$last]['pause_after_ms'] = $current['pause_after_ms'];
             } else {

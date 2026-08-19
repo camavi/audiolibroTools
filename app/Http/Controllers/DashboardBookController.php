@@ -11,6 +11,7 @@ use App\Models\AudioLibraryVoiceSample;
 use App\Models\AudioMediaAsset;
 use App\Models\Book;
 use App\Models\BookAudioJob;
+use App\Models\BookAudioGenerationOverride;
 use App\Models\BookAudioSegment;
 use App\Models\BookAudioTimelineItem;
 use App\Models\BookBlock;
@@ -160,6 +161,8 @@ class DashboardBookController extends Controller
             'audio_settings.newline_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
             'audio_settings.ellipsis_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
             'audio_settings.dash_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'audio_settings.min_words' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'audio_settings.split_characters' => ['nullable', 'string', 'max:30'],
         ]);
 
         $book = Book::query()
@@ -1178,19 +1181,24 @@ class DashboardBookController extends Controller
 
         $segments = $block->audioSegments()
             ->with(['voiceProfile', 'blockVersion:id,version_number', 'audioJob:id,status'])
+            ->where('book_block_version_id', $block->current_version_id)
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->get();
         $jobs = $block->audioJobs()
             ->with(['voiceProfile', 'segments' => fn ($query) => $query->orderBy('segment_index')])
+            ->where('book_block_version_id', $block->current_version_id)
             ->where('status', 'completed')->latest('created_at')->latest('id')->get();
         $usedJobIds = $book->audioTimelineItems()->whereNotNull('book_audio_job_id')->pluck('book_audio_job_id')->flip();
         $usedSegmentIds = $book->audioTimelineItems()->whereNotNull('book_audio_segment_id')->pluck('book_audio_segment_id')->flip();
+        $generatorProfile = $assignment?->voiceProfile
+            ?? ($book->audio_settings_json['default_voice_profile_id'] ?? null ? $book->voiceProfiles()->find($book->audio_settings_json['default_voice_profile_id']) : null);
 
         return response()->json([
             'data' => [
                 'block' => $this->serializeEditorBlock($block),
                 'assignment' => $assignment ? $this->serializeVoiceAssignment($assignment, $block) : null,
+                'generator_settings' => $this->serializeAudioGeneratorSettings($book, $block, $generatorProfile),
                 'segments' => $segments
                     ->map(fn (BookAudioSegment $segment) => $this->serializeAudioSegment($segment, $block))
                     ->values(),
@@ -1203,6 +1211,96 @@ class DashboardBookController extends Controller
                 ])->values(),
             ],
         ]);
+    }
+
+    public function updateBlockAudioGeneratorSettings(Request $request, string $keyBook, string $blockUuid): JsonResponse
+    {
+        $validated = $request->validate([
+            'generator_text' => ['required', 'string', 'max:50000'],
+            'tone_id' => ['nullable', 'integer', 'exists:audio_library_tones,id'],
+            'split_tones' => ['nullable', 'array', 'max:200'],
+            'split_tones.*' => ['nullable', 'integer', 'exists:audio_library_tones,id'],
+            'split_settings' => ['nullable', 'array'],
+            'split_settings.comma_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'split_settings.semicolon_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'split_settings.sentence_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'split_settings.newline_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'split_settings.ellipsis_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'split_settings.dash_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'split_settings.min_words' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'split_settings.split_characters' => ['nullable', 'string', 'max:30'],
+        ]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $block = $book->blocks()->with('currentVersion')->where('block_uuid', $blockUuid)->firstOrFail();
+        abort_if(! $block->currentVersion, 422, 'Save the paragraph before configuring its generated audio.');
+
+        $text = trim($validated['generator_text']);
+        abort_if($text === '', 422, 'The text sent to the generator cannot be empty.');
+
+        $assignment = $block->voiceAssignments()->with('voiceProfile')
+            ->where('book_block_version_id', $block->currentVersion->id)->latest('id')->first();
+        $profile = $assignment?->voiceProfile
+            ?? (($profileId = data_get($book->audio_settings_json, 'default_voice_profile_id')) ? $book->voiceProfiles()->find($profileId) : null);
+        $libraryVoice = $this->libraryVoiceForProfile($profile);
+        $libraryVoiceId = $libraryVoice?->id;
+        $toneId = $validated['tone_id'] ?? null;
+        if ($toneId) {
+            $availableToneIds = $libraryVoice?->samples()->where('tone_id', $toneId)->exists();
+            abort_unless($availableToneIds, 422, 'The selected tone is not available for this voice.');
+        }
+        $splitToneIds = collect($validated['split_tones'] ?? [])->filter()->unique()->values();
+        if ($splitToneIds->isNotEmpty()) {
+            $available = $libraryVoice?->samples()->whereIn('tone_id', $splitToneIds)->pluck('tone_id')->unique()->count() ?? 0;
+            abort_unless($available === $splitToneIds->count(), 422, 'One or more selected tones are not available for this voice.');
+        }
+
+        $override = BookAudioGenerationOverride::query()->updateOrCreate([
+            'book_block_version_id' => $block->currentVersion->id,
+        ], [
+            'book_id' => $book->id,
+            'book_block_id' => $block->id,
+            'block_uuid' => $block->block_uuid,
+            'original_text' => $block->currentVersion->text_plain ?: $block->text_plain ?: '',
+            'generator_text' => $text,
+            'tone_id' => $toneId,
+            'split_tones_json' => $validated['split_tones'] ?? [],
+            'split_settings_json' => $validated['split_settings'] ?? [],
+            'created_by' => auth()->id(),
+        ]);
+
+        return response()->json(['data' => ['generator_settings' => $this->serializeAudioGeneratorSettings($book, $block, $profile, $override)]]);
+    }
+
+    public function previewBlockAudioGeneratorSettings(Request $request, string $keyBook, string $blockUuid): JsonResponse
+    {
+        $validated = $request->validate([
+            'generator_text' => ['required', 'string', 'max:50000'],
+            'split_settings' => ['nullable', 'array'],
+            'split_settings.comma_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'split_settings.semicolon_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'split_settings.sentence_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'split_settings.newline_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'split_settings.ellipsis_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'split_settings.dash_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'split_settings.min_words' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'split_settings.split_characters' => ['nullable', 'string', 'max:30'],
+        ]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $block = $book->blocks()->with('currentVersion')->where('block_uuid', $blockUuid)->firstOrFail();
+        abort_if(! $block->currentVersion, 422, 'Save the paragraph before configuring its generated audio.');
+
+        $text = trim($validated['generator_text']);
+        abort_if($text === '', 422, 'The text sent to the generator cannot be empty.');
+        $assignment = $block->voiceAssignments()->with('voiceProfile')
+            ->where('book_block_version_id', $block->currentVersion->id)->latest('id')->first();
+        $profile = $assignment?->voiceProfile
+            ?? (($profileId = data_get($book->audio_settings_json, 'default_voice_profile_id')) ? $book->voiceProfiles()->find($profileId) : null);
+        $preview = new BookAudioGenerationOverride([
+            'generator_text' => $text,
+            'split_settings_json' => $validated['split_settings'] ?? [],
+        ]);
+
+        return response()->json(['data' => ['generator_settings' => $this->serializeAudioGeneratorSettings($book, $block, $profile, $preview)]]);
     }
 
     public function audioTimeline(string $keyBook): JsonResponse
@@ -2105,10 +2203,28 @@ class DashboardBookController extends Controller
             ], 422);
         }
 
+        $override = BookAudioGenerationOverride::query()
+            ->where('book_block_version_id', $block->currentVersion->id)
+            ->first();
         $providerKey = $validated['provider_key'] ?? 'mock';
         $model = $validated['model'] ?? ($providerKey === 'qwen-local' ? config('tts.qwen.model') : 'mock-tts-v1');
-        $text = $block->currentVersion->text_plain ?: $block->text_plain ?: '';
-        $settings = [...AudioTextSegmenter::DEFAULT_PAUSES, ...($book->audio_settings_json ?? [])];
+        $text = $override?->generator_text ?: ($block->currentVersion->text_plain ?: $block->text_plain ?: '');
+        $generatorVoiceId = $voiceProfile->voice_id;
+        $libraryVoiceId = $this->libraryVoiceForProfile($voiceProfile)?->id;
+        if ($override?->tone_id && $libraryVoiceId) {
+            $sample = AudioLibraryVoiceSample::query()
+                ->where('audio_library_voice_id', $libraryVoiceId)
+                ->where('tone_id', $override->tone_id)
+                ->first();
+            if ($sample && Storage::disk('public')->exists($sample->audio_path) && filled($sample->reference_text)) {
+                if (! filled($sample->provider_voice_id)) {
+                    $libraryVoice = AudioLibraryVoice::query()->find($libraryVoiceId);
+                    $sample->forceFill(['provider_voice_id' => $qwen->registerVoice($libraryVoice?->name ?: $voiceProfile->name, Storage::disk('public')->path($sample->audio_path), $sample->reference_text)])->save();
+                }
+                $generatorVoiceId = $sample->provider_voice_id;
+            }
+        }
+        $settings = [...AudioTextSegmenter::DEFAULT_PAUSES, ...($book->audio_settings_json ?? []), ...($override?->split_settings_json ?? [])];
         $parts = app(AudioTextSegmenter::class)->split($text, $settings);
         $bookLocale = strtolower(str_replace('_', '-', (string) ($book->lang ?: config('app.locale', 'en'))));
         $localeKey = explode('-', $bookLocale)[0] ?: 'en';
@@ -2131,7 +2247,8 @@ class DashboardBookController extends Controller
                 'audio_settings' => $settings,
                 'parts' => $parts,
                 'voice_profile_id' => $voiceProfile->id,
-                'voice_id' => $voiceProfile->voice_id,
+                'voice_id' => $generatorVoiceId,
+                'generator_override_id' => $override?->id,
             ],
             'result_json' => ['parts' => count($parts)],
             'started_at' => now(),
@@ -2142,6 +2259,18 @@ class DashboardBookController extends Controller
         $segments = collect();
         try {
             foreach ($parts as $index => $part) {
+                $partVoiceId = $generatorVoiceId;
+                $partToneId = $override?->split_tones_json[$index] ?? null;
+                if ($partToneId && isset($libraryVoiceId)) {
+                    $toneSample = AudioLibraryVoiceSample::query()->where('audio_library_voice_id', $libraryVoiceId)->where('tone_id', $partToneId)->first();
+                    if ($toneSample && Storage::disk('public')->exists($toneSample->audio_path) && filled($toneSample->reference_text)) {
+                        if (! filled($toneSample->provider_voice_id)) {
+                            $libraryVoice = AudioLibraryVoice::query()->find($libraryVoiceId);
+                            $toneSample->forceFill(['provider_voice_id' => $qwen->registerVoice($libraryVoice?->name ?: $voiceProfile->name, Storage::disk('public')->path($toneSample->audio_path), $toneSample->reference_text)])->save();
+                        }
+                        $partVoiceId = $toneSample->provider_voice_id;
+                    }
+                }
                 $durationMs = max(700, mb_strlen($part['text']) * 45);
                 $audioPath = "mock://books/{$book->key_book}/blocks/{$block->block_uuid}/audio/{$index}";
                 $result = ['mock' => true, 'duration_ms' => $durationMs];
@@ -2149,7 +2278,7 @@ class DashboardBookController extends Controller
                     // Qwen needs the terminal punctuation as an explicit end
                     // of utterance cue. Sending the stripped display text can
                     // make it cut off the final word of a segment.
-                    $result = $qwen->synthesize($this->ttsReadyText($part['source_text']), $language, $voiceProfile->voice_id, $model);
+                    $result = $qwen->synthesize($this->ttsReadyText($part['source_text']), $language, $partVoiceId, $model);
                     $audioPath = "audiobooks/{$book->key_book}/segments/".Str::uuid().'.wav';
                     Storage::disk('public')->put($audioPath, $qwen->download($result['audio_url']));
                     $durationMs = (int) ($result['duration_ms'] ?? $durationMs);
@@ -2160,12 +2289,13 @@ class DashboardBookController extends Controller
                     'book_voice_profile_id' => $voiceProfile->id,
                     'book_audio_job_id' => $job->id, 'block_uuid' => $block->block_uuid,
                     'status' => 'completed', 'provider_key' => $providerKey, 'model' => $model,
-                    'voice_id' => $voiceProfile->voice_id, 'audio_path' => $audioPath,
+                    'voice_id' => $partVoiceId, 'audio_path' => $audioPath,
                     'duration_ms' => $durationMs, 'segment_index' => $index,
                     'source_start' => $part['start'], 'source_end' => $part['end'], 'pause_after_ms' => $part['pause_after_ms'],
                     'text_plain' => $part['source_text'], 'content_hash' => $block->currentVersion->content_hash,
                     'metadata_json' => [
                         'source' => $source, 'spoken_text' => $part['text'],
+                        'tone_id' => $partToneId ?: $override?->tone_id,
                         'voice_profile_name' => $voiceProfile->name,
                         'voice_provider' => $voiceProfile->voice_provider,
                         'alignment_status' => $result['alignment']['status'] ?? 'unavailable',
@@ -2673,6 +2803,49 @@ class DashboardBookController extends Controller
             'created_at' => $assignment->created_at?->toISOString(),
             'updated_at' => $assignment->updated_at?->toISOString(),
         ];
+    }
+
+    private function serializeAudioGeneratorSettings(Book $book, BookBlock $block, ?BookVoiceProfile $profile, ?BookAudioGenerationOverride $override = null): array
+    {
+        $originalText = $block->currentVersion?->text_plain ?: $block->text_plain ?: '';
+        $override ??= $block->current_version_id
+            ? BookAudioGenerationOverride::query()->where('book_block_version_id', $block->current_version_id)->first()
+            : null;
+        $libraryVoice = $this->libraryVoiceForProfile($profile, true);
+        $tones = $libraryVoice
+            ? $libraryVoice->samples->map(fn ($sample) => ['id' => $sample->tone_id, 'name' => $sample->toneDefinition?->name ?: "Tone #{$sample->tone_id}"])->unique('id')->values()->all()
+            : [];
+        $settings = [...AudioTextSegmenter::DEFAULT_PAUSES, ...($book->audio_settings_json ?? []), ...($override?->split_settings_json ?? [])];
+        $splitTones = $override?->split_tones_json ?? [];
+        $splits = app(AudioTextSegmenter::class)->split($override?->generator_text ?: $originalText, $settings);
+
+        return [
+            'original_text' => $originalText,
+            'generator_text' => $override?->generator_text ?: $originalText,
+            'tone_id' => $override?->tone_id,
+            'split_settings' => $settings,
+            'is_split_customized' => ! empty($override?->split_settings_json),
+            'tones' => $tones,
+            'can_change_tone' => count($tones) > 1,
+            'splits' => array_map(fn (array $part, int $index) => [
+                'index' => $index,
+                'text' => $part['source_text'],
+                'pause_after_ms' => $part['pause_after_ms'],
+                'tone_id' => $splitTones[$index] ?? $override?->tone_id,
+            ], $splits, array_keys($splits)),
+            'is_customized' => (bool) $override,
+        ];
+    }
+
+    private function libraryVoiceForProfile(?BookVoiceProfile $profile, bool $withSamples = false): ?AudioLibraryVoice
+    {
+        if (! $profile) return null;
+        $libraryVoiceId = data_get($profile->settings_json, 'audio_library_voice_id');
+        return AudioLibraryVoice::query()
+            ->where('account_id', auth()->id())
+            ->when($withSamples, fn ($query) => $query->with('samples.toneDefinition'))
+            ->when($libraryVoiceId, fn ($query) => $query->whereKey($libraryVoiceId), fn ($query) => $query->whereHas('samples', fn ($samples) => $samples->where('provider_voice_id', $profile->voice_id)))
+            ->first();
     }
 
     private function serializeAudioJob(BookAudioJob $job, BookBlock $block): array
