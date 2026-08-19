@@ -54,4 +54,17 @@ class AudioTextSegmenterTest extends TestCase
         $this->assertSame('Uno due tre quattro cinque sei sette otto nove dieci undici dodici. Tredici quattordici', $parts[0]['text']);
     }
 
+    public function test_it_keeps_a_short_completed_sentence_with_the_previous_group(): void
+    {
+        $parts = (new AudioTextSegmenter())->split(
+            'Uno due tre quattro cinque sei sette otto nove dieci undici dodici, Gesù. Tredici quattordici quindici sedici diciassette diciotto diciannove venti ventuno ventidue ventitré ventiquattro.',
+            ['min_words' => 12],
+        );
+
+        $this->assertCount(2, $parts);
+        $this->assertSame('Uno due tre quattro cinque sei sette otto nove dieci undici dodici, Gesù', $parts[0]['text']);
+        $this->assertSame('Tredici quattordici quindici sedici diciassette diciotto diciannove venti ventuno ventidue ventitré ventiquattro', $parts[1]['text']);
+        $this->assertSame(500, $parts[0]['pause_after_ms']);
+    }
+
 }

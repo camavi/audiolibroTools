@@ -20,6 +20,7 @@ class AudioTextSegmenter
         $splitPattern = $quotedCharacters === ''
             ? '/(?<=\R)|(?=\R)/u'
             : '/(?<=['.$quotedCharacters.'])|(?<=\R)|(?=\R)/u';
+        $trailingDelimiterPattern = $quotedCharacters === '' ? null : '/['.$quotedCharacters.']+\s*$/u';
         $parts = preg_split($splitPattern, $text, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_OFFSET_CAPTURE) ?: [];
         $segments = [];
         foreach ($parts as [$sourceText, $offset]) {
@@ -31,7 +32,7 @@ class AudioTextSegmenter
             $trailingPattern = $quotedCharacters === '' ? null : '/(['.$quotedCharacters.'])\s*$/u';
             $trailingPattern ? preg_match($trailingPattern, $sourceText, $delimiter) : $delimiter = [];
             $mark = $delimiter[1] ?? '';
-            $spoken = trim($quotedCharacters === '' ? $sourceText : (preg_replace('/['.$quotedCharacters.']+\s*$/u', '', $sourceText) ?? $sourceText));
+            $spoken = trim($trailingDelimiterPattern ? (preg_replace($trailingDelimiterPattern, '', $sourceText) ?? $sourceText) : $sourceText);
             if ($spoken === '') continue;
             $pause = match ($mark) {
                 ',' => (int) $settings['comma_ms'], ';', ':' => (int) $settings['semicolon_ms'],
@@ -45,25 +46,30 @@ class AudioTextSegmenter
         }
         $segments = $segments ?: [['text' => trim($text), 'source_text' => $text, 'start' => 0, 'end' => mb_strlen($text, 'UTF-8'), 'pause_after_ms' => 0]];
 
-        return $this->mergeShortSegments($segments, max(1, (int) $settings['min_words']));
+        return $this->mergeShortSegments($segments, max(1, (int) $settings['min_words']), $trailingDelimiterPattern);
     }
 
     /** @param array<int, array{text:string,source_text:string,start:int,end:int,pause_after_ms:int}> $segments */
-    private function mergeShortSegments(array $segments, int $minWords): array
+    private function mergeShortSegments(array $segments, int $minWords, ?string $trailingDelimiterPattern): array
     {
         $groups = [];
         $current = null;
 
         foreach ($segments as $segment) {
             if ($current === null) {
+                // A tiny completed sentence after a full group sounds like an
+                // orphaned request (for example: ", Gesù."). Keep it with the
+                // preceding phrase instead of adding a pause before that word.
+                if ($groups && $this->wordCount($segment['text']) < $minWords && preg_match('/[.!?…]\s*$/u', $segment['source_text'])) {
+                    $last = array_key_last($groups);
+                    $this->appendSegment($groups[$last], $segment, $trailingDelimiterPattern);
+                    continue;
+                }
                 $current = $segment;
             } else {
                 // Keep the punctuation between the original split points: it
                 // becomes internal text for Qwen and preserves its prosody.
-                $current['source_text'] .= $segment['source_text'];
-                $current['text'] = trim($current['source_text']);
-                $current['end'] = $segment['end'];
-                $current['pause_after_ms'] = $segment['pause_after_ms'];
+                $this->appendSegment($current, $segment, $trailingDelimiterPattern);
             }
 
             if ($this->wordCount($current['text']) >= $minWords) {
@@ -75,10 +81,7 @@ class AudioTextSegmenter
         if ($current !== null) {
             if ($groups) {
                 $last = array_key_last($groups);
-                $groups[$last]['source_text'] .= $current['source_text'];
-                $groups[$last]['text'] = trim($groups[$last]['source_text']);
-                $groups[$last]['end'] = $current['end'];
-                $groups[$last]['pause_after_ms'] = $current['pause_after_ms'];
+                $this->appendSegment($groups[$last], $current, $trailingDelimiterPattern);
             } else {
                 // A whole paragraph shorter than the minimum has no adjacent
                 // part in this block to merge with, so it remains intact.
@@ -87,6 +90,15 @@ class AudioTextSegmenter
         }
 
         return $groups;
+    }
+
+    /** @param array{text:string,source_text:string,start:int,end:int,pause_after_ms:int} $target @param array{text:string,source_text:string,start:int,end:int,pause_after_ms:int} $segment */
+    private function appendSegment(array &$target, array $segment, ?string $trailingDelimiterPattern): void
+    {
+        $target['source_text'] .= $segment['source_text'];
+        $target['text'] = trim($trailingDelimiterPattern ? (preg_replace($trailingDelimiterPattern, '', $target['source_text']) ?? $target['source_text']) : $target['source_text']);
+        $target['end'] = $segment['end'];
+        $target['pause_after_ms'] = $segment['pause_after_ms'];
     }
 
     private function wordCount(string $text): int
