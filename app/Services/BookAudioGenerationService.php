@@ -47,7 +47,21 @@ class BookAudioGenerationService
                     'voice_id' => $voiceId, 'audio_path' => $audioPath, 'duration_ms' => $durationMs, 'segment_index' => $index,
                     'source_start' => $part['start'], 'source_end' => $part['end'], 'pause_after_ms' => $part['pause_after_ms'],
                     'text_plain' => $part['source_text'], 'content_hash' => $job->blockVersion->content_hash,
-                    'metadata_json' => ['source' => $job->source, 'spoken_text' => $part['text'], 'alignment_status' => $result['alignment']['status'] ?? 'unavailable', 'alignment_language' => $result['alignment']['language'] ?? ($request['language'] ?? null), 'word_timings' => $result['alignment']['words'] ?? []],
+                    'metadata_json' => [
+                        'source' => $job->source,
+                        'spoken_text' => $part['text'],
+                        'alignment_status' => $result['alignment']['status'] ?? 'unavailable',
+                        'alignment_language' => $result['alignment']['language'] ?? ($request['language'] ?? null),
+                        // The timeline highlight uses manuscript-wide Unicode
+                        // offsets, while Qwen returns offsets local to each
+                        // generated clip. Preserve the mapping used before
+                        // generation moved to the queue worker.
+                        'word_timings' => $this->attachWordSourceOffsets(
+                            $result['alignment']['words'] ?? [],
+                            (string) $part['source_text'],
+                            (int) $part['start'],
+                        ),
+                    ],
                     'created_by' => $job->created_by,
                 ]));
             }
@@ -79,5 +93,33 @@ class BookAudioGenerationService
             $sample->forceFill(['provider_voice_id' => $qwen->registerVoice($voice?->name ?: $job->voiceProfile->name, Storage::disk('public')->path($sample->audio_path), $sample->reference_text)])->save();
         }
         return $sample->provider_voice_id;
+    }
+
+    /**
+     * Map provider timing words to the full source-text offsets used by the
+     * editor and audio timeline for progressive text highlighting.
+     *
+     * @param array<int, array<string, mixed>> $timings
+     * @return array<int, array<string, mixed>>
+     */
+    private function attachWordSourceOffsets(array $timings, string $sourceText, int $segmentStart): array
+    {
+        $cursor = 0;
+        $mapped = [];
+
+        foreach ($timings as $timing) {
+            $word = trim((string) ($timing['word'] ?? ''));
+            $needle = preg_replace('/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/u', '', $word) ?? '';
+            if ($needle === '') continue;
+
+            $position = mb_stripos($sourceText, $needle, $cursor, 'UTF-8');
+            if ($position === false) continue;
+
+            $length = mb_strlen($needle, 'UTF-8');
+            $mapped[] = [...$timing, 'source_start' => $segmentStart + $position, 'source_end' => $segmentStart + $position + $length];
+            $cursor = $position + $length;
+        }
+
+        return $mapped;
     }
 }

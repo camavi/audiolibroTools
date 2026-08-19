@@ -41,7 +41,9 @@ FRONT_PID=$!
 
 # La sintesi audio viene accodata sulla coda dedicata "tts": il worker la
 # esegue fuori dalla richiesta HTTP, così la dashboard resta utilizzabile.
-php artisan queue:work database --queue=tts --timeout=1800 --tries=1 &
+# In sviluppo `queue:listen` ricarica Laravel fra un job e l'altro, quindi
+# modifiche ai servizi TTS diventano effettive senza dover riavviare lo stack.
+php artisan queue:listen database --queue=tts --timeout=1800 --tries=1 &
 TTS_WORKER_PID=$!
 
 # Avvia Qwen3-TTS solo se non è già disponibile. Questo permette di
