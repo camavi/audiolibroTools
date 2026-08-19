@@ -58,6 +58,7 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::post('/books', [DashboardBookController::class, 'store'])->name('books.store');
     Route::get('/books/{keyBook}', [DashboardBookController::class, 'show'])->name('books.show');
     Route::patch('/books/{keyBook}', [DashboardBookController::class, 'update'])->name('books.update');
+    Route::patch('/books/{keyBook}/design', [DashboardBookController::class, 'updateBookDesign'])->name('books.design.update');
     Route::get('/books/{keyBook}/editor', [DashboardBookController::class, 'editor'])->name('books.editor');
     Route::get('/books/{keyBook}/voices', [DashboardBookController::class, 'voiceProfiles'])->name('books.voices');
     Route::get('/books/{keyBook}/audio-timeline', [DashboardBookController::class, 'audioTimeline'])->name('books.audio-timeline');

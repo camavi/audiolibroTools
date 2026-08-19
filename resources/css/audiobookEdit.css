@@ -255,6 +255,136 @@
     gap: .65rem
 }
 
+.at-bookStyleEditor {
+    display: grid;
+    gap: 1rem
+}
+
+.at-bookStyleEditorHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: .85rem;
+    border-bottom: 1px solid #e2eaf5
+}
+
+.at-bookStyleEditorHead>div,
+.at-bookStyleInspectorHead>div {
+    display: grid;
+    gap: .18rem
+}
+
+.at-bookStyleEditorHead small,
+.at-bookStyleInspectorHead small {
+    color: #64748b;
+    font-size: .78rem;
+    line-height: 1.45
+}
+
+.at-bookStyleEditorBody {
+    display: grid;
+    grid-template-columns: 11.75rem minmax(0, 1fr);
+    gap: 1rem;
+    min-width: 0
+}
+
+.at-bookStyleList {
+    display: grid;
+    align-content: start;
+    gap: .42rem;
+    padding: .7rem;
+    border: 1px solid #dce6f4;
+    border-radius: .75rem;
+    background: #f8fbff
+}
+
+.at-bookStyleListLabel {
+    padding: .15rem .22rem .45rem;
+    color: #64748b;
+    font-size: .68rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase
+}
+
+.at-bookStyleOption {
+    display: grid;
+    gap: .15rem;
+    width: 100%;
+    padding: .58rem .65rem;
+    border: 1px solid transparent;
+    border-radius: .55rem;
+    background: transparent;
+    color: #334155;
+    cursor: pointer;
+    text-align: left
+}
+
+.at-bookStyleOption:hover {
+    background: #fff
+}
+
+.at-bookStyleOption.is-selected {
+    border-color: #a9c7fb;
+    background: #fff;
+    box-shadow: 0 3px 10px rgb(37 99 235 / 9%)
+}
+
+.at-bookStyleOption strong {
+    color: #1f3658;
+    font-size: .82rem
+}
+
+.at-bookStyleOption small {
+    color: #71819a;
+    font-size: .69rem;
+    line-height: 1.35
+}
+
+.at-bookStyleInspector {
+    display: grid;
+    gap: 1rem;
+    min-width: 0;
+    padding: .85rem;
+    border: 1px solid #dce6f4;
+    border-radius: .75rem;
+    background: #fff
+}
+
+.at-bookStyleInspectorHead {
+    display: grid;
+    gap: .35rem
+}
+
+.at-bookStyleInspectorHead strong {
+    color: #1e3a5f;
+    font-size: 1rem
+}
+
+.at-bookStyleSection {
+    display: grid;
+    gap: .58rem
+}
+
+.at-bookStyleSection>strong {
+    color: #405a7d;
+    font-size: .7rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase
+}
+
+.at-bookStyleFields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .65rem
+}
+
+.at-bookStyleFields .cms-field {
+    min-width: 0
+}
+
 .at-audioGenerationControls {
     display: grid;
     grid-template-columns: 10.75rem minmax(10rem, 1fr) 10.75rem auto;
@@ -511,6 +641,10 @@
     .at-audioGeneratorSplitRulesGrid {
         grid-template-columns: repeat(2, minmax(0, 1fr))
     }
+
+    .at-bookStyleFields {
+        grid-template-columns: repeat(2, minmax(0, 1fr))
+    }
 }
 
 @media (max-width: 700px) {
@@ -525,6 +659,22 @@
     .at-audioGeneratorSplitRulesHead {
         align-items: flex-start;
         flex-direction: column
+    }
+
+    .at-bookStyleEditorBody {
+        grid-template-columns: 1fr
+    }
+
+    .at-bookStyleList {
+        grid-template-columns: repeat(2, minmax(0, 1fr))
+    }
+
+    .at-bookStyleListLabel {
+        grid-column: 1 / -1
+    }
+
+    .at-bookStyleFields {
+        grid-template-columns: 1fr
     }
 }
 

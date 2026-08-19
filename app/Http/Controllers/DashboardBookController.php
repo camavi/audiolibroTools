@@ -404,6 +404,7 @@ class DashboardBookController extends Controller
                     'description' => $book->description,
                     'lang' => $book->lang,
                     'audio_settings_json' => $book->audio_settings_json ?? [],
+                    'book_design_json' => $this->bookDesign($book),
                 ],
                 'document' => [
                     'type' => 'doc',
@@ -418,6 +419,24 @@ class DashboardBookController extends Controller
                     ->values(),
             ],
         ]);
+    }
+
+    public function updateBookDesign(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate([
+            'design' => ['required', 'array'],
+            'design.styles' => ['required', 'array'],
+            'design.styles.body' => ['required', 'array'],
+            'design.styles.chapter_title' => ['nullable', 'array'],
+            'design.styles.heading' => ['nullable', 'array'],
+            'design.styles.quote' => ['nullable', 'array'],
+            'design.layout' => ['nullable', 'array'],
+        ]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $design = $this->normalizeBookDesign($validated['design']);
+        $book->forceFill(['book_design_json' => $design])->save();
+
+        return response()->json(['data' => ['book_design_json' => $design]]);
     }
 
     public function updateBlocks(
@@ -2684,6 +2703,42 @@ class DashboardBookController extends Controller
             'status' => $block->status,
             'text_plain' => $block->text_plain,
             'content_json' => $this->serializeEditorContent($block),
+        ];
+    }
+
+    private function bookDesign(Book $book): array
+    {
+        return $this->normalizeBookDesign($book->book_design_json ?? []);
+    }
+
+    private function normalizeBookDesign(array $design): array
+    {
+        $defaults = [
+            'version' => 1,
+            'styles' => [
+                'body' => ['font_family' => 'Instrument Sans', 'font_size' => 18, 'line_height' => 1.62, 'font_weight' => '400', 'font_style' => 'normal', 'color' => '#182033', 'text_align' => 'left', 'letter_spacing' => 0, 'text_transform' => 'none', 'space_before' => 0, 'space_after' => 16],
+                'chapter_title' => ['inherits' => 'body', 'font_size' => 34, 'line_height' => 1.15, 'font_weight' => '700', 'space_before' => 36, 'space_after' => 22],
+                'heading' => ['inherits' => 'body', 'font_size' => 26, 'line_height' => 1.25, 'font_weight' => '700', 'space_before' => 28, 'space_after' => 14],
+                'quote' => ['inherits' => 'body', 'font_style' => 'italic', 'color' => '#405a7d', 'space_before' => 18, 'space_after' => 18],
+            ],
+            'layout' => ['content_padding' => 24, 'paragraph_gap' => 16, 'content_width' => 760],
+        ];
+        $styleFields = ['font_family', 'font_size', 'line_height', 'font_weight', 'font_style', 'color', 'text_align', 'letter_spacing', 'text_transform', 'space_before', 'space_after'];
+        $styles = [];
+        foreach ($defaults['styles'] as $key => $styleDefaults) {
+            $input = data_get($design, "styles.{$key}", []);
+            $input = is_array($input) ? $input : [];
+            $styles[$key] = $key === 'body' ? $styleDefaults : ['inherits' => 'body'];
+            foreach ($styleFields as $field) {
+                if (array_key_exists($field, $input)) $styles[$key][$field] = $input[$field];
+                elseif (array_key_exists($field, $styleDefaults)) $styles[$key][$field] = $styleDefaults[$field];
+            }
+        }
+
+        return [
+            'version' => 1,
+            'styles' => $styles,
+            'layout' => [...$defaults['layout'], ...(is_array($design['layout'] ?? null) ? array_intersect_key($design['layout'], $defaults['layout']) : [])],
         ];
     }
 

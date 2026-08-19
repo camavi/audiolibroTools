@@ -17,6 +17,7 @@ class Book extends Model
         'lang',
         'cover_img',
         'audio_settings_json',
+        'book_design_json',
     ];
 
     protected function casts(): array
@@ -24,6 +25,7 @@ class Book extends Model
         return [
             'categories' => 'array',
             'audio_settings_json' => 'array',
+            'book_design_json' => 'array',
         ];
     }
 

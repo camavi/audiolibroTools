@@ -8,10 +8,17 @@ const audiobookViewMode = _.rod('developer');
 const voiceName = _.rod('Narrator');
 const voiceTone = _.rod('Warm, cinematic, intimate');
 const deliveryNotes = _.rod('Keep a natural pace. Pause briefly after dialogue and preserve the emotional tone.');
-const fontSize = _.rod('18');
-const lineHeight = _.rod('1.62');
-const textColor = _.rod('#182033');
-const blockPadding = _.rod('24');
+const bookDesign = _.rod(null);
+const designStyleKey = _.rod('body');
+const designSaving = _.rod(false);
+const designStatus = _.rod(null);
+const designFields = {
+    font_family: _.rod('Instrument Sans'), font_size: _.rod('18'), line_height: _.rod('1.62'),
+    font_weight: _.rod('400'), font_style: _.rod('normal'), color: _.rod('#182033'),
+    text_align: _.rod('left'), letter_spacing: _.rod('0'), text_transform: _.rod('none'),
+    space_before: _.rod('0'), space_after: _.rod('16'),
+};
+const layoutFields = { content_padding: _.rod('24'), paragraph_gap: _.rod('16'), content_width: _.rod('760') };
 const audioStatus = _.rod(null);
 const publishResult = _.rod(null);
 const publishRunning = _.rod(false);
@@ -68,6 +75,53 @@ function activeBlock() {
     return audiobookBlocks.value[activeBlockIndex.value] || null;
 }
 
+const defaultBookDesign = () => ({
+    version: 1,
+    styles: {
+        body: { font_family: 'Instrument Sans', font_size: 18, line_height: 1.62, font_weight: '400', font_style: 'normal', color: '#182033', text_align: 'left', letter_spacing: 0, text_transform: 'none', space_before: 0, space_after: 16 },
+        chapter_title: { inherits: 'body', font_size: 34, line_height: 1.15, font_weight: '700', space_before: 36, space_after: 22 },
+        heading: { inherits: 'body', font_size: 26, line_height: 1.25, font_weight: '700', space_before: 28, space_after: 14 },
+        quote: { inherits: 'body', font_style: 'italic', color: '#405a7d', space_before: 18, space_after: 18 },
+    },
+    layout: { content_padding: 24, paragraph_gap: 16, content_width: 760 },
+});
+
+function cloneDesign(value) {
+    return JSON.parse(JSON.stringify(value || defaultBookDesign()));
+}
+
+function resolvedBookStyle(styleKey, design = bookDesign.value) {
+    const source = design || defaultBookDesign();
+    return { ...(source.styles?.body || defaultBookDesign().styles.body), ...(styleKey === 'body' ? {} : (source.styles?.[styleKey] || {})) };
+}
+
+function hydrateDesignForm(styleKey = designStyleKey.value) {
+    const style = resolvedBookStyle(styleKey);
+    const layout = bookDesign.value?.layout || defaultBookDesign().layout;
+    CMSwift.reactive.untracked(() => {
+        Object.entries(designFields).forEach(([key, model]) => { model.value = String(style[key] ?? ''); });
+        Object.entries(layoutFields).forEach(([key, model]) => { model.value = String(layout[key] ?? ''); });
+    });
+}
+
+function setDesignStyle(styleKey) {
+    designStyleKey.value = styleKey;
+    hydrateDesignForm(styleKey);
+}
+
+function designWithDraft() {
+    const design = cloneDesign(bookDesign.value);
+    const key = designStyleKey.value;
+    const numericStyleFields = ['font_size', 'line_height', 'letter_spacing', 'space_before', 'space_after'];
+    const values = Object.fromEntries(Object.entries(designFields).map(([name, model]) => [name, numericStyleFields.includes(name) ? Number(model.value) : model.value]));
+    const body = resolvedBookStyle('body', design);
+    design.styles[key] = key === 'body'
+        ? values
+        : { inherits: 'body', ...Object.fromEntries(Object.entries(values).filter(([name, value]) => value !== body[name])) };
+    design.layout = Object.fromEntries(Object.entries(layoutFields).map(([name, model]) => [name, Number(model.value)]));
+    return design;
+}
+
 function wordCount(text) {
     const value = String(text || '').trim();
     return value ? value.split(/\s+/).length : 0;
@@ -108,10 +162,9 @@ function audiobookPayload(payload) {
     return { book: data.book || null, blocks: blocks.filter((block) => String(block.text_plain || '').trim()) };
 }
 
-function selectAudiobookBlock(index, keyBook, openCreateAudio = true) {
+function selectAudiobookBlock(index, keyBook) {
     if (!audiobookBlocks.value[index]) return;
     activeBlockIndex.value = index;
-    if (openCreateAudio) activeTab.value = 'create';
     loadBlockAudio(keyBook);
     window.requestAnimationFrame(() => document.querySelector(`[data-audiobook-block-index="${index}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
 }
@@ -136,6 +189,8 @@ function loadAudiobook(keyBook) {
         .then((payload) => {
             const data = audiobookPayload(payload);
             audiobookBook.value = data.book;
+            bookDesign.value = cloneDesign(data.book?.book_design_json);
+            hydrateDesignForm();
             audiobookBlocks.value = data.blocks;
             activeBlockIndex.value = 0;
             loadVoiceProfiles(keyBook);
@@ -1148,8 +1203,7 @@ function openInsertAllAudioDialog(keyBook) {
 
 function audioTabs() {
     const tabs = [
-        ['text', 'Style text'],
-        ['block', 'Style block'],
+        ['styles', 'Book styles'],
         ['create', 'Create audio'],
     ];
 
@@ -1270,20 +1324,68 @@ function openAudiobookIndexMenu(anchorEl, keyBook) {
 }
 
 function textStyle() {
-    return _.div({ class: 'at-audioForm at-audioForm--compact' },
-        _.Input({ label: 'Font size', type: 'number', model: fontSize, suffix: 'px' }),
-        _.Input({ label: 'Line height', type: 'number', model: lineHeight }),
-        _.Input({ label: 'Text color', model: textColor, type: 'color' }),
-        _.div({ class: 'at-audioHint' }, 'These styles control the listening preview and the public audiobook reading view.'),
+    const styleOptions = [
+        ['body', 'Body text', 'The default text used by paragraphs.'],
+        ['chapter_title', 'Chapter title', 'Used by chapter-opening titles.'],
+        ['heading', 'Heading', 'Used by manuscript heading blocks.'],
+        ['quote', 'Quote', 'Ready for quotations and callouts.'],
+    ];
+    const save = async () => {
+        const design = designWithDraft();
+        designSaving.value = true;
+        designStatus.value = null;
+        try {
+            const payload = await _.http.patchJSON(`/dashboard/api/books/${encodeURIComponent(bookKey())}/design`, { design });
+            const next = audioData(payload).book_design_json || design;
+            bookDesign.value = cloneDesign(next);
+            hydrateDesignForm();
+            audiobookBook.value = { ...audiobookBook.value, book_design_json: next };
+            designStatus.value = { type: 'success', message: 'Book styles saved. They will be shared by reading view, PDF, and ePub exports.' };
+        } catch (error) {
+            designStatus.value = { type: 'danger', message: error.message || 'Unable to save book styles.' };
+        } finally { designSaving.value = false; }
+    };
+
+    return _.div({ class: 'at-bookStyleEditor' },
+        _.div({ class: 'at-bookStyleEditorHead' },
+            _.div(_.span('Global book styles'), _.small('A single design system for reading view, PDF, and ePub.')),
+            _.Btn({ color: 'primary', icon: 'save', loading: designSaving, onClick: save }, 'Save book styles'),
+        ),
+        _.div({ class: 'at-bookStyleEditorBody' },
+            _.aside({ class: 'at-bookStyleList' },
+                _.span({ class: 'at-bookStyleListLabel' }, 'Styles'),
+                ...styleOptions.map(([key, label, description]) => _.button({ type: 'button', class: () => `at-bookStyleOption ${designStyleKey.value === key ? 'is-selected' : ''}`, onclick: () => setDesignStyle(key) }, _.strong(label), _.small(description))),
+            ),
+            _.div({ class: 'at-bookStyleInspector' },
+                _.div({ class: 'at-bookStyleInspectorHead' }, _.div(_.span('Editing style'), _.strong(() => styleOptions.find(([key]) => key === designStyleKey.value)?.[1] || 'Body text')), _.small(() => designStyleKey.value === 'body' ? 'This is the base style inherited by all other styles.' : 'This style inherits any property that is not customized from Body text.')),
+                _.div({ class: 'at-bookStyleSection' }, _.strong('Typography'), _.div({ class: 'at-bookStyleFields' },
+                    _.Select({ label: 'Font family', model: designFields.font_family, options: ['Instrument Sans', 'Inter', 'Georgia', 'Merriweather', 'Arial'].map((value) => ({ value, label: value })) }),
+                    _.Input({ label: 'Font size', type: 'number', suffix: 'px', min: 8, max: 96, model: designFields.font_size }),
+                    _.Input({ label: 'Line height', type: 'number', min: .8, max: 3, step: .01, model: designFields.line_height }),
+                    _.Select({ label: 'Font weight', model: designFields.font_weight, options: [{ value: '400', label: 'Regular' }, { value: '500', label: 'Medium' }, { value: '600', label: 'Semibold' }, { value: '700', label: 'Bold' }] }),
+                    _.Select({ label: 'Font style', model: designFields.font_style, options: [{ value: 'normal', label: 'Normal' }, { value: 'italic', label: 'Italic' }] }),
+                    _.Input({ label: 'Text color', type: 'color', model: designFields.color }),
+                )),
+                _.div({ class: 'at-bookStyleSection' }, _.strong('Paragraph'), _.div({ class: 'at-bookStyleFields' },
+                    _.Select({ label: 'Text alignment', model: designFields.text_align, options: [{ value: 'left', label: 'Left' }, { value: 'justify', label: 'Justified' }, { value: 'center', label: 'Centered' }, { value: 'right', label: 'Right' }] }),
+                    _.Input({ label: 'Letter spacing', type: 'number', suffix: 'px', step: .1, min: -2, max: 10, model: designFields.letter_spacing }),
+                    _.Select({ label: 'Text transform', model: designFields.text_transform, options: [{ value: 'none', label: 'None' }, { value: 'uppercase', label: 'Uppercase' }, { value: 'capitalize', label: 'Capitalize' }] }),
+                    _.Input({ label: 'Space before', type: 'number', suffix: 'px', min: 0, max: 160, model: designFields.space_before }),
+                    _.Input({ label: 'Space after', type: 'number', suffix: 'px', min: 0, max: 160, model: designFields.space_after }),
+                )),
+                _.div({ class: 'at-bookStyleSection' }, _.strong('Book layout'), _.div({ class: 'at-bookStyleFields' },
+                    _.Input({ label: 'Reading padding', type: 'number', suffix: 'px', min: 0, max: 120, model: layoutFields.content_padding }),
+                    _.Input({ label: 'Paragraph gap', type: 'number', suffix: 'px', min: 0, max: 120, model: layoutFields.paragraph_gap }),
+                    _.Input({ label: 'Content width', type: 'number', suffix: 'px', min: 360, max: 1200, model: layoutFields.content_width }),
+                )),
+            ),
+        ),
+        () => designStatus.value ? _.Alert(designStatus.value) : null,
     );
 }
 
 function blockStyle() {
-    return _.div({ class: 'at-audioForm at-audioForm--compact' },
-        _.Input({ label: 'Block padding', type: 'number', model: blockPadding, suffix: 'px' }),
-        _.Select({ label: 'Block alignment', options: [{ label: 'Left', value: 'left' }, { label: 'Justified', value: 'justify' }, { label: 'Centered', value: 'center' }] }),
-        _.div({ class: 'at-audioHint' }, 'Block style remains separate from the manuscript. It changes only the audiobook player experience.'),
-    );
+    return _.div({ class: 'at-audioHint' }, 'Block-level overrides will be added after the global book style system is complete. Use Book styles to define the shared reading, PDF, and ePub design.');
 }
 
 function characterProfiles() {
@@ -1797,8 +1899,7 @@ function createAudio() {
 
 function editorCard() {
     const content = () => ({
-        text: textStyle,
-        block: blockStyle,
+        styles: textStyle,
         create: createAudio,
     }[activeTab.value] || createAudio)();
 
@@ -1815,7 +1916,17 @@ function editorCard() {
 }
 
 function previewCard() {
-    const style = () => `font-size:${fontSize.value}px;line-height:${lineHeight.value};color:${textColor.value};padding:${blockPadding.value}px;`;
+    const readingStyle = () => {
+        const design = designWithDraft();
+        const layout = design.layout || defaultBookDesign().layout;
+        const body = resolvedBookStyle('body', design);
+        return `font-family:${body.font_family};font-size:${body.font_size}px;line-height:${body.line_height};color:${body.color};padding:${layout.content_padding}px;max-width:${layout.content_width}px;`;
+    };
+    const blockStyle = (block) => {
+        const design = designWithDraft();
+        const style = resolvedBookStyle(block.type === 'heading' ? 'heading' : 'body', design);
+        return `font-family:${style.font_family};font-size:${style.font_size}px;line-height:${style.line_height};font-weight:${style.font_weight};font-style:${style.font_style};color:${style.color};text-align:${style.text_align};letter-spacing:${style.letter_spacing}px;text-transform:${style.text_transform};margin:${style.space_before}px 0 ${style.space_after}px;`;
+    };
     const keyBook = window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1];
 
     const previewText = (block) => {
@@ -1831,10 +1942,11 @@ function previewCard() {
     };
 
     return _.section({ class: () => audiobookViewMode.value === 'developer' ? 'at-audioPreviewCard is-developer' : 'at-audioPreviewCard' },
-        _.article({ class: 'at-audioReading', style }, () => audiobookBlocks.value.length
+        _.article({ class: 'at-audioReading', style: readingStyle }, () => audiobookBlocks.value.length
             ? audiobookBlocks.value.map((block, index) => _.button({
                 type: 'button',
                 class: () => `at-audioReadingBlock ${index === activeBlockIndex.value ? 'is-selected' : ''} ${block.type === 'heading' ? 'is-heading' : ''}`,
+                style: () => blockStyle(block),
                 'data-audiobook-block-index': index,
                 title: 'Select this text to create its audio',
                 onclick: () => selectAudiobookBlock(index, keyBook),
