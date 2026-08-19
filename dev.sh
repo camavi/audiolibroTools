@@ -39,6 +39,11 @@ LARAVEL_PID=$!
 npm run dev &
 FRONT_PID=$!
 
+# La sintesi audio viene accodata sulla coda dedicata "tts": il worker la
+# esegue fuori dalla richiesta HTTP, così la dashboard resta utilizzabile.
+php artisan queue:work database --queue=tts --timeout=1800 --tries=1 &
+TTS_WORKER_PID=$!
+
 # Avvia Qwen3-TTS solo se non è già disponibile. Questo permette di
 # rilanciare lo stack senza interrompere una sintesi già in corso.
 QWEN_TTS_PID=""
@@ -53,7 +58,7 @@ if ! qwen_service_ready; then
 fi
 
 cleanup() {
-    kill "$LARAVEL_PID" "$FRONT_PID" 2>/dev/null || true
+    kill "$LARAVEL_PID" "$FRONT_PID" "$TTS_WORKER_PID" 2>/dev/null || true
 
     if [ -n "$QWEN_TTS_PID" ]; then
         kill "$QWEN_TTS_PID" 2>/dev/null || true

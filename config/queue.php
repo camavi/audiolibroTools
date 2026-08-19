@@ -40,7 +40,9 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // Long-running AI/TTS jobs must not be picked up a second time
+            // while their worker is still synthesizing audio.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 3700),
             'after_commit' => false,
         ],
 

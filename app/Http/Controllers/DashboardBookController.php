@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\BookBlockVersionConflictException;
 use App\Jobs\ProcessBookTranslationJob;
+use App\Jobs\ProcessBookAudioJob;
 use App\Models\AiChatMessage;
 use App\Models\AiChatThread;
 use App\Models\AudioLibraryVoice;
@@ -1207,7 +1208,7 @@ class DashboardBookController extends Controller
         $jobs = $block->audioJobs()
             ->with(['voiceProfile', 'segments' => fn ($query) => $query->orderBy('segment_index')])
             ->where('book_block_version_id', $block->current_version_id)
-            ->where('status', 'completed')->latest('created_at')->latest('id')->get();
+            ->latest('created_at')->latest('id')->get();
         $usedJobIds = $book->audioTimelineItems()->whereNotNull('book_audio_job_id')->pluck('book_audio_job_id')->flip();
         $usedSegmentIds = $book->audioTimelineItems()->whereNotNull('book_audio_segment_id')->pluck('book_audio_segment_id')->flip();
         $generatorProfile = $assignment?->voiceProfile
@@ -1223,6 +1224,7 @@ class DashboardBookController extends Controller
                     ->values(),
                 'groups' => $jobs->map(fn (BookAudioJob $job) => [
                     'id' => $job->id, 'label' => $job->voiceProfile?->name ?: 'Narration group',
+                    'status' => $job->status, 'error_message' => $job->error_message,
                     'created_at' => $job->created_at?->toISOString(),
                     'duration_ms' => $job->segments->sum(fn (BookAudioSegment $segment) => (int) $segment->duration_ms + (int) $segment->pause_after_ms),
                     'in_timeline' => $usedJobIds->has($job->id) || $job->segments->contains(fn (BookAudioSegment $segment) => $usedSegmentIds->has($segment->id)),
@@ -2230,19 +2232,6 @@ class DashboardBookController extends Controller
         $text = $override?->generator_text ?: ($block->currentVersion->text_plain ?: $block->text_plain ?: '');
         $generatorVoiceId = $voiceProfile->voice_id;
         $libraryVoiceId = $this->libraryVoiceForProfile($voiceProfile)?->id;
-        if ($override?->tone_id && $libraryVoiceId) {
-            $sample = AudioLibraryVoiceSample::query()
-                ->where('audio_library_voice_id', $libraryVoiceId)
-                ->where('tone_id', $override->tone_id)
-                ->first();
-            if ($sample && Storage::disk('public')->exists($sample->audio_path) && filled($sample->reference_text)) {
-                if (! filled($sample->provider_voice_id)) {
-                    $libraryVoice = AudioLibraryVoice::query()->find($libraryVoiceId);
-                    $sample->forceFill(['provider_voice_id' => $qwen->registerVoice($libraryVoice?->name ?: $voiceProfile->name, Storage::disk('public')->path($sample->audio_path), $sample->reference_text)])->save();
-                }
-                $generatorVoiceId = $sample->provider_voice_id;
-            }
-        }
         $settings = [...AudioTextSegmenter::DEFAULT_PAUSES, ...($book->audio_settings_json ?? []), ...($override?->split_settings_json ?? [])];
         $parts = app(AudioTextSegmenter::class)->split($text, $settings);
         $bookLocale = strtolower(str_replace('_', '-', (string) ($book->lang ?: config('app.locale', 'en'))));
@@ -2256,7 +2245,7 @@ class DashboardBookController extends Controller
             'book_block_version_id' => $block->currentVersion->id,
             'book_voice_profile_id' => $voiceProfile->id,
             'block_uuid' => $block->block_uuid,
-            'status' => 'completed',
+            'status' => 'queued',
             'provider_key' => $providerKey,
             'model' => $model,
             'source' => $source,
@@ -2267,13 +2256,25 @@ class DashboardBookController extends Controller
                 'parts' => $parts,
                 'voice_profile_id' => $voiceProfile->id,
                 'voice_id' => $generatorVoiceId,
+                'audio_library_voice_id' => $libraryVoiceId,
+                'tone_id' => $override?->tone_id,
+                'split_tones' => $override?->split_tones_json ?? [],
                 'generator_override_id' => $override?->id,
             ],
             'result_json' => ['parts' => count($parts)],
             'started_at' => now(),
-            'completed_at' => now(),
+            'completed_at' => null,
             'created_by' => auth()->id(),
         ]);
+
+        ProcessBookAudioJob::dispatch($job->id);
+
+        return response()->json([
+            'data' => [
+                'job' => $this->serializeAudioJob($job->load('voiceProfile'), $block),
+                'created' => true,
+            ],
+        ], 202);
 
         $segments = collect();
         try {
@@ -2380,9 +2381,14 @@ class DashboardBookController extends Controller
             (int) $assignment->book_block_version_id === (int) $block->current_version_id
             && $assignment->voiceProfile?->voice_id
         ))->values();
-        $completedVersions = BookAudioJob::query()->where('book_id', $book->id)->where('status', 'completed')->pluck('book_block_version_id')->filter()->flip();
-        $targets = $configuredBlocks->filter(fn (BookBlock $block) => $regenerate || ! $completedVersions->has($block->current_version_id))->values();
-        $completed = 0;
+        $existingVersions = BookAudioJob::query()
+            ->where('book_id', $book->id)
+            ->whereIn('status', ['queued', 'running', 'completed'])
+            ->pluck('book_block_version_id')
+            ->filter()
+            ->flip();
+        $targets = $configuredBlocks->filter(fn (BookBlock $block) => $regenerate || ! $existingVersions->has($block->current_version_id))->values();
+        $queued = 0;
         $skipped = $configuredBlocks->count() - $targets->count();
         $unconfigured = $blocks->count() - $configuredBlocks->count();
         $failed = [];
@@ -2402,7 +2408,7 @@ class DashboardBookController extends Controller
             ]);
             $response = $this->generateBlockAudio($generationRequest, $keyBook, $block->block_uuid, $qwen);
             if ($response->getStatusCode() < 300) {
-                $completed++;
+                $queued++;
             } else {
                 $failed[] = ['block_uuid' => $block->block_uuid, 'message' => $response->getData(true)['message'] ?? 'Generation failed.'];
             }
@@ -2411,7 +2417,9 @@ class DashboardBookController extends Controller
         return response()->json(['data' => [
             'total_blocks' => $blocks->count(),
             'target_blocks' => $targets->count(),
-            'completed_blocks' => $completed,
+            'queued_blocks' => $queued,
+            // Kept for older clients. Queued audio is not completed yet.
+            'completed_blocks' => 0,
             'skipped_blocks' => $skipped,
             'unconfigured_blocks' => $unconfigured,
             'failed_blocks' => $failed,

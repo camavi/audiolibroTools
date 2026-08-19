@@ -27,6 +27,7 @@ const audioGroups = _.rod([]);
 const expandedAudioGroupIds = _.rod([]);
 const previewingAudioGroupId = _.rod(null);
 let generatedAudioPreview = null;
+let audioPollingTimer = null;
 const audioGenerating = _.rod(false);
 const qwenModel = _.rod('quality');
 const bookAudioGenerating = _.rod(false);
@@ -895,20 +896,43 @@ async function generateSelectedAudio(keyBook) {
     }
 
     audioGenerating.value = true;
-    audioStatus.value = { type: 'info', message: 'Qwen is generating the WAV file. Longer paragraphs can take a minute or more.' };
+    audioStatus.value = { type: 'info', message: 'Audio generation queued. You can keep working while Qwen creates the WAV file.' };
+    let pollingStarted = false;
     try {
         const generated = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/generate`, {
             provider_key: providerKey,
             model,
         }, providerKey === 'qwen-local' ? { timeout: 900000, retry: { attempts: 0 } } : undefined);
         const data = audioData(generated);
-        await loadBlockAudio(keyBook);
-        audioStatus.value = { type: 'success', message: `Audio group generated with ${data.segments?.length || 1} timed clips. Insert it in the timeline when you are ready.` };
+        pollingStarted = true;
+        startAudioPolling(keyBook, data.job?.id);
     } catch (error) {
         audioStatus.value = { type: 'danger', message: error.message || 'Unable to generate audio for this block.' };
     } finally {
-        audioGenerating.value = false;
+        if (!pollingStarted) audioGenerating.value = false;
     }
+}
+
+function startAudioPolling(keyBook, jobId) {
+    window.clearTimeout(audioPollingTimer);
+    const poll = async () => {
+        try {
+            await loadBlockAudio(keyBook);
+            const job = audioGroups.value.find((group) => Number(group.id) === Number(jobId));
+            if (!job || ['queued', 'running'].includes(job.status)) {
+                audioStatus.value = { type: 'info', message: job?.status === 'running' ? 'Qwen is generating the WAV file…' : 'Audio generation is waiting for the TTS worker…' };
+                audioPollingTimer = window.setTimeout(poll, 3000);
+                return;
+            }
+            if (job.status === 'completed') audioStatus.value = { type: 'success', message: `Audio group generated with ${job.segments?.length || 1} timed clips. Insert it in the timeline when you are ready.` };
+            else audioStatus.value = { type: 'danger', message: job.error_message || 'Audio generation failed.' };
+            audioGenerating.value = false;
+        } catch (error) {
+            audioStatus.value = { type: 'danger', message: error.message || 'Unable to check audio generation status.' };
+            audioGenerating.value = false;
+        }
+    };
+    audioPollingTimer = window.setTimeout(poll, 1000);
 }
 
 async function insertAudioGroup(keyBook, jobId, placement = 'paragraph') {
@@ -1009,11 +1033,11 @@ function audioGroupsList(keyBook, placement, close) {
                     _.button({ type: 'button', class: 'at-audioGroupToggle', title: isAudioGroupExpanded(group.id) ? 'Collapse clips' : 'Show clips', onclick: () => toggleAudioGroup(group.id) }, _.Icon ? _.Icon({ name: isAudioGroupExpanded(group.id) ? 'expand_more' : 'chevron_right' }) : '›'),
                     _.div({ class: 'at-audioGeneratedMasterInfo' },
                         _.strong(group.label || 'Narration'),
-                        _.small(`${group.segments.length} clips · ~${Math.ceil(group.duration_ms / 1000)}s · ${audioGroupDate(group.created_at)}`),
+                        _.small(group.status === 'completed' ? `${group.segments.length} clips · ~${Math.ceil(group.duration_ms / 1000)}s · ${audioGroupDate(group.created_at)}` : group.status === 'running' ? 'Generating audio…' : group.status === 'queued' ? 'Waiting for TTS worker…' : `Failed · ${group.error_message || 'Unknown error'}`),
                     ),
                     _.div({ class: 'at-audioGeneratedMasterActions' },
-                        () => _.Btn({ color: 'secondary', icon: Number(previewingAudioGroupId.value) === Number(group.id) ? 'stop_circle' : 'play_circle', title: Number(previewingAudioGroupId.value) === Number(group.id) ? 'Stop preview' : 'Listen before inserting', onClick: () => previewGeneratedAudioGroup(group) }, Number(previewingAudioGroupId.value) === Number(group.id) ? 'Stop' : 'Listen'),
-                        group.in_timeline
+                        group.status !== 'completed' ? null : _.Btn({ color: 'secondary', icon: Number(previewingAudioGroupId.value) === Number(group.id) ? 'stop_circle' : 'play_circle', title: Number(previewingAudioGroupId.value) === Number(group.id) ? 'Stop preview' : 'Listen before inserting', onClick: () => previewGeneratedAudioGroup(group) }, Number(previewingAudioGroupId.value) === Number(group.id) ? 'Stop' : 'Listen'),
+                        group.status !== 'completed' ? null : group.in_timeline
                             ? _.span({ class: 'at-audioGroupUsed' }, 'In timeline')
                             : [
                                 _.Btn({ color: 'primary', icon: 'playlist_add', onClick: async () => { if (await insertAudioGroup(keyBook, group.id, placement.value)) { stopGeneratedAudioPreview(); close(); } } }, 'Insert'),
@@ -1133,7 +1157,7 @@ function openGenerateBookAudioDialog(keyBook) {
             const firstFailure = result.failed_blocks?.[0]?.message;
             status.value = {
                 type: result.failed_blocks?.length ? 'warning' : 'success',
-                message: `${result.completed_blocks || 0} blocks generated${result.skipped_blocks ? ` · ${result.skipped_blocks} already available` : ''}${result.unconfigured_blocks ? ` · ${result.unconfigured_blocks} need a voice` : ''}${result.failed_blocks?.length ? ` · ${result.failed_blocks.length} failed` : ''}.${firstFailure ? ` First error: ${firstFailure}` : ''}`,
+                message: `${result.queued_blocks || 0} blocks queued for generation${result.skipped_blocks ? ` · ${result.skipped_blocks} already available` : ''}${result.unconfigured_blocks ? ` · ${result.unconfigured_blocks} need a voice` : ''}${result.failed_blocks?.length ? ` · ${result.failed_blocks.length} failed to queue` : ''}.${firstFailure ? ` First error: ${firstFailure}` : ''}`,
             };
             await loadBlockAudio(keyBook);
         } catch (error) {

@@ -18,7 +18,9 @@ use App\Models\BookBlockVoiceAssignment;
 use App\Models\BookCategory;
 use App\Models\BookVoiceProfile;
 use App\Services\BookBlockService;
+use App\Services\BookAudioGenerationService;
 use App\Jobs\ProcessBookTranslationJob;
+use App\Jobs\ProcessBookAudioJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Crypt;
@@ -734,10 +736,11 @@ class DashboardBookTest extends TestCase
             'voice_profile_id' => $profile->id,
         ])->assertOk();
 
+        Queue::fake();
         $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/audio/generate", [
             'provider_key' => 'mock',
             'model' => 'mock-tts-v1',
-        ])->assertCreated();
+        ])->assertAccepted();
 
         $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/translations", [
             'target_locale' => 'fr',
@@ -754,7 +757,7 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.versions.0.is_current', true)
             ->assertJsonPath('data.versions.0.activity.reviews', 1)
             ->assertJsonPath('data.versions.0.activity.voices', 1)
-            ->assertJsonPath('data.versions.0.activity.audio', 1)
+            ->assertJsonPath('data.versions.0.activity.audio', 0)
             ->assertJsonPath('data.versions.0.activity.translations', 1)
             ->assertJsonPath('data.versions.0.has_stale_activity', false)
             ->assertJsonPath('data.versions.1.id', $first['version']->id)
@@ -1713,6 +1716,7 @@ class DashboardBookTest extends TestCase
 
     public function test_dashboard_can_generate_mock_audio_for_assigned_block(): void
     {
+        Queue::fake();
         $book = $this->createBook();
         $service = app(BookBlockService::class);
         $blockUuid = (string) Str::uuid();
@@ -1741,33 +1745,30 @@ class DashboardBookTest extends TestCase
             'provider_key' => 'mock',
             'model' => 'mock-tts-v1',
         ])
-            ->assertCreated()
-            ->assertJsonPath('data.job.status', 'completed')
-            ->assertJsonPath('data.segment.status', 'completed')
-            ->assertJsonPath('data.segment.provider_key', 'mock')
-            ->assertJsonPath('data.segment.model', 'mock-tts-v1')
-            ->assertJsonPath('data.segment.voice_profile.name', 'Narrator')
-            ->assertJsonPath('data.segment.voice_id', 'narrator-main')
-            ->assertJsonPath('data.segment.block_version_id', $saved['version']->id)
-            ->assertJsonPath('data.segment.version_number', 1)
-            ->assertJsonPath('data.segment.is_current_version', true)
-            ->assertJsonPath('data.segment.text_plain', 'Paragraph for generated audio.');
+            ->assertAccepted()
+            ->assertJsonPath('data.job.status', 'queued')
+            ->assertJsonPath('data.job.provider_key', 'mock')
+            ->assertJsonPath('data.job.model', 'mock-tts-v1')
+            ->assertJsonPath('data.job.voice_profile.name', 'Narrator');
+
+        Queue::assertPushed(ProcessBookAudioJob::class, fn (ProcessBookAudioJob $queued) => $queued->audioJobId > 0 && $queued->queue === 'tts');
 
         $this->assertDatabaseHas('book_audio_jobs', [
             'book_id' => $book->id,
             'book_block_id' => $saved['block']->id,
             'book_block_version_id' => $saved['version']->id,
             'book_voice_profile_id' => $profile->id,
-            'status' => 'completed',
+            'status' => 'queued',
             'provider_key' => 'mock',
             'model' => 'mock-tts-v1',
         ]);
 
+        $audioJob = BookAudioJob::query()->latest('id')->firstOrFail();
+        app(BookAudioGenerationService::class)->generate($audioJob->id);
+
+        $this->assertDatabaseHas('book_audio_jobs', ['id' => $audioJob->id, 'status' => 'completed']);
         $this->assertDatabaseHas('book_audio_segments', [
-            'book_id' => $book->id,
-            'book_block_id' => $saved['block']->id,
-            'book_block_version_id' => $saved['version']->id,
-            'book_voice_profile_id' => $profile->id,
+            'book_audio_job_id' => $audioJob->id,
             'status' => 'completed',
             'voice_id' => 'narrator-main',
             'text_plain' => 'Paragraph for generated audio.',
@@ -1776,8 +1777,7 @@ class DashboardBookTest extends TestCase
         $this->getJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/audio")
             ->assertOk()
             ->assertJsonPath('data.assignment.voice_profile.name', 'Narrator')
-            ->assertJsonPath('data.segments.0.voice_profile.name', 'Narrator')
-            ->assertJsonPath('data.segments.0.status', 'completed');
+            ->assertJsonPath('data.groups.0.status', 'completed');
     }
 
     public function test_dashboard_requires_voice_assignment_before_audio_generation(): void
