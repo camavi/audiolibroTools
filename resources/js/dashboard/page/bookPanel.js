@@ -69,7 +69,8 @@ const workspaceAreas = [
         id: 'pdf',
         icon: 'picture_as_pdf',
         title: 'PDF',
-        description: 'Format and export a print-ready PDF.',
+        description: 'Format, preview and export a print-ready PDF.',
+        available: true,
     },
     {
         id: 'distribution',
@@ -114,6 +115,7 @@ function workspaceArea(area, keyBook) {
         if (area.id === 'audiobook') _.router.navigate(`/dashboard/book/${keyBook}/audiobook/edit`);
         if (area.id === 'design') _.router.navigate(`/dashboard/book/${keyBook}/design`);
         if (area.id === 'epub') _.router.navigate(`/dashboard/book/${keyBook}/epub`);
+        if (area.id === 'pdf') _.router.navigate(`/dashboard/book/${keyBook}/pdf`);
     };
 
     return _.button({

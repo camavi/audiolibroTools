@@ -9,6 +9,7 @@ import audiobookEditPage from './dashboard/page/audiobookEdit.js';
 import uploadAudioPage from './dashboard/page/uploadAudio.js';
 import bookDesignPage from './dashboard/page/bookDesign.js';
 import bookEpubPage from './dashboard/page/bookEpub.js';
+import bookPdfPage from './dashboard/page/bookPdf.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
@@ -162,6 +163,7 @@ _.router.add('/dashboard/book/:key_book/edit', routePage(bookEditor));
 _.router.add('/dashboard/book/:key_book/panel', routePage(bookPanelPage));
 _.router.add('/dashboard/book/:key_book/design', routePage(bookDesignPage));
 _.router.add('/dashboard/book/:key_book/epub', routePage(bookEpubPage));
+_.router.add('/dashboard/book/:key_book/pdf', routePage(bookPdfPage));
 _.router.add('/dashboard/book/:key_book/translate', routePage(bookTraslatePage));
 _.router.add('/dashboard/book/:key_book/audiobook/edit', routePage(audiobookEditPage));
 _.router.add('/dashboard/setting', routePage(settingPage));

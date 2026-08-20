@@ -167,6 +167,27 @@ class DashboardBookTest extends TestCase
             ->assertHeader('content-type', 'application/epub+zip');
     }
 
+    public function test_dashboard_can_preview_and_generate_a_print_ready_pdf(): void
+    {
+        Storage::fake('public');
+        $book = $this->createBook();
+        app(BookBlockService::class)->saveBlock($book, ['block_uuid' => (string) Str::uuid(), 'type' => 'paragraph', 'sort_order' => 1000, 'content_json' => $this->paragraphJson('A paragraph formatted for the printed PDF.'), 'text_plain' => 'A paragraph formatted for the printed PDF.']);
+        $settings = ['metadata' => ['title' => 'Print Edition', 'subtitle' => '', 'author' => null, 'publisher' => 'AT Press', 'rights' => '© Ada Writer'], 'format' => ['size' => 'a5', 'width_mm' => 148, 'height_mm' => 210], 'layout' => ['margin_top' => 20, 'margin_bottom' => 20, 'margin_inside' => 18, 'margin_outside' => 15, 'alignment' => 'justify', 'page_numbers' => true, 'title_page' => true, 'copyright_page' => true, 'chapter_new_page' => true, 'include_cover' => true]];
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/pdf/preview", ['settings' => $settings])
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf')
+            ->assertSee('%PDF-', false);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/pdf/generate", ['settings' => $settings])
+            ->assertOk()
+            ->assertJsonPath('data.settings.format.size', 'a5')
+            ->assertJsonPath('data.download_url', "/dashboard/api/books/{$book->key_book}/pdf/download");
+        $book->refresh();
+        Storage::disk('public')->assertExists($book->pdf_file_path);
+        $this->assertStringStartsWith('%PDF-', Storage::disk('public')->get($book->pdf_file_path));
+    }
+
     public function test_dashboard_translation_provider_defaults_to_translation_mock_model(): void
     {
         $this->getJson('/dashboard/api/ai/providers?service=translate')

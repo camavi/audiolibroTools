@@ -21,6 +21,9 @@ class Book extends Model
         'epub_settings_json',
         'epub_file_path',
         'epub_generated_at',
+        'pdf_settings_json',
+        'pdf_file_path',
+        'pdf_generated_at',
     ];
 
     protected function casts(): array
@@ -31,6 +34,8 @@ class Book extends Model
             'book_design_json' => 'array',
             'epub_settings_json' => 'array',
             'epub_generated_at' => 'datetime',
+            'pdf_settings_json' => 'array',
+            'pdf_generated_at' => 'datetime',
         ];
     }
 
