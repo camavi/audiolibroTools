@@ -10,6 +10,7 @@ use App\Models\Book;
 use App\Models\BookAudioJob;
 use App\Models\BookAudioSegment;
 use App\Models\BookAudioTimelineItem;
+use App\Models\BookDesignAsset;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
 use App\Models\BookBlockTranslation;
@@ -67,6 +68,67 @@ class DashboardBookTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.assets.0.id', $asset->id)
             ->assertJsonPath('data.assets.0.original_name', 'forest-ambience.mp3');
+    }
+
+    public function test_dashboard_can_manage_book_cover_design_assets(): void
+    {
+        Storage::fake('public');
+        $book = $this->createBook();
+
+        $this->post("/dashboard/api/books/{$book->key_book}/design-assets", [
+            'image' => UploadedFile::fake()->image('cover.png', 1200, 1800),
+            'name' => 'First cover',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.asset.name', 'First cover')
+            ->assertJsonPath('data.asset.width', 1200)
+            ->assertJsonPath('data.asset.height', 1800);
+
+        $asset = BookDesignAsset::query()->sole();
+        Storage::disk('public')->assertExists($asset->image_path);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/design-assets/{$asset->id}/use-cover")
+            ->assertOk()
+            ->assertJsonPath('data.asset.id', $asset->id);
+        $this->assertDatabaseHas('books', ['id' => $book->id, 'cover_img' => Storage::disk('public')->url($asset->image_path)]);
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/cover-spec", [
+            'format' => 'a6', 'width_mm' => 105, 'height_mm' => 148,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.cover.format', 'a6');
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/design-assets")
+            ->assertOk()
+            ->assertJsonPath('data.assets.0.id', $asset->id);
+    }
+
+    public function test_dashboard_can_generate_and_store_a_book_cover_image(): void
+    {
+        Storage::fake('public');
+        config()->set('ai_providers.defaults.1.managed_api_key', 'at-server-openai-key');
+        $book = $this->createBook();
+        $source = UploadedFile::fake()->image('generated.png', 1024, 1536);
+        Http::fake([
+            'https://api.openai.com/v1/images/generations' => Http::response([
+                'data' => [['b64_json' => base64_encode(file_get_contents($source->getPathname()))]],
+            ]),
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/design-assets/generate", [
+            'prompt' => 'A misty Italian hillside at dusk, painted in a deep blue and gold palette.',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.asset.width', 1024)
+            ->assertJsonPath('data.asset.height', 1536);
+
+        $asset = BookDesignAsset::query()->sole();
+        $this->assertSame('openai', $asset->metadata_json['source']);
+        Storage::disk('public')->assertExists($asset->image_path);
+        Http::assertSent(fn ($request) => $request->url() === 'https://api.openai.com/v1/images/generations'
+            && $request->hasHeader('Authorization', 'Bearer at-server-openai-key')
+            && $request['model'] === 'gpt-image-1'
+            && $request['size'] === '1024x1536');
     }
 
     public function test_dashboard_translation_provider_defaults_to_translation_mock_model(): void

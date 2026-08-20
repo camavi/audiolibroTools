@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'image_model' => env('AT_OPENAI_IMAGE_MODEL', 'gpt-image-1'),
+
     'defaults' => [
         [
             'provider_key' => 'mock',

@@ -50,6 +50,7 @@ const workspaceAreas = [
         icon: 'palette',
         title: 'Design',
         description: 'Create the cover and visual identity of the book.',
+        available: true,
     },
     {
         id: 'podcast',
@@ -110,6 +111,7 @@ function workspaceArea(area, keyBook) {
         if (area.id === 'editing') _.router.navigate(`/dashboard/book/${keyBook}/edit`);
         if (area.id === 'translate') _.router.navigate(`/dashboard/book/${keyBook}/translate`);
         if (area.id === 'audiobook') _.router.navigate(`/dashboard/book/${keyBook}/audiobook/edit`);
+        if (area.id === 'design') _.router.navigate(`/dashboard/book/${keyBook}/design`);
     };
 
     return _.button({

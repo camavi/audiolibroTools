@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AudioLibraryController;
 use App\Http\Controllers\AudioMediaController;
+use App\Http\Controllers\BookDesignController;
 use App\Http\Controllers\DashboardAiController;
 use App\Http\Controllers\DashboardBookController;
 use Illuminate\Support\Facades\Route;
@@ -59,6 +60,12 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::get('/books/{keyBook}', [DashboardBookController::class, 'show'])->name('books.show');
     Route::patch('/books/{keyBook}', [DashboardBookController::class, 'update'])->name('books.update');
     Route::patch('/books/{keyBook}/design', [DashboardBookController::class, 'updateBookDesign'])->name('books.design.update');
+    Route::get('/books/{keyBook}/design-assets', [BookDesignController::class, 'index'])->name('books.design-assets.index');
+    Route::post('/books/{keyBook}/design-assets', [BookDesignController::class, 'store'])->name('books.design-assets.store');
+    Route::post('/books/{keyBook}/design-assets/generate', [BookDesignController::class, 'generate'])->name('books.design-assets.generate');
+    Route::post('/books/{keyBook}/design-assets/{asset}/use-cover', [BookDesignController::class, 'useAsCover'])->name('books.design-assets.use-cover');
+    Route::patch('/books/{keyBook}/cover-spec', [BookDesignController::class, 'updateCoverSpec'])->name('books.cover-spec.update');
+    Route::delete('/books/{keyBook}/design-assets/{asset}', [BookDesignController::class, 'destroy'])->name('books.design-assets.destroy');
     Route::get('/books/{keyBook}/editor', [DashboardBookController::class, 'editor'])->name('books.editor');
     Route::get('/books/{keyBook}/voices', [DashboardBookController::class, 'voiceProfiles'])->name('books.voices');
     Route::get('/books/{keyBook}/audio-timeline', [DashboardBookController::class, 'audioTimeline'])->name('books.audio-timeline');

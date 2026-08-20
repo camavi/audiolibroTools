@@ -64,6 +64,7 @@ class DashboardBookController extends Controller
                 'categories',
                 'lang',
                 'cover_img',
+                'book_design_json',
                 'updated_at',
             ]);
 
@@ -96,6 +97,7 @@ class DashboardBookController extends Controller
                 'categories',
                 'lang',
                 'cover_img',
+                'book_design_json',
                 'updated_at',
             ]);
 
@@ -108,6 +110,7 @@ class DashboardBookController extends Controller
                 'categories_count' => count($book->categories ?? []),
                 'lang' => $book->lang,
                 'cover_img' => $book->cover_img,
+                'book_design_json' => $this->bookDesign($book),
                 'updated_at' => $book->updated_at?->toIso8601String(),
             ],
         ]);
@@ -2730,6 +2733,7 @@ class DashboardBookController extends Controller
                 'quote' => ['inherits' => 'body', 'font_style' => 'italic', 'color' => '#405a7d', 'space_before' => 18, 'space_after' => 18],
             ],
             'layout' => ['content_padding' => 24, 'paragraph_gap' => 16, 'content_width' => 760],
+            'cover' => ['format' => 'a5', 'width_mm' => 148, 'height_mm' => 210],
         ];
         $styleFields = ['font_family', 'font_size', 'line_height', 'font_weight', 'font_style', 'color', 'text_align', 'letter_spacing', 'text_transform', 'space_before', 'space_after'];
         $styles = [];
@@ -2747,6 +2751,7 @@ class DashboardBookController extends Controller
             'version' => 1,
             'styles' => $styles,
             'layout' => [...$defaults['layout'], ...(is_array($design['layout'] ?? null) ? array_intersect_key($design['layout'], $defaults['layout']) : [])],
+            'cover' => [...$defaults['cover'], ...(is_array($design['cover'] ?? null) ? array_intersect_key($design['cover'], $defaults['cover']) : [])],
         ];
     }
 
