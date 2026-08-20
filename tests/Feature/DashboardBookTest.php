@@ -131,6 +131,42 @@ class DashboardBookTest extends TestCase
             && $request['size'] === '1024x1536');
     }
 
+    public function test_dashboard_can_save_and_generate_a_professional_epub(): void
+    {
+        Storage::fake('public');
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $service->saveBlock($book, ['block_uuid' => (string) Str::uuid(), 'type' => 'heading', 'sort_order' => 1000, 'content_json' => $this->paragraphJson('Chapter one'), 'text_plain' => 'Chapter one']);
+        $service->saveBlock($book, ['block_uuid' => (string) Str::uuid(), 'type' => 'paragraph', 'sort_order' => 2000, 'content_json' => $this->paragraphJson('A paragraph ready for an e-reader.'), 'text_plain' => 'A paragraph ready for an e-reader.']);
+        $settings = ['metadata' => [
+            'title' => 'The ePub Edition', 'subtitle' => 'A test edition', 'author' => 'Ada Writer', 'publisher' => 'AT Press',
+            'publication_date' => '2026-08-20', 'identifier' => '9780000000001', 'language' => 'en',
+            'description' => 'A professional ePub test.', 'subjects' => ['Fiction', 'Technology'], 'rights' => '© Ada Writer',
+        ], 'reading' => ['direction' => 'ltr', 'include_toc' => true, 'include_title_page' => true, 'chapter_break' => 'heading']];
+
+        $this->putJson("/dashboard/api/books/{$book->key_book}/epub", ['settings' => $settings])
+            ->assertOk()
+            ->assertJsonPath('data.settings.metadata.title', 'The ePub Edition');
+
+        $response = $this->postJson("/dashboard/api/books/{$book->key_book}/epub/generate", ['settings' => $settings])
+            ->assertOk()
+            ->assertJsonPath('data.settings.reading.layout', 'reflowable')
+            ->assertJsonPath('data.download_url', "/dashboard/api/books/{$book->key_book}/epub/download");
+
+        $book->refresh();
+        Storage::disk('public')->assertExists($book->epub_file_path);
+        $archive = new \ZipArchive;
+        $this->assertTrue($archive->open(Storage::disk('public')->path($book->epub_file_path)) === true);
+        $this->assertSame('application/epub+zip', $archive->getFromName('mimetype'));
+        $this->assertStringContainsString('The ePub Edition', $archive->getFromName('OEBPS/content.opf'));
+        $this->assertStringContainsString('Chapter one', $archive->getFromName('OEBPS/nav.xhtml'));
+        $archive->close();
+
+        $this->get("/dashboard/api/books/{$book->key_book}/epub/download")
+            ->assertOk()
+            ->assertHeader('content-type', 'application/epub+zip');
+    }
+
     public function test_dashboard_translation_provider_defaults_to_translation_mock_model(): void
     {
         $this->getJson('/dashboard/api/ai/providers?service=translate')

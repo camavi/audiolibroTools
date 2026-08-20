@@ -62,7 +62,8 @@ const workspaceAreas = [
         id: 'epub',
         icon: 'auto_stories',
         title: 'ePub',
-        description: 'Prepare a polished ePub edition.',
+        description: 'Prepare and export a polished ePub edition.',
+        available: true,
     },
     {
         id: 'pdf',
@@ -112,6 +113,7 @@ function workspaceArea(area, keyBook) {
         if (area.id === 'translate') _.router.navigate(`/dashboard/book/${keyBook}/translate`);
         if (area.id === 'audiobook') _.router.navigate(`/dashboard/book/${keyBook}/audiobook/edit`);
         if (area.id === 'design') _.router.navigate(`/dashboard/book/${keyBook}/design`);
+        if (area.id === 'epub') _.router.navigate(`/dashboard/book/${keyBook}/epub`);
     };
 
     return _.button({
