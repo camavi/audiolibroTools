@@ -15,6 +15,7 @@ import profilePage from './dashboard/page/profile.js';
 import tokensPage from './dashboard/page/tokens.js';
 import activityPage from './dashboard/page/activity.js';
 import statisticsPage from './dashboard/page/statistics.js';
+import teamPage from './dashboard/page/team.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
@@ -40,7 +41,7 @@ const navGroups = [
     { label: 'Statistics', key: 'statistics', icon: 'monetization_on', link: '/dashboard/statistics' },
     { label: 'My tokens', key: 'tokens', icon: 'token', link: '/dashboard/tokens' },
     //{ label: 'External services', key: 'external-services', icon: 'folder_special' },
-    { label: 'Team', key: 'team', icon: 'diversity_3' },
+    { label: 'Team', key: 'team', icon: 'diversity_3', link: '/dashboard/team' },
     { label: 'Profile', key: 'profile', icon: 'person', link: '/dashboard/profile' },
     //{ label: 'Organization', key: 'organization', icon: 'hub' },
     { label: 'Settings', key: 'setting', icon: 'settings', link: '/dashboard/setting' },
@@ -213,5 +214,6 @@ _.router.add('/dashboard/profile', routePage(profilePage));
 _.router.add('/dashboard/tokens', routePage(tokensPage));
 _.router.add('/dashboard/activity', routePage(activityPage));
 _.router.add('/dashboard/statistics', routePage(statisticsPage));
+_.router.add('/dashboard/team', routePage(teamPage));
 
 _.router.start();

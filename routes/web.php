@@ -12,6 +12,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\TokenWalletController;
 use App\Http\Controllers\BookActivityController;
 use App\Http\Controllers\StatisticsController;
+use App\Http\Controllers\TeamController;
 use App\Http\Controllers\DashboardAiController;
 use App\Http\Controllers\DashboardBookController;
 use Illuminate\Support\Facades\Route;
@@ -52,6 +53,7 @@ Route::get('/dashboard', function () {
     return view('dashboard');
 })->where('any', '.*');
 Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
+    Route::get('/team', [TeamController::class, 'index']);Route::post('/team/invites',[TeamController::class,'invite']);Route::patch('/team/invites/{invite}/respond',[TeamController::class,'respond']);Route::delete('/team/invites/{invite}',[TeamController::class,'destroy']);
     Route::get('/statistics', [StatisticsController::class, 'index'])->name('statistics.index');
     Route::get('/activity', [BookActivityController::class, 'index'])->name('activity.index');
     Route::get('/tokens', [TokenWalletController::class, 'show'])->name('tokens.show');
