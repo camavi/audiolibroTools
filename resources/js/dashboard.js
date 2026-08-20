@@ -12,6 +12,7 @@ import bookEpubPage from './dashboard/page/bookEpub.js';
 import bookPdfPage from './dashboard/page/bookPdf.js';
 import bookDistributionPage from './dashboard/page/bookDistribution.js';
 import profilePage from './dashboard/page/profile.js';
+import tokensPage from './dashboard/page/tokens.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
@@ -35,7 +36,7 @@ const navGroups = [
     },
     { label: 'Activity book', key: 'activity-book', icon: 'pie_chart' },
     { label: 'Statistics', key: 'statistics', icon: 'monetization_on' },
-    { label: 'My tokens', key: 'tokens', icon: 'token' },
+    { label: 'My tokens', key: 'tokens', icon: 'token', link: '/dashboard/tokens' },
     //{ label: 'External services', key: 'external-services', icon: 'folder_special' },
     { label: 'Team', key: 'team', icon: 'diversity_3' },
     { label: 'Profile', key: 'profile', icon: 'person', link: '/dashboard/profile' },
@@ -207,5 +208,6 @@ _.router.add('/dashboard/setting', routePage(settingPage));
 _.router.add('/dashboard/books', routePage(booksPage));
 _.router.add('/dashboard/upload-audio', routePage(uploadAudioPage));
 _.router.add('/dashboard/profile', routePage(profilePage));
+_.router.add('/dashboard/tokens', routePage(tokensPage));
 
 _.router.start();

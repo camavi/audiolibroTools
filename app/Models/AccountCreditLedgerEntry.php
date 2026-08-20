@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AccountCreditLedgerEntry extends Model
 {
@@ -11,5 +12,10 @@ class AccountCreditLedgerEntry extends Model
     protected function casts(): array
     {
         return ['metadata_json' => 'array'];
+    }
+
+    public function book(): BelongsTo
+    {
+        return $this->belongsTo(Book::class);
     }
 }
