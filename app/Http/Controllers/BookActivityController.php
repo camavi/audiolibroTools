@@ -1,0 +1,11 @@
+<?php
+namespace App\Http\Controllers;
+use App\Models\Book;
+use App\Models\BookActivityDailyMetric;
+use App\Models\User;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+class BookActivityController extends Controller {
+ public function index(Request $request): JsonResponse { $user=$this->user($request); $data=$request->validate(['period'=>['nullable','integer','in:7,28,90'],'book'=>['nullable','string','max:64']]); $days=$data['period']??28; $from=now()->subDays($days-1)->toDateString(); $books=Book::query()->where('account_id',$user->id)->when($data['book']??null,fn($q,$key)=>$q->where('key_book',$key))->get(['id','key_book','name','cover_img']); $ids=$books->pluck('id'); $metrics=BookActivityDailyMetric::query()->whereIn('book_id',$ids)->where('metric_date','>=',$from)->get(); $sum=fn(string $field)=>(int)$metrics->sum($field); $plays=$sum('plays'); $daily=collect(range(0,$days-1))->map(function($offset)use($metrics){$date=now()->subDays($offset)->toDateString();$set=$metrics->filter(fn(BookActivityDailyMetric $metric)=>$metric->metric_date->toDateString()===$date);return ['date'=>$date,'plays'=>(int)$set->sum('plays'),'listeners'=>(int)$set->sum('listeners'),'shares'=>(int)$set->sum('shares')];})->reverse()->values(); return response()->json(['data'=>['period'=>$days,'books'=>$books->map(fn($b)=>['key'=>$b->key_book,'name'=>$b->name,'cover_img'=>$b->cover_img]),'summary'=>['plays'=>$plays,'listeners'=>$sum('listeners'),'completion_rate'=>$plays?round($sum('completions')/$plays*100,1):0,'shares'=>$sum('shares'),'listening_hours'=>round($sum('listening_seconds')/3600,1),'revenue_cents'=>$sum('revenue_cents')],'trend'=>$daily,'books_activity'=>$books->map(function($book)use($metrics){$set=$metrics->where('book_id',$book->id);$plays=(int)$set->sum('plays');return ['key'=>$book->key_book,'name'=>$book->name,'cover_img'=>$book->cover_img,'plays'=>$plays,'listeners'=>(int)$set->sum('listeners'),'completion_rate'=>$plays?round($set->sum('completions')/$plays*100,1):0,'shares'=>(int)$set->sum('shares'),'revenue_cents'=>(int)$set->sum('revenue_cents')];})->sortByDesc('plays')->values()]]); }
+ private function user(Request $request): User { $user=$request->user(); abort_unless($user,401,'Please sign in to view activity.'); return $user; }
+}

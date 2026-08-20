@@ -13,6 +13,8 @@ import bookPdfPage from './dashboard/page/bookPdf.js';
 import bookDistributionPage from './dashboard/page/bookDistribution.js';
 import profilePage from './dashboard/page/profile.js';
 import tokensPage from './dashboard/page/tokens.js';
+import activityPage from './dashboard/page/activity.js';
+import statisticsPage from './dashboard/page/statistics.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
@@ -34,8 +36,8 @@ const navGroups = [
             { label: 'List of books', key: 'books-list', icon: 'format_list_bulleted', link: '/dashboard/books' },
         ],
     },
-    { label: 'Activity book', key: 'activity-book', icon: 'pie_chart' },
-    { label: 'Statistics', key: 'statistics', icon: 'monetization_on' },
+    { label: 'Activity book', key: 'activity-book', icon: 'pie_chart', link: '/dashboard/activity' },
+    { label: 'Statistics', key: 'statistics', icon: 'monetization_on', link: '/dashboard/statistics' },
     { label: 'My tokens', key: 'tokens', icon: 'token', link: '/dashboard/tokens' },
     //{ label: 'External services', key: 'external-services', icon: 'folder_special' },
     { label: 'Team', key: 'team', icon: 'diversity_3' },
@@ -209,5 +211,7 @@ _.router.add('/dashboard/books', routePage(booksPage));
 _.router.add('/dashboard/upload-audio', routePage(uploadAudioPage));
 _.router.add('/dashboard/profile', routePage(profilePage));
 _.router.add('/dashboard/tokens', routePage(tokensPage));
+_.router.add('/dashboard/activity', routePage(activityPage));
+_.router.add('/dashboard/statistics', routePage(statisticsPage));
 
 _.router.start();
