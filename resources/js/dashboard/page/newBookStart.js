@@ -1,3 +1,5 @@
+import '../../../css/newBookStart.css';
+
 const categoryOptions = _.rod([]);
 const loadingCategories = _.rod(false);
 const createdBook = _.rod(null);
@@ -94,6 +96,7 @@ function statusAlert() {
 function writeBookForm(close) {
 
     return _.form({
+        class: 'at-newBookDialogForm',
         action: '#',
         method: 'post',
         onSubmit: (event) => {
@@ -101,7 +104,7 @@ function writeBookForm(close) {
             createBook();
         },
     },
-        _.Row({ gap: 'md' },
+        _.Row({ gap: 'md', class: 'at-newBookDialogFields' },
             _.Input({
                 class: 'cms-col-24',
                 label: 'Title',
@@ -126,8 +129,9 @@ function writeBookForm(close) {
                 model: description,
             }),
             _.div({ class: 'cms-col-24' }, () => formStatus.value?.message ? statusAlert() : null),
-            _.div({ class: 'cms-col-24', align: 'right' },
-                _.Btn({ type: "button", class: 'cms-m-r-sm', color: "secondary", onClick: close }, "Close"), _.Btn({ type: "submit", color: "primary", loading: loadingCreateBook }, "Create book")
+            _.div({ class: 'cms-col-24 at-newBookDialogActions' },
+                _.Btn({ type: "button", color: "secondary", onClick: close }, "Cancel"),
+                _.Btn({ type: "submit", color: "primary", icon: 'auto_stories', loading: loadingCreateBook }, "Create book")
             )
         )
     );
@@ -135,66 +139,62 @@ function writeBookForm(close) {
 }
 function uploadBook(close) {
     return _.form({
+        class: 'at-newBookDialogForm',
         action: '#',
         method: 'post',
         onSubmit: (event) => {
             event.preventDefault();
         },
     },
-        _.div(uploadFile),
-        _.Row({ gap: 'md' },
+        _.div({ class: 'at-newBookUploadArea' }, uploadFile),
+        _.Row({ gap: 'md', class: 'at-newBookDialogFields' },
             _.div({ class: 'cms-col-24' }, () => formStatus.value?.message ? statusAlert() : null),
-            _.div({ class: 'cms-col-24', align: 'right' },
-                _.Btn({ type: "button", class: 'cms-m-r-sm', color: "secondary", onClick: close }, "Close"), _.Btn({ type: "submit", color: "primary" }, "Upload book")
+            _.div({ class: 'cms-col-24 at-newBookDialogActions' },
+                _.Btn({ type: "button", color: "secondary", onClick: close }, "Cancel"),
+                _.Btn({ type: "submit", color: "primary", icon: 'upload_file' }, "Upload manuscript")
             )
         )
     );
 }
 function choiceCard({ icon, title, subtitle, action, disabled = false }) {
-    return _.Card({
-        icon,
-        title,
-        subtitle,
-        dense: true,
-        actions: _.Btn({
-            color: 'primary',
-            outline: disabled,
-            disabled,
-            iconRight: disabled ? null : 'arrow_forward',
-            onClick: action,
-        }, disabled ? 'Coming soon' : 'Open'),
-    });
+    return _.button({ type: 'button', class: 'at-newBookChoice', disabled, onClick: action },
+        _.span({ class: 'at-newBookChoiceIcon' }, _.Icon({ name: icon })),
+        _.div({ class: 'at-newBookChoiceCopy' }, _.h3(title), _.p(subtitle)),
+        _.span({ class: 'at-newBookChoiceAction' }, disabled ? 'Coming soon' : ['Start', _.Icon({ name: 'arrow_forward' })]),
+    );
 }
 
 export default function newBookStart() {
     loadCategories();
-    return [
-        _.Card({
-            title: 'Choose how to start',
-            subtitle: 'A blank book follows the old Write book flow; upload will handle manuscript import.',
-            body: _.Grid({ gap: 'lg' },
-                _.GridCol({ span: 6, mobile: { span: 12 } },
-                    choiceCard({
+    return _.main({ class: 'at-newBookPage' },
+        _.section({ class: 'at-newBookHero' }, _.div(
+            _.span('Create a new project'), _.h2('How would you like to start?'),
+            _.p('Begin with a blank book or bring an existing manuscript into your workspace.'),
+        )),
+        _.section({ class: 'at-newBookChoices' },
+            _.div({ class: 'at-newBookSectionHead' }, _.span('Start your book'), _.h3('Choose a workflow')),
+            _.div({ class: 'at-newBookChoiceGrid' },
+                choiceCard({
                         icon: 'edit_note',
                         title: 'Write book',
-                        subtitle: 'Create an empty book with title, description and categories.',
+                        subtitle: 'Start from a blank manuscript. Add the details, then build your book in the editor.',
                         action: () => {
                             _.Dialog({
                                 size: "lg",
                                 stickyActions: true,
+                                panelClass: 'at-newBookDialogPanel',
                                 slots: {
-                                    header: _.div(
+                                    header: _.div({ class: 'at-newBookDialogHeader' },
+                                        _.span({ class: 'at-newBookDialogEyebrow' }, 'New manuscript'),
                                         _.h3('Create a new book'),
-                                        _.span({ class: 'text-muted' }, 'A blank book follows the old Write book flow; upload will handle manuscript import.'),
+                                        _.p('Add the essentials now. You can refine the manuscript, design and publishing settings later.'),
                                     ),
                                     content: ({ close }) => writeBookForm(close),
                                 }
                             }).open();
                         },
                     }),
-                ),
-                _.GridCol({ span: 6, mobile: { span: 12 } },
-                    choiceCard({
+                choiceCard({
                         icon: 'upload_file',
                         title: 'Upload book',
                         subtitle: 'Import a manuscript and prepare it for block editing.',
@@ -202,18 +202,20 @@ export default function newBookStart() {
                             _.Dialog({
                                 size: "lg",
                                 stickyActions: true,
+                                panelClass: 'at-newBookDialogPanel',
                                 slots: {
-                                    header: _.div(
+                                    header: _.div({ class: 'at-newBookDialogHeader' },
+                                        _.span({ class: 'at-newBookDialogEyebrow' }, 'Manuscript import'),
                                         _.h3('Upload a book'),
-                                        _.span({ class: 'text-muted' }, 'Import a manuscript and prepare it for block editing.'),
+                                        _.p('Upload your source file and prepare it for block editing in the workspace.'),
                                     ),
                                     content: ({ close }) => uploadBook(close),
                                 }
                             }).open();
                         },
                     }),
-                ),
             ),
-        }),
-    ];
+        ),
+        _.section({ class: 'at-newBookNote' }, _.Icon({ name: 'info' }), _.span('You can add cover design, ePub, PDF, audiobook and distribution settings after creating the book.')),
+    );
 }

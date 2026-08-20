@@ -62,7 +62,7 @@ function bookCard(book, index) {
 
 function emptyLibrary() {
     return _.div({ class: 'at-libraryEmpty' },
-        _.div({ class: 'at-libraryEmptyIcon' }, _.Icon ? _.Icon({ name: 'auto_stories' }) : '📚'),
+        _.div({ class: 'at-libraryEmptyIcon' }, _.Icon ? _.Icon({ name: 'auto_stories', size: 'xxl' }) : '📚'),
         _.h3('Your library is waiting for its first book'),
         _.p('Create a blank book or upload a manuscript to begin.'),
         _.Btn({ color: 'primary', iconRight: 'arrow_forward', onClick: () => _.router.navigate('/dashboard/new-book') }, 'Create a book'),
