@@ -76,7 +76,8 @@ const workspaceAreas = [
         id: 'distribution',
         icon: 'publish',
         title: 'Distribution',
-        description: 'Prepare your book for publishing channels.',
+        description: 'Connect and manage publishing channels.',
+        available: true,
     },
 ];
 
@@ -116,6 +117,7 @@ function workspaceArea(area, keyBook) {
         if (area.id === 'design') _.router.navigate(`/dashboard/book/${keyBook}/design`);
         if (area.id === 'epub') _.router.navigate(`/dashboard/book/${keyBook}/epub`);
         if (area.id === 'pdf') _.router.navigate(`/dashboard/book/${keyBook}/pdf`);
+        if (area.id === 'distribution') _.router.navigate(`/dashboard/book/${keyBook}/distribution`);
     };
 
     return _.button({

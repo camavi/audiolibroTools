@@ -5,6 +5,7 @@ use App\Http\Controllers\AudioMediaController;
 use App\Http\Controllers\BookDesignController;
 use App\Http\Controllers\BookEpubController;
 use App\Http\Controllers\BookPdfController;
+use App\Http\Controllers\BookDistributionController;
 use App\Http\Controllers\DashboardAiController;
 use App\Http\Controllers\DashboardBookController;
 use Illuminate\Support\Facades\Route;
@@ -77,6 +78,9 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::post('/books/{keyBook}/pdf/preview', [BookPdfController::class, 'preview'])->name('books.pdf.preview');
     Route::post('/books/{keyBook}/pdf/generate', [BookPdfController::class, 'generate'])->name('books.pdf.generate');
     Route::get('/books/{keyBook}/pdf/download', [BookPdfController::class, 'download'])->name('books.pdf.download');
+    Route::get('/books/{keyBook}/distribution', [BookDistributionController::class, 'index'])->name('books.distribution.index');
+    Route::put('/books/{keyBook}/distribution/{providerKey}', [BookDistributionController::class, 'connect'])->name('books.distribution.connect');
+    Route::delete('/books/{keyBook}/distribution/{providerKey}', [BookDistributionController::class, 'disconnect'])->name('books.distribution.disconnect');
     Route::get('/books/{keyBook}/editor', [DashboardBookController::class, 'editor'])->name('books.editor');
     Route::get('/books/{keyBook}/voices', [DashboardBookController::class, 'voiceProfiles'])->name('books.voices');
     Route::get('/books/{keyBook}/audio-timeline', [DashboardBookController::class, 'audioTimeline'])->name('books.audio-timeline');

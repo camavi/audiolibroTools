@@ -49,6 +49,11 @@ class Book extends Model
         return $this->hasMany(BookDesignAsset::class);
     }
 
+    public function distributionConnections(): HasMany
+    {
+        return $this->hasMany(BookDistributionConnection::class);
+    }
+
     public function blockReviews(): HasMany
     {
         return $this->hasMany(BookBlockReview::class);

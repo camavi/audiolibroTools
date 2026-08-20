@@ -11,6 +11,7 @@ use App\Models\BookAudioJob;
 use App\Models\BookAudioSegment;
 use App\Models\BookAudioTimelineItem;
 use App\Models\BookDesignAsset;
+use App\Models\BookDistributionConnection;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
 use App\Models\BookBlockTranslation;
@@ -186,6 +187,26 @@ class DashboardBookTest extends TestCase
         $book->refresh();
         Storage::disk('public')->assertExists($book->pdf_file_path);
         $this->assertStringStartsWith('%PDF-', Storage::disk('public')->get($book->pdf_file_path));
+    }
+
+    public function test_dashboard_can_manage_distribution_channel_connections(): void
+    {
+        $book = $this->createBook();
+        $this->getJson("/dashboard/api/books/{$book->key_book}/distribution")
+            ->assertOk()
+            ->assertJsonPath('data.providers.0.key', 'amazon_kdp');
+
+        $this->putJson("/dashboard/api/books/{$book->key_book}/distribution/draft2digital", ['account_label' => 'My D2D', 'api_token' => 'private-distribution-token'])
+            ->assertOk()
+            ->assertJsonPath('data.connection.status', 'connected')
+            ->assertJsonPath('data.connection.has_token', true);
+        $connection = BookDistributionConnection::query()->sole();
+        $this->assertSame('private-distribution-token', $connection->api_token);
+
+        $this->deleteJson("/dashboard/api/books/{$book->key_book}/distribution/draft2digital")
+            ->assertOk()
+            ->assertJsonPath('data.disconnected', true);
+        $this->assertDatabaseCount('book_distribution_connections', 0);
     }
 
     public function test_dashboard_translation_provider_defaults_to_translation_mock_model(): void
