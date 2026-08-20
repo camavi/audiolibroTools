@@ -16,6 +16,8 @@ import tokensPage from './dashboard/page/tokens.js';
 import activityPage from './dashboard/page/activity.js';
 import statisticsPage from './dashboard/page/statistics.js';
 import teamPage from './dashboard/page/team.js';
+import promptsPage from './dashboard/page/prompts.js';
+import logoutPage from './dashboard/page/logout.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
@@ -45,9 +47,9 @@ const navGroups = [
     { label: 'Profile', key: 'profile', icon: 'person', link: '/dashboard/profile' },
     //{ label: 'Organization', key: 'organization', icon: 'hub' },
     { label: 'Settings', key: 'setting', icon: 'settings', link: '/dashboard/setting' },
-    { label: 'Prompts AI', key: 'prompts-ai', icon: 'psychology' },
+    { label: 'Prompts AI', key: 'prompts-ai', icon: 'psychology', link: '/dashboard/prompts' },
     { label: 'Audio', key: 'upload-audio', icon: 'graphic_eq', link: '/dashboard/upload-audio' },
-    { label: 'Logout', key: 'logout', icon: 'logout' },
+    { label: 'Logout', key: 'logout', icon: 'logout', link: '/dashboard/logout' },
 ];
 
 const pageMeta = {
@@ -81,6 +83,7 @@ function aside() {
         stateKey: 'audiobook-dashboard:drawer',
         onSelect: (item) => {
             if (!item.key || item.items?.length) return;
+            if (item.key === 'logout') { _.router.navigate('/dashboard/logout'); return; }
             currentView.value = item.key;
         },
     });
@@ -215,5 +218,7 @@ _.router.add('/dashboard/tokens', routePage(tokensPage));
 _.router.add('/dashboard/activity', routePage(activityPage));
 _.router.add('/dashboard/statistics', routePage(statisticsPage));
 _.router.add('/dashboard/team', routePage(teamPage));
+_.router.add('/dashboard/prompts', routePage(promptsPage));
+_.router.add('/dashboard/logout', routePage(logoutPage));
 
 _.router.start();

@@ -34,4 +34,13 @@ class AuthController extends Controller
         $request->session()->regenerate();
         return response()->json(['data' => ['redirect' => '/dashboard']]);
     }
+
+    public function logout(Request $request): JsonResponse
+    {
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return response()->json(['data' => ['redirect' => '/']]);
+    }
 }

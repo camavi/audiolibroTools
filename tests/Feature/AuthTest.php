@@ -30,4 +30,13 @@ class AuthTest extends TestCase
             ->assertJsonPath('data.redirect', '/dashboard');
         $this->assertAuthenticated();
     }
+
+    public function test_user_can_log_out(): void
+    {
+        $this->actingAs(User::factory()->create())->postJson('/auth/logout')
+            ->assertOk()
+            ->assertJsonPath('data.redirect', '/');
+
+        $this->assertGuest();
+    }
 }

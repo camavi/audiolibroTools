@@ -13,6 +13,7 @@ use App\Http\Controllers\TokenWalletController;
 use App\Http\Controllers\BookActivityController;
 use App\Http\Controllers\StatisticsController;
 use App\Http\Controllers\TeamController;
+use App\Http\Controllers\AiPromptController;
 use App\Http\Controllers\DashboardAiController;
 use App\Http\Controllers\DashboardBookController;
 use Illuminate\Support\Facades\Route;
@@ -48,11 +49,13 @@ Route::get('/project-plan/file/{path}', function (string $path) {
 
 Route::post('/auth/register', [AuthController::class, 'register'])->name('auth.register');
 Route::post('/auth/login', [AuthController::class, 'login'])->name('auth.login');
+Route::post('/auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
 
 Route::get('/dashboard', function () {
     return view('dashboard');
 })->where('any', '.*');
 Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
+    Route::get('/prompts',[AiPromptController::class,'index']);Route::post('/prompts',[AiPromptController::class,'store']);Route::patch('/prompts/{prompt}',[AiPromptController::class,'update']);Route::delete('/prompts/{prompt}',[AiPromptController::class,'destroy']);
     Route::get('/team', [TeamController::class, 'index']);Route::post('/team/invites',[TeamController::class,'invite']);Route::patch('/team/invites/{invite}/respond',[TeamController::class,'respond']);Route::delete('/team/invites/{invite}',[TeamController::class,'destroy']);
     Route::get('/statistics', [StatisticsController::class, 'index'])->name('statistics.index');
     Route::get('/activity', [BookActivityController::class, 'index'])->name('activity.index');
