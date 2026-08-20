@@ -11,11 +11,15 @@ import bookDesignPage from './dashboard/page/bookDesign.js';
 import bookEpubPage from './dashboard/page/bookEpub.js';
 import bookPdfPage from './dashboard/page/bookPdf.js';
 import bookDistributionPage from './dashboard/page/bookDistribution.js';
+import profilePage from './dashboard/page/profile.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
 const pageHeaderActionsVersion = _.rod(0);
 let pageHeaderActions = () => [];
+const bookEditionOptions = _.rod([]);
+const selectedBookEdition = _.rod('');
+const bookEditionVisible = _.rod(false);
 
 
 const navGroups = [
@@ -30,12 +34,12 @@ const navGroups = [
         ],
     },
     { label: 'Activity book', key: 'activity-book', icon: 'pie_chart' },
-    { label: 'Monetize', key: 'monetize', icon: 'monetization_on' },
+    { label: 'Statistics', key: 'statistics', icon: 'monetization_on' },
     { label: 'My tokens', key: 'tokens', icon: 'token' },
-    { label: 'External services', key: 'external-services', icon: 'folder_special' },
+    //{ label: 'External services', key: 'external-services', icon: 'folder_special' },
     { label: 'Team', key: 'team', icon: 'diversity_3' },
-    { label: 'Profile', key: 'profile', icon: 'person' },
-    { label: 'Organization', key: 'organization', icon: 'hub' },
+    { label: 'Profile', key: 'profile', icon: 'person', link: '/dashboard/profile' },
+    //{ label: 'Organization', key: 'organization', icon: 'hub' },
     { label: 'Settings', key: 'setting', icon: 'settings', link: '/dashboard/setting' },
     { label: 'Prompts AI', key: 'prompts-ai', icon: 'psychology' },
     { label: 'Audio', key: 'upload-audio', icon: 'graphic_eq', link: '/dashboard/upload-audio' },
@@ -109,19 +113,50 @@ function setPageHeaderActions(actions = []) {
     pageHeaderActionsVersion.value += 1;
 }
 
+async function syncBookEditions() {
+    const match = window.location.pathname.match(/^\/dashboard\/book\/([^/]+)\/(?:edit|translate|audiobook\/edit|design|epub|pdf|distribution|panel)/);
+    if (!match) { bookEditionVisible.value = false; return; }
+    const keyBook = match[1];
+    bookEditionVisible.value = true;
+    try {
+        const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/editions`);
+        const data = payload?.data?.data || payload?.data || {};
+        const editions = data.editions || [];
+        const queryEdition = new URLSearchParams(window.location.search).get('edition');
+        CMSwift.reactive.untracked(() => {
+            bookEditionOptions.value = editions.map((edition) => ({ value: String(edition.id), label: `${edition.locale.toUpperCase()} · ${edition.is_original ? 'Original' : `${edition.approved_blocks}/${edition.total_blocks} translated`}` }));
+            selectedBookEdition.value = queryEdition && editions.some((edition) => String(edition.id) === queryEdition) ? queryEdition : String(editions.find((edition) => edition.is_original)?.id || editions[0]?.id || '');
+        });
+    } catch (_) { bookEditionVisible.value = false; }
+}
+
+function changeBookEdition(editionId) {
+    const url = new URL(window.location.href);
+    if (editionId) url.searchParams.set('edition', editionId); else url.searchParams.delete('edition');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
 window.AudiobookTools = {
     ...(window.AudiobookTools || {}),
     setPageHeaderActions,
+    selectedBookEdition,
 };
 
 const rightHeader = _.div({ class: 'at-dashboardPageActions' }, () => {
     pageHeaderActionsVersion.value;
-    return pageHeaderActions();
+    return [
+        _.div({ class: 'at-dashboardEditionSlot' }, () => bookEditionVisible.value
+            ? _.Select({ class: 'at-dashboardEditionSelect', model: selectedBookEdition, options: () => bookEditionOptions.value, onChange: changeBookEdition })
+            : null),
+        ...pageHeaderActions(),
+    ];
 });
 
 function routePage(page) {
     return (ctx) => {
         setPageHeaderActions();
+        syncBookEditions();
         return page(ctx);
     };
 }
@@ -171,5 +206,6 @@ _.router.add('/dashboard/book/:key_book/audiobook/edit', routePage(audiobookEdit
 _.router.add('/dashboard/setting', routePage(settingPage));
 _.router.add('/dashboard/books', routePage(booksPage));
 _.router.add('/dashboard/upload-audio', routePage(uploadAudioPage));
+_.router.add('/dashboard/profile', routePage(profilePage));
 
 _.router.start();

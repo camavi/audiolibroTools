@@ -54,6 +54,11 @@ class Book extends Model
         return $this->hasMany(BookDistributionConnection::class);
     }
 
+    public function editions(): HasMany
+    {
+        return $this->hasMany(BookEdition::class);
+    }
+
     public function blockReviews(): HasMany
     {
         return $this->hasMany(BookBlockReview::class);

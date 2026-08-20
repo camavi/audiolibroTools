@@ -3,6 +3,7 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="csrf-token" content="{{ csrf_token() }}">
         <title>{{ __('home.meta_title') }}</title>
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,15 +27,16 @@
                 </nav>
 
                 <div class="header-actions">
-                    <div class="locale-switcher" aria-label="Language">
-                        @foreach (['en', 'it'] as $locale)
-                            <a class="{{ app()->getLocale() === $locale ? 'active' : '' }}" href="{{ url('/' . $locale) }}">
-                                {{ strtoupper($locale) }}
-                            </a>
-                        @endforeach
-                    </div>
-                    <a class="login-link" href="#dashboard">{{ __('home.login') }}</a>
-                    <a class="button button-primary" href="#signup">{{ __('home.primary_cta') }}</a>
+                    <label class="locale-switcher" aria-label="Language">
+                        <span class="material-symbols-rounded" aria-hidden="true">language</span>
+                        <select onchange="window.location.assign(this.value)">
+                            @foreach (config('audiobook.locales') as $locale => $localeConfig)
+                                <option value="{{ url('/' . $locale) }}" @selected(app()->getLocale() === $locale)>{{ strtoupper($locale) }} · {{ $localeConfig['name'] }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                    <button class="login-link home-auth-trigger" type="button" data-auth-mode="login">{{ __('home.login') }}</button>
+                    <button class="button button-primary home-auth-trigger" type="button" data-auth-mode="register">{{ __('home.primary_cta') }}</button>
                 </div>
             </header>
 
@@ -47,10 +49,10 @@
                             <p class="hero-copy">{{ __('home.copy') }}</p>
 
                             <div class="hero-actions">
-                                <a class="button button-primary button-large" href="#signup">
+                                <button class="button button-primary button-large home-auth-trigger" type="button" data-auth-mode="register">
                                     {{ __('home.primary_cta') }}
                                     <span class="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
-                                </a>
+                                </button>
                                 <a class="button button-ghost button-large" href="#demo">
                                     {{ __('home.demo_cta') }}
                                     <span class="material-symbols-rounded" aria-hidden="true">play_circle</span>
@@ -127,12 +129,31 @@
                 <section class="final-cta" id="signup">
                     <h2>{{ __('home.final_cta_title') }}</h2>
                     <p>{{ __('home.final_cta_copy') }}</p>
-                    <a class="button button-primary button-large" href="#dashboard">
+                    <button class="button button-primary button-large home-auth-trigger" type="button" data-auth-mode="register">
                         {{ __('home.primary_cta') }}
                         <span class="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
-                    </a>
+                    </button>
                 </section>
             </main>
+        </div>
+        <div class="home-auth-modal" id="home-auth-modal" hidden>
+            <div class="home-auth-backdrop" data-auth-close></div>
+            <section class="home-auth-dialog" role="dialog" aria-modal="true" aria-labelledby="home-auth-title">
+                <button class="home-auth-close" type="button" data-auth-close aria-label="Close">×</button>
+                <span class="home-auth-eyebrow">Audiobook Tools</span>
+                <h2 id="home-auth-title">Welcome back</h2>
+                <p id="home-auth-copy">Sign in to continue to your workspace.</p>
+                <form id="home-auth-form" novalidate>
+                    <div class="home-auth-field home-auth-name" hidden><label for="home-auth-name">Name</label><input id="home-auth-name" name="name" autocomplete="name"></div>
+                    <div class="home-auth-field"><label for="home-auth-email">Email</label><input id="home-auth-email" name="email" type="email" autocomplete="email" required></div>
+                    <div class="home-auth-field"><label for="home-auth-password">Password</label><input id="home-auth-password" name="password" type="password" autocomplete="current-password" required></div>
+                    <div class="home-auth-field home-auth-confirm" hidden><label for="home-auth-confirm">Confirm password</label><input id="home-auth-confirm" name="password_confirmation" type="password" autocomplete="new-password"></div>
+                    <label class="home-auth-remember"><input id="home-auth-remember" type="checkbox"> Keep me signed in</label>
+                    <p class="home-auth-error" id="home-auth-error" role="alert" hidden></p>
+                    <button class="button button-primary home-auth-submit" type="submit">Sign in</button>
+                </form>
+                <p class="home-auth-switch"><span id="home-auth-switch-copy">New to Audiobook Tools?</span> <button type="button" id="home-auth-switch">Create an account</button></p>
+            </section>
         </div>
     </body>
 </html>

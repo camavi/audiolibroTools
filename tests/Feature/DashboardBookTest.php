@@ -12,6 +12,7 @@ use App\Models\BookAudioSegment;
 use App\Models\BookAudioTimelineItem;
 use App\Models\BookDesignAsset;
 use App\Models\BookDistributionConnection;
+use App\Models\BookEdition;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
 use App\Models\BookBlockTranslation;
@@ -207,6 +208,25 @@ class DashboardBookTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.disconnected', true);
         $this->assertDatabaseCount('book_distribution_connections', 0);
+    }
+
+    public function test_dashboard_creates_and_lists_language_editions(): void
+    {
+        $book = $this->createBook();
+        $book->update(['lang' => 'it']);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/editions")
+            ->assertOk()
+            ->assertJsonPath('data.editions.0.locale', 'it')
+            ->assertJsonPath('data.editions.0.is_original', true);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/editions", ['locale' => 'en'])
+            ->assertCreated()
+            ->assertJsonPath('data.edition.locale', 'en')
+            ->assertJsonPath('data.edition.status', 'draft');
+
+        $this->assertDatabaseHas('book_editions', ['book_id' => $book->id, 'locale' => 'en', 'is_original' => false]);
+        $this->assertSame(2, BookEdition::query()->where('book_id', $book->id)->count());
     }
 
     public function test_dashboard_translation_provider_defaults_to_translation_mock_model(): void

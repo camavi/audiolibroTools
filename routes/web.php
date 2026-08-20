@@ -6,6 +6,9 @@ use App\Http\Controllers\BookDesignController;
 use App\Http\Controllers\BookEpubController;
 use App\Http\Controllers\BookPdfController;
 use App\Http\Controllers\BookDistributionController;
+use App\Http\Controllers\BookEditionController;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DashboardAiController;
 use App\Http\Controllers\DashboardBookController;
 use Illuminate\Support\Facades\Route;
@@ -39,10 +42,17 @@ Route::get('/project-plan/file/{path}', function (string $path) {
     ]);
 })->where('path', '.*')->name('project-plan.file');
 
+Route::post('/auth/register', [AuthController::class, 'register'])->name('auth.register');
+Route::post('/auth/login', [AuthController::class, 'login'])->name('auth.login');
+
 Route::get('/dashboard', function () {
     return view('dashboard');
 })->where('any', '.*');
 Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
+    Route::get('/profile', [ProfileController::class, 'show'])->name('profile.show');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     Route::get('/ai/providers', [DashboardAiController::class, 'providers'])->name('ai.providers');
     Route::get('/ai/credits', [DashboardAiController::class, 'credits'])->name('ai.credits');
     Route::post('/ai/providers', [DashboardAiController::class, 'storeProvider'])->name('ai.providers.store');
@@ -81,6 +91,8 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::get('/books/{keyBook}/distribution', [BookDistributionController::class, 'index'])->name('books.distribution.index');
     Route::put('/books/{keyBook}/distribution/{providerKey}', [BookDistributionController::class, 'connect'])->name('books.distribution.connect');
     Route::delete('/books/{keyBook}/distribution/{providerKey}', [BookDistributionController::class, 'disconnect'])->name('books.distribution.disconnect');
+    Route::get('/books/{keyBook}/editions', [BookEditionController::class, 'index'])->name('books.editions.index');
+    Route::post('/books/{keyBook}/editions', [BookEditionController::class, 'store'])->name('books.editions.store');
     Route::get('/books/{keyBook}/editor', [DashboardBookController::class, 'editor'])->name('books.editor');
     Route::get('/books/{keyBook}/voices', [DashboardBookController::class, 'voiceProfiles'])->name('books.voices');
     Route::get('/books/{keyBook}/audio-timeline', [DashboardBookController::class, 'audioTimeline'])->name('books.audio-timeline');
