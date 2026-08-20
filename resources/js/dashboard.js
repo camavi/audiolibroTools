@@ -18,6 +18,7 @@ import statisticsPage from './dashboard/page/statistics.js';
 import teamPage from './dashboard/page/team.js';
 import promptsPage from './dashboard/page/prompts.js';
 import logoutPage from './dashboard/page/logout.js';
+import dashboardHomePage from './dashboard/page/dashboardHome.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
@@ -107,12 +108,7 @@ function bookEditor(ctx) {
 }
 
 function pageDashboard() {
-    return _.Card({
-        icon: 'dashboard',
-        title: 'Dashboard',
-        subtitle: 'Create a blank book with Laravel backend.',
-        body: 'Welcome to Audiobook Tools editor dashboard.',
-    });
+    return dashboardHomePage();
 }
 function setPageHeaderActions(actions = []) {
     const nodes = Array.isArray(actions) ? actions : [actions];
