@@ -27,11 +27,13 @@ const glossaryTargetTerm = _.rod('');
 const glossaryNotes = _.rod('');
 const savingGlossaryTerm = _.rod(false);
 const batchStatus = _.rod('idle');
+const approveAllRunning = _.rod(false);
 const batchProgress = _.rod({ completed: 0, total: 0, failed: 0 });
 const aiProviders = _.rod([]);
 const aiProviderKey = _.rod('mock');
 const aiProviderModel = _.rod('mock-translation-v1');
 const aiProviderApiKey = _.rod('');
+const loadingAiProviderModels = _.rod(false);
 const aiSystemPrompt = _.rod('');
 const savingAiSetting = _.rod(false);
 const aiSettingStatus = _.rod(null);
@@ -238,9 +240,14 @@ function translationTopbar(keyBook) {
                     : batchStatus.value === 'translating'
                 ? `Translating ${batchProgress.value.completed}/${batchProgress.value.total}`
                 : 'Translate all'),
+            _.Btn({
+                color: 'primary',
+                outline: true,
+                loading: approveAllRunning,
+                disabled: () => approveAllRunning.value || !Number(translationProgress.value.counts?.draft || 0) && !Number(translationProgress.value.counts?.rejected || 0),
+                onClick: () => openApproveAllDialog(keyBook),
+            }, 'Approve all'),
             _.Btn({ color: 'secondary', onClick: () => openGlossaryDialog(keyBook) }, 'Glossary'),
-            _.Btn({ color: 'secondary', onClick: () => _.router.navigate(`/dashboard/book/${keyBook}/edit`) }, 'Open editor'),
-            _.Btn({ color: 'secondary', onClick: () => _.router.navigate(`/dashboard/book/${keyBook}/panel`) }, 'Book panel'),
         ),
     );
 }
@@ -322,6 +329,7 @@ async function loadAiSetting(keyBook) {
         aiProviderKey.value = aiSetting.value.provider_key || 'mock';
         aiProviderModel.value = aiSetting.value.model || 'mock-translation-v1';
         aiSystemPrompt.value = aiSetting.value.system_prompt || '';
+        loadLmStudioModels();
     } catch {
         // The translation endpoint has a safe mock fallback when provider settings are unavailable.
     }
@@ -329,6 +337,44 @@ async function loadAiSetting(keyBook) {
 
 function selectedAiProvider() {
     return aiProviders.value.find((provider) => provider.provider_key === aiProviderKey.value) || null;
+}
+
+function providerNeedsApiKey(providerKey) {
+    return providerKey && !['mock', 'ollama', 'lm-studio'].includes(providerKey);
+}
+
+async function loadLmStudioModels() {
+    if (aiProviderKey.value !== 'lm-studio' || loadingAiProviderModels.value) return;
+
+    loadingAiProviderModels.value = true;
+    try {
+        const payload = translationData(await _.http.getJSON('/dashboard/api/ai/providers/lm-studio/models'));
+        const models = payload.models || [];
+        if (!models.length) {
+            aiSettingStatus.value = {
+                type: 'warning',
+                title: 'No language model found',
+                message: 'Load an LLM in LM Studio, then try again.',
+            };
+            return;
+        }
+
+        aiProviders.value = aiProviders.value.map((provider) => provider.provider_key === 'lm-studio'
+            ? { ...provider, models, default_model: models[0] }
+            : provider);
+
+        if (!models.includes(aiProviderModel.value)) {
+            aiProviderModel.value = models[0];
+        }
+    } catch (error) {
+        aiSettingStatus.value = {
+            type: 'warning',
+            title: 'LM Studio unavailable',
+            message: error.message || 'Start the LM Studio local server, then try again.',
+        };
+    } finally {
+        loadingAiProviderModels.value = false;
+    }
 }
 
 function aiProviderName(providerKey) {
@@ -367,6 +413,8 @@ function setAiProvider(value) {
     const provider = aiProviders.value.find((item) => item.provider_key === providerKey);
     aiProviderKey.value = providerKey;
     aiProviderModel.value = provider?.default_model || provider?.models?.[0] || '';
+    aiSettingStatus.value = null;
+    loadLmStudioModels();
 }
 
 function setAiModel(value) {
@@ -399,13 +447,13 @@ function aiSettingsDialogContent(keyBook, close) {
             }),
             _.Select({
                 class: 'cms-col-24',
-                label: 'Model',
+                label: () => loadingAiProviderModels.value ? 'Loading models...' : 'Model',
                 icon: 'memory',
                 model: aiProviderModel,
                 options: modelOptions,
                 onChange: setAiModel,
             }),
-            provider?.connection_mode !== 'managed' ? _.Input({
+            provider?.connection_mode !== 'managed' && providerNeedsApiKey(provider?.provider_key) ? _.Input({
                 class: 'cms-col-24',
                 label: 'API key',
                 icon: 'key',
@@ -423,7 +471,7 @@ function aiSettingsDialogContent(keyBook, close) {
             provider ? _.div({ class: 'cms-col-24' }, _.Alert({
                 type: provider.connection_mode === 'managed'
                     ? (provider.is_configured ? 'light' : 'warning')
-                    : provider.has_api_key || provider.provider_key === 'mock' ? 'light' : 'warning',
+                    : provider.has_api_key || !providerNeedsApiKey(provider.provider_key) ? 'light' : 'warning',
                 title: provider.name,
                 message: provider.connection_mode === 'managed'
                     ? provider.is_configured
@@ -431,6 +479,8 @@ function aiSettingsDialogContent(keyBook, close) {
                         : `${provider.privacy_label || 'This managed provider'} is not enabled by Audiobook Tools yet.`
                     : provider.provider_key === 'mock'
                         ? 'Mock is useful for testing only; it does not create a real translation.'
+                        : provider.connection_mode === 'local'
+                            ? `Local server · ${provider.base_url || 'Provider default endpoint'}`
                         : provider.has_api_key
                             ? `API key saved · ${provider.base_url || 'Provider default endpoint'}`
                             : `An API key is required · ${provider.base_url || 'Provider default endpoint'}`,
@@ -877,6 +927,37 @@ async function resolveTranslation(keyBook, status) {
     }
 }
 
+function openApproveAllDialog(keyBook) {
+    const pending = Number(translationProgress.value.counts?.draft || 0) + Number(translationProgress.value.counts?.rejected || 0);
+    _.Dialog({
+        size: 'sm',
+        stickyActions: true,
+        slots: {
+            header: _.div(_.h3('Approve all translations?'), _.span({ class: 'text-muted' }, `${pending} translation${pending === 1 ? '' : 's'} will be approved for ${localeLabel(targetLocale.value)}.`)),
+            content: _.div(
+                _.p('This makes every current draft and rejected translation available in the selected edition.'),
+                _.small({ class: 'text-muted' }, 'Missing translations are not created or approved.'),
+            ),
+            actions: ({ close }) => [
+                _.Btn({ color: 'secondary', onClick: close }, 'Cancel'),
+                _.Btn({ color: 'primary', icon: 'check', loading: approveAllRunning, onClick: async () => {
+                    approveAllRunning.value = true;
+                    try {
+                        const payload = translationData(await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/translations/approve-all`, { target_locale: targetLocale.value }));
+                        await Promise.all([loadTranslations(keyBook), loadTranslationProgress(keyBook)]);
+                        setFeedback(`${payload.approved_count || 0} translation${Number(payload.approved_count || 0) === 1 ? '' : 's'} approved.`);
+                        close();
+                    } catch (error) {
+                        setFeedback(error.message || 'Unable to approve all translations.', 'danger');
+                    } finally {
+                        approveAllRunning.value = false;
+                    }
+                } }, 'Approve all'),
+            ],
+        },
+    }).open();
+}
+
 async function copySource(text) {
     try {
         await globalThis.navigator?.clipboard?.writeText(text || '');
@@ -889,6 +970,9 @@ async function copySource(text) {
 export default function bookTraslate(ctx) {
     const keyBook = bookKey(ctx);
     loadWorkspace(keyBook);
+    window.AudiobookTools?.setPageHeaderActions?.([
+        _.Btn({ color: 'secondary', icon: 'dashboard', onClick: () => _.router.navigate(`/dashboard/book/${keyBook}/panel`) }, 'Book panel'),
+    ]);
 
     return _.div({ class: 'at-translateRoute' }, () => pageContent(keyBook));
 }

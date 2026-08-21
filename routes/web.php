@@ -1,21 +1,21 @@
 <?php
 
+use App\Http\Controllers\AiPromptController;
 use App\Http\Controllers\AudioLibraryController;
 use App\Http\Controllers\AudioMediaController;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BookActivityController;
 use App\Http\Controllers\BookDesignController;
-use App\Http\Controllers\BookEpubController;
-use App\Http\Controllers\BookPdfController;
 use App\Http\Controllers\BookDistributionController;
 use App\Http\Controllers\BookEditionController;
-use App\Http\Controllers\AuthController;
-use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\TokenWalletController;
-use App\Http\Controllers\BookActivityController;
-use App\Http\Controllers\StatisticsController;
-use App\Http\Controllers\TeamController;
-use App\Http\Controllers\AiPromptController;
+use App\Http\Controllers\BookEpubController;
+use App\Http\Controllers\BookPdfController;
 use App\Http\Controllers\DashboardAiController;
 use App\Http\Controllers\DashboardBookController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\StatisticsController;
+use App\Http\Controllers\TeamController;
+use App\Http\Controllers\TokenWalletController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/project-plan', function () {
@@ -55,8 +55,14 @@ Route::get('/dashboard', function () {
     return view('dashboard');
 })->where('any', '.*');
 Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
-    Route::get('/prompts',[AiPromptController::class,'index']);Route::post('/prompts',[AiPromptController::class,'store']);Route::patch('/prompts/{prompt}',[AiPromptController::class,'update']);Route::delete('/prompts/{prompt}',[AiPromptController::class,'destroy']);
-    Route::get('/team', [TeamController::class, 'index']);Route::post('/team/invites',[TeamController::class,'invite']);Route::patch('/team/invites/{invite}/respond',[TeamController::class,'respond']);Route::delete('/team/invites/{invite}',[TeamController::class,'destroy']);
+    Route::get('/prompts', [AiPromptController::class, 'index']);
+    Route::post('/prompts', [AiPromptController::class, 'store']);
+    Route::patch('/prompts/{prompt}', [AiPromptController::class, 'update']);
+    Route::delete('/prompts/{prompt}', [AiPromptController::class, 'destroy']);
+    Route::get('/team', [TeamController::class, 'index']);
+    Route::post('/team/invites', [TeamController::class, 'invite']);
+    Route::patch('/team/invites/{invite}/respond', [TeamController::class, 'respond']);
+    Route::delete('/team/invites/{invite}', [TeamController::class, 'destroy']);
     Route::get('/statistics', [StatisticsController::class, 'index'])->name('statistics.index');
     Route::get('/activity', [BookActivityController::class, 'index'])->name('activity.index');
     Route::get('/tokens', [TokenWalletController::class, 'show'])->name('tokens.show');
@@ -66,6 +72,7 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     Route::get('/ai/providers', [DashboardAiController::class, 'providers'])->name('ai.providers');
+    Route::get('/ai/providers/{providerKey}/models', [DashboardAiController::class, 'models'])->name('ai.providers.models');
     Route::get('/ai/credits', [DashboardAiController::class, 'credits'])->name('ai.credits');
     Route::post('/ai/providers', [DashboardAiController::class, 'storeProvider'])->name('ai.providers.store');
     Route::patch('/ai/settings', [DashboardAiController::class, 'updateSetting'])->name('ai.settings.update');
@@ -145,6 +152,7 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::post('/books/{keyBook}/audio-timeline/group', [DashboardBookController::class, 'groupAudioTimelineItems'])->name('books.audio-timeline.group');
     Route::post('/books/{keyBook}/audio-timeline/{timelineItem}/ungroup', [DashboardBookController::class, 'ungroupAudioTimelineItem'])->name('books.audio-timeline.ungroup');
     Route::get('/books/{keyBook}/blocks/{blockUuid}/translations', [DashboardBookController::class, 'blockTranslations'])->name('books.blocks.translations');
+    Route::post('/books/{keyBook}/translations/approve-all', [DashboardBookController::class, 'approveAllTranslations'])->name('books.translations.approve-all');
     Route::post('/books/{keyBook}/blocks/{blockUuid}/translations', [DashboardBookController::class, 'storeBlockTranslation'])->name('books.blocks.translations.store');
     Route::patch('/books/{keyBook}/blocks/{blockUuid}/translations/{translation}', [DashboardBookController::class, 'updateBlockTranslation'])->name('books.blocks.translations.update');
     Route::get('/books/{keyBook}/blocks/{blockUuid}/comments', [DashboardBookController::class, 'blockComments'])->name('books.blocks.comments');

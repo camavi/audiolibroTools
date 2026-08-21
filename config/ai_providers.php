@@ -114,5 +114,18 @@ return [
             'billing_label' => 'Your local infrastructure',
             'privacy_label' => 'The server must be reachable from this Audiobook Tools installation.',
         ],
+        [
+            'provider_key' => 'lm-studio',
+            'name' => 'Local · LM Studio',
+            'base_url' => 'http://127.0.0.1:1234/v1',
+            'models' => ['local-model'],
+            'default_model' => 'local-model',
+            'connection_mode' => 'local',
+            'api_provider' => 'lm-studio',
+            'supports_background_jobs' => false,
+            'is_configured' => true,
+            'billing_label' => 'Your local infrastructure',
+            'privacy_label' => 'Start the LM Studio local server before using it. No API key is required.',
+        ],
     ],
 ];

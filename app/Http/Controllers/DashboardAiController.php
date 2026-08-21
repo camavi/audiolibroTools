@@ -9,6 +9,7 @@ use App\Models\Book;
 use App\Services\Credits\TranslationCreditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 class DashboardAiController extends Controller
@@ -46,6 +47,20 @@ class DashboardAiController extends Controller
                 'consumed_credits' => $balance->consumed_credits,
             ],
         ]);
+    }
+
+    public function models(string $providerKey): JsonResponse
+    {
+        abort_unless($providerKey === 'lm-studio', 404);
+
+        $models = $this->lmStudioModels();
+        if ($models === null) {
+            return response()->json([
+                'message' => 'LM Studio is not reachable. Start its local server and try again.',
+            ], 422);
+        }
+
+        return response()->json(['data' => ['models' => $models]]);
     }
 
     public function storeProvider(Request $request): JsonResponse
@@ -102,6 +117,11 @@ class DashboardAiController extends Controller
         $provider = collect($providers)->firstWhere('provider_key', $validated['provider_key']);
 
         abort_unless($provider, 422);
+        if ($provider['provider_key'] === 'lm-studio') {
+            $models = $this->lmStudioModels();
+            abort_unless($models, 422, 'LM Studio is not reachable or has no loaded language model.');
+            $provider['models'] = $models;
+        }
         abort_unless($provider['is_selectable'], 422, 'This managed provider is not available yet.');
         abort_unless(in_array($validated['model'], $provider['models'], true), 422);
 
@@ -295,6 +315,29 @@ class DashboardAiController extends Controller
             ->mapWithKeys(fn (AiProviderCredential $credential) => [
                 $credential->provider_key => filled($credential->api_key),
             ])
+            ->all();
+    }
+
+    private function lmStudioModels(): ?array
+    {
+        try {
+            $response = Http::acceptJson()
+                ->timeout(5)
+                ->get('http://127.0.0.1:1234/api/v1/models');
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($response->failed()) {
+            return null;
+        }
+
+        return collect($response->json('models', []))
+            ->filter(fn (array $model) => ($model['type'] ?? 'llm') === 'llm')
+            ->map(fn (array $model) => $model['key'] ?? null)
+            ->filter(fn ($model) => is_string($model) && $model !== '')
+            ->unique()
+            ->values()
             ->all();
     }
 

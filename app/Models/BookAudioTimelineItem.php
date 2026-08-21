@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BookAudioTimelineItem extends Model
 {
-    protected $fillable = ['book_id', 'book_audio_segment_id', 'audio_library_voice_sample_id', 'audio_media_asset_id', 'book_audio_job_id', 'parent_timeline_item_id', 'is_group', 'track', 'lane', 'label', 'start_ms', 'duration_ms', 'trim_start_ms', 'trim_end_ms', 'fade_in_ms', 'fade_out_ms', 'volume', 'muted', 'sort_order'];
+    protected $fillable = ['book_id', 'book_edition_id', 'book_audio_segment_id', 'audio_library_voice_sample_id', 'audio_media_asset_id', 'book_audio_job_id', 'parent_timeline_item_id', 'is_group', 'track', 'lane', 'label', 'start_ms', 'duration_ms', 'trim_start_ms', 'trim_end_ms', 'fade_in_ms', 'fade_out_ms', 'volume', 'muted', 'sort_order'];
 
     protected function casts(): array
     {

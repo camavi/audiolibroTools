@@ -2,28 +2,30 @@
 
 namespace Tests\Feature;
 
-use App\Models\AiChatMessage;
+use App\Jobs\ProcessBookAudioJob;
+use App\Jobs\ProcessBookTranslationJob;
 use App\Models\AccountCreditBalance;
-use App\Models\AudioMediaAsset;
+use App\Models\AiChatMessage;
 use App\Models\AiChatThread;
+use App\Models\AudioMediaAsset;
 use App\Models\Book;
 use App\Models\BookAudioJob;
 use App\Models\BookAudioSegment;
 use App\Models\BookAudioTimelineItem;
-use App\Models\BookDesignAsset;
-use App\Models\BookDistributionConnection;
-use App\Models\BookEdition;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
 use App\Models\BookBlockTranslation;
-use App\Models\BookTranslationJob;
 use App\Models\BookBlockVoiceAssignment;
 use App\Models\BookCategory;
+use App\Models\BookDesignAsset;
+use App\Models\BookDistributionConnection;
+use App\Models\BookEdition;
+use App\Models\BookTranslationJob;
 use App\Models\BookVoiceProfile;
-use App\Services\BookBlockService;
+use App\Services\Ai\EditorAiTranslationService;
 use App\Services\BookAudioGenerationService;
-use App\Jobs\ProcessBookTranslationJob;
-use App\Jobs\ProcessBookAudioJob;
+use App\Services\BookBlockService;
+use App\Services\Credits\TranslationCreditService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Crypt;
@@ -245,6 +247,7 @@ class DashboardBookTest extends TestCase
 
         $managed = collect($providers)->firstWhere('provider_key', 'at-openai');
         $personal = collect($providers)->firstWhere('provider_key', 'openai');
+        $lmStudio = collect($providers)->firstWhere('provider_key', 'lm-studio');
 
         $this->assertSame('AT · OpenAI', $managed['name']);
         $this->assertSame('managed', $managed['connection_mode']);
@@ -253,6 +256,25 @@ class DashboardBookTest extends TestCase
         $this->assertSame('Personal · OpenAI', $personal['name']);
         $this->assertSame('byok', $personal['connection_mode']);
         $this->assertFalse($personal['supports_background_jobs']);
+        $this->assertSame('Local · LM Studio', $lmStudio['name']);
+        $this->assertSame('local', $lmStudio['connection_mode']);
+        $this->assertTrue($lmStudio['is_selectable']);
+    }
+
+    public function test_dashboard_loads_only_llm_models_from_lm_studio(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:1234/api/v1/models' => Http::response([
+                'models' => [
+                    ['type' => 'embedding', 'key' => 'embed-local'],
+                    ['type' => 'llm', 'key' => 'google/gemma-4-e4b'],
+                ],
+            ]),
+        ]);
+
+        $this->getJson('/dashboard/api/ai/providers/lm-studio/models')
+            ->assertOk()
+            ->assertJsonPath('data.models', ['google/gemma-4-e4b']);
     }
 
     public function test_dashboard_managed_provider_never_saves_a_personal_api_key(): void
@@ -340,8 +362,8 @@ class DashboardBookTest extends TestCase
         ]);
 
         (new ProcessBookTranslationJob($job->id))->handle(
-            app(\App\Services\Ai\EditorAiTranslationService::class),
-            app(\App\Services\Credits\TranslationCreditService::class),
+            app(EditorAiTranslationService::class),
+            app(TranslationCreditService::class),
         );
 
         $job->refresh();
@@ -401,6 +423,14 @@ class DashboardBookTest extends TestCase
             'sort_order' => 2000,
             'content_json' => $this->paragraphJson('Missing source.'),
             'text_plain' => 'Missing source.',
+        ]);
+
+        $service->saveBlock($book, [
+            'block_uuid' => (string) Str::uuid(),
+            'type' => 'chapter_break',
+            'sort_order' => 3000,
+            'content_json' => $this->paragraphJson(''),
+            'text_plain' => '   ',
         ]);
 
         BookBlockTranslation::query()->create([
@@ -1231,6 +1261,49 @@ class DashboardBookTest extends TestCase
             && $request['model'] === 'gpt-5-mini'
             && $request['store'] === false
             && str_contains($request['input'][1]['content'][0]['text'], 'Midnight Wood → Bosco di Mezzanotte'));
+    }
+
+    public function test_dashboard_can_create_lm_studio_translation_without_an_api_key(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:1234/api/v1/models' => Http::response([
+                'models' => [['type' => 'llm', 'key' => 'google/gemma-4-e4b']],
+            ]),
+            'http://127.0.0.1:1234/v1/chat/completions' => Http::response([
+                'id' => 'chatcmpl_lmstudio_123',
+                'choices' => [['message' => ['content' => 'La foresta era silenziosa.']]],
+            ]),
+        ]);
+
+        $book = $this->createBook();
+        $book->update(['lang' => 'en']);
+        $blockUuid = (string) Str::uuid();
+        app(BookBlockService::class)->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('The forest was silent.'),
+            'text_plain' => 'The forest was silent.',
+        ]);
+
+        $this->patchJson('/dashboard/api/ai/settings', [
+            'service' => 'translate',
+            'key_book' => $book->key_book,
+            'provider_key' => 'lm-studio',
+            'model' => 'google/gemma-4-e4b',
+        ])->assertOk();
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/translations", [
+            'target_locale' => 'it',
+            'provider_key' => 'lm-studio',
+            'model' => 'google/gemma-4-e4b',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.translation.translated_text', 'La foresta era silenziosa.')
+            ->assertJsonPath('data.translation.notes_json.endpoint', 'http://127.0.0.1:1234/v1/chat/completions');
+
+        Http::assertSent(fn ($request) => $request->url() === 'http://127.0.0.1:1234/v1/chat/completions'
+            && $request['model'] === 'google/gemma-4-e4b');
     }
 
     public function test_dashboard_requires_api_key_for_openai_editor_block_review(): void

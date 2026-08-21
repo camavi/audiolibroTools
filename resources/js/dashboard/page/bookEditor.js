@@ -110,6 +110,7 @@ const aiServiceModel = _.rod('correction');
 const aiProviderModel = _.rod('mock');
 const aiModelModel = _.rod('mock-correction-v1');
 const aiProviderApiKey = _.rod('');
+const loadingAiProviderModels = _.rod(false);
 const aiProviderSystemPrompt = _.rod('');
 const customProviderName = _.rod('');
 const customProviderBaseUrl = _.rod('');
@@ -152,6 +153,7 @@ let updateBlockTranslationStatus = () => { };
 let askAiChat = () => { };
 let loadAiChatMessages = () => { };
 let loadAiProviders = () => { };
+let loadAiProviderModels = () => { };
 let saveAiProviderSetting = () => { };
 let openCustomProviderDialog = () => { };
 let openToolAiSettingsDialog = () => { };
@@ -552,7 +554,7 @@ function providerByKey(providerKey) {
 }
 
 function providerNeedsApiKey(providerKey) {
-    return providerKey && !['mock', 'ollama'].includes(providerKey);
+    return providerKey && !['mock', 'ollama', 'lm-studio'].includes(providerKey);
 }
 
 function correctionAiSetting() {
@@ -2950,10 +2952,11 @@ function aiSettingsPanel(keyBook, options = {}) {
                         model: nextProvider?.default_model || nextProvider?.models?.[0] || '',
                     });
                     aiProviderApiKey.value = '';
+                    loadAiProviderModels(nextProviderKey);
                 },
             }),
             _.Select({
-                label: 'Model',
+                label: () => loadingAiProviderModels.value ? 'Loading models...' : 'Model',
                 icon: 'memory',
                 model: aiModelModel,
                 options: () => models.map((model) => ({
@@ -2970,7 +2973,7 @@ function aiSettingsPanel(keyBook, options = {}) {
                     });
                 },
             }),
-            provider?.connection_mode !== 'managed' ? _.Input({
+            provider?.connection_mode !== 'managed' && providerNeedsApiKey(provider?.provider_key) ? _.Input({
                 label: provider?.has_api_key ? 'API key saved' : 'API key',
                 icon: 'key',
                 model: aiProviderApiKey,
@@ -2986,7 +2989,8 @@ function aiSettingsPanel(keyBook, options = {}) {
                     : provider?.has_api_key ? 'Credential stored' : 'No credential stored'),
                 _.small(provider?.connection_mode === 'managed'
                     ? (provider?.supports_background_jobs ? 'Background workflows supported' : 'Interactive workflow only')
-                    : provider?.is_custom ? 'Custom provider' : 'Personal provider')
+                    : provider?.connection_mode === 'local' ? 'Local provider'
+                        : provider?.is_custom ? 'Custom provider' : 'Personal provider')
             ),
             _.div({ class: 'at-rightWorkspace-actions is-inline' },
                 _.button({
@@ -3748,6 +3752,7 @@ function editorText(keyBook) {
             ...aiServiceSettings.value,
             [service]: aiProviderSetting.value,
         };
+        loadAiProviderModels(aiProviderSetting.value.provider_key);
         aiProviderStatus.value = 'ready';
     };
 
@@ -3771,6 +3776,30 @@ function editorText(keyBook) {
                 aiProviders.value = [];
                 aiProviderStatus.value = 'error';
             });
+    };
+
+    loadAiProviderModels = async (providerKey) => {
+        if (providerKey !== 'lm-studio' || loadingAiProviderModels.value) return;
+
+        loadingAiProviderModels.value = true;
+        try {
+            const payload = await _.http.getJSON('/dashboard/api/ai/providers/lm-studio/models');
+            const models = normalizeDataPayload(payload).models || [];
+            if (!models.length) return;
+
+            aiProviders.value = aiProviders.value.map((provider) => provider.provider_key === providerKey
+                ? { ...provider, models, default_model: models[0] }
+                : provider);
+
+            const selectedModel = models.includes(aiProviderSetting.value.model)
+                ? aiProviderSetting.value.model
+                : models[0];
+            setAiProviderSetting({ ...aiProviderSetting.value, model: selectedModel });
+        } catch (error) {
+            console.warn('Unable to load LM Studio models.', error);
+        } finally {
+            loadingAiProviderModels.value = false;
+        }
     };
 
     saveAiProviderSetting = async (bookKey = keyBook) => {
@@ -3953,6 +3982,7 @@ function editorText(keyBook) {
 
     openToolAiSettingsDialog = (bookKey = keyBook, service = 'correction', label = 'Tool') => {
         aiProviderApiKey.value = '';
+        loadingAiProviderModels.value = false;
         loadAiProviders(bookKey, service, { force: true });
 
         _.Dialog({
@@ -5634,6 +5664,7 @@ function editorText(keyBook) {
         askAiChat = () => { };
         loadAiChatMessages = () => { };
         loadAiProviders = () => { };
+        loadAiProviderModels = () => { };
         saveAiProviderSetting = () => { };
         openCustomProviderDialog = () => { };
         openToolAiSettingsDialog = () => { };

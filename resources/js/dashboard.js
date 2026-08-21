@@ -127,7 +127,18 @@ async function syncBookEditions() {
         const editions = data.editions || [];
         const queryEdition = new URLSearchParams(window.location.search).get('edition');
         CMSwift.reactive.untracked(() => {
-            bookEditionOptions.value = editions.map((edition) => ({ value: String(edition.id), label: `${edition.locale.toUpperCase()} · ${edition.is_original ? 'Original' : `${edition.approved_blocks}/${edition.total_blocks} translated`}` }));
+            bookEditionOptions.value = editions.map((edition) => {
+                const total = Number(edition.total_blocks || 0);
+                const approved = Number(edition.approved_blocks || 0);
+                const translationState = total > 0 && approved >= total
+                    ? 'Complete'
+                    : `${approved}/${total} working`;
+
+                return {
+                    value: String(edition.id),
+                    label: `${edition.locale.toUpperCase()} · ${edition.is_original ? 'Original' : translationState}`,
+                };
+            });
             selectedBookEdition.value = queryEdition && editions.some((edition) => String(edition.id) === queryEdition) ? queryEdition : String(editions.find((edition) => edition.is_original)?.id || editions[0]?.id || '');
         });
     } catch (_) { bookEditionVisible.value = false; }

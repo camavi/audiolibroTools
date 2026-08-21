@@ -1,1 +1,259 @@
-.at-distributionPage{max-width:1240px;margin:0 auto;padding:clamp(1rem,2.5vw,2rem);display:grid;gap:1rem}.at-distributionHeader{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:1.15rem 1.3rem;border:1px solid #dce6f4;border-radius:.9rem;background:linear-gradient(115deg,#fbfdff,#f1f6ff)}.at-distributionHeader span,.at-distributionReadiness>div:first-child span,.at-distributionChannelsHead span{color:#28785e;font-size:.66rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.at-distributionHeader h2{margin:.18rem 0;color:#1e3557;font-size:1.35rem}.at-distributionHeader p{margin:0;color:#61738e;font-size:.82rem}.at-distributionHeader .cms-btn,.at-distributionProviderActions .cms-btn,.at-distributionDialogActions .cms-btn{color:#fff!important}.at-distributionWorkspace{display:grid;gap:1rem}.at-distributionReadiness,.at-distributionChannels{display:grid;gap:.9rem;padding:1rem;border:1px solid #dce6f4;border-radius:.85rem;background:#fff}.at-distributionReadiness h3,.at-distributionChannels h3{margin:.14rem 0 0;color:#233b60;font-size:.95rem}.at-distributionReadinessItems{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.65rem}.at-distributionReadinessItems>div{display:grid;grid-template-columns:auto 1fr;gap:.1rem .45rem;align-items:center;padding:.65rem;border:1px solid #e3ebf5;border-radius:.6rem}.at-distributionReadinessItems .cms-icon{grid-row:span 2;font-size:1.15rem}.at-distributionReadinessItems span{font-size:.75rem;font-weight:700}.at-distributionReadinessItems small{font-size:.65rem}.at-distributionReadinessItems .is-ready .cms-icon,.at-distributionReadinessItems .is-ready small{color:#277245}.at-distributionReadinessItems .is-missing .cms-icon,.at-distributionReadinessItems .is-missing small{color:#a66a18}.at-distributionChannelsHead{display:flex;justify-content:space-between;align-items:end;gap:1rem}.at-distributionChannelsHead>div{display:grid;gap:.12rem}.at-distributionChannelsHead .cms-field{min-width:10rem;margin:0}.at-distributionGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem}.at-distributionProvider{display:grid;gap:.7rem;padding:.85rem;border:1px solid #e1e8f2;border-radius:.7rem;background:#fbfcfe}.at-distributionProvider.is-connected{border-color:#9bcfb9;background:#fbfffc}.at-distributionProviderHead{display:grid;grid-template-columns:auto 1fr;gap:.2rem .55rem;align-items:center}.at-distributionProviderIcon{display:grid;grid-row:span 2;width:2rem;height:2rem;place-items:center;border-radius:.5rem;color:#28785e;background:#e8f6ef}.at-distributionProviderHead strong{color:#294461;font-size:.82rem}.at-distributionProviderHead small{color:#72839a;font-size:.66rem}.at-distributionState{grid-column:1/-1;width:max-content;font-size:.63rem;font-weight:700}.at-distributionState.not_connected{color:#77869a}.at-distributionState.manual_ready,.at-distributionState.connected{color:#277245}.at-distributionProvider p{min-height:2.5em;margin:0;color:#667891;font-size:.69rem;line-height:1.35}.at-distributionProviderActions{display:flex;justify-content:space-between;gap:.35rem}.at-distributionProviderActions .cms-btn{min-height:1.8rem;font-size:.65rem}.at-distributionDialog{display:grid;gap:.8rem}.at-distributionManual{display:flex;gap:.55rem;padding:.75rem;border-radius:.55rem;color:#526a87;background:#f2f6fb;font-size:.75rem;line-height:1.4}.at-distributionDialogActions{display:flex;justify-content:flex-end;gap:.5rem}.at-distributionLoading{min-height:20rem;display:grid;place-items:center;border:1px dashed #cbd8ea;border-radius:.8rem;color:#71829a}@media(max-width:900px){.at-distributionGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:640px){.at-distributionHeader{align-items:flex-start;flex-direction:column}.at-distributionReadinessItems,.at-distributionGrid{grid-template-columns:1fr}.at-distributionChannelsHead{align-items:stretch;flex-direction:column}}
+.at-distributionPage {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: clamp(1rem, 2.5vw, 2rem);
+    display: grid;
+    gap: 1rem
+}
+
+.at-distributionHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.15rem 1.3rem;
+    border: 1px solid #dce6f4;
+    border-radius: .9rem;
+    background: linear-gradient(115deg, #fbfdff, #f1f6ff)
+}
+
+.at-distributionHeader span,
+.at-distributionReadiness>div:first-child span,
+.at-distributionChannelsHead span {
+    letter-spacing: .1em;
+    text-transform: uppercase
+}
+
+.at-distributionHeader h2 {
+    margin: .18rem 0;
+    color: #1e3557;
+    font-size: 1.35rem
+}
+
+.at-distributionHeader p {
+    margin: 0;
+    color: #61738e;
+    font-size: .82rem
+}
+
+.at-distributionHeader .cms-btn,
+.at-distributionProviderActions .cms-btn,
+.at-distributionDialogActions .cms-btn {
+    color: #fff !important
+}
+
+.at-distributionWorkspace {
+    display: grid;
+    gap: 1rem
+}
+
+.at-distributionReadiness,
+.at-distributionChannels {
+    display: grid;
+    gap: .9rem;
+    padding: 1rem;
+    border: 1px solid #dce6f4;
+    border-radius: .85rem;
+    background: #fff
+}
+
+.at-distributionReadiness h3,
+.at-distributionChannels h3 {
+    margin: .14rem 0 0;
+    color: #233b60;
+    font-size: .95rem
+}
+
+.at-distributionReadinessItems {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: .65rem
+}
+
+.at-distributionReadinessItems>div {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: .1rem .45rem;
+    align-items: center;
+    padding: .65rem;
+    border: 1px solid #e3ebf5;
+    border-radius: .6rem
+}
+
+.at-distributionReadinessItems .cms-icon {
+    grid-row: span 2;
+    font-size: 1.15rem
+}
+
+.at-distributionReadinessItems span {
+    font-size: .75rem;
+    font-weight: 700
+}
+
+.at-distributionReadinessItems small {
+    font-size: .65rem
+}
+
+.at-distributionReadinessItems .is-ready .cms-icon,
+.at-distributionReadinessItems .is-ready small {
+    color: #277245
+}
+
+.at-distributionReadinessItems .is-missing .cms-icon,
+.at-distributionReadinessItems .is-missing small {
+    color: #a66a18
+}
+
+.at-distributionChannelsHead {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    gap: 1rem
+}
+
+.at-distributionChannelsHead>div {
+    display: grid;
+    gap: .12rem
+}
+
+.at-distributionChannelsHead .cms-field {
+    min-width: 10rem;
+    margin: 0
+}
+
+.at-distributionGrid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .75rem
+}
+
+.at-distributionProvider {
+    display: grid;
+    gap: .7rem;
+    padding: .85rem;
+    border: 1px solid #e1e8f2;
+    border-radius: .7rem;
+    background: #fbfcfe
+}
+
+.at-distributionProvider.is-connected {
+    border-color: #9bcfb9;
+    background: #fbfffc
+}
+
+.at-distributionProviderHead {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: .2rem .55rem;
+    align-items: center
+}
+
+.at-distributionProviderIcon {
+    display: grid;
+    grid-row: span 2;
+    width: 2rem;
+    height: 2rem;
+    place-items: center;
+    border-radius: .5rem;
+    color: #28785e;
+    background: #e8f6ef
+}
+
+.at-distributionProviderHead strong {
+    color: #294461;
+    font-size: .82rem
+}
+
+.at-distributionProviderHead small {
+    color: #72839a;
+    font-size: .66rem
+}
+
+.at-distributionState {
+    grid-column: 1/-1;
+    width: max-content;
+    font-size: .63rem;
+    font-weight: 700
+}
+
+.at-distributionState.not_connected {
+    color: #77869a
+}
+
+.at-distributionState.manual_ready,
+.at-distributionState.connected {
+    color: #277245
+}
+
+.at-distributionProvider p {
+    min-height: 2.5em;
+    margin: 0;
+    color: #667891;
+    font-size: .69rem;
+    line-height: 1.35
+}
+
+.at-distributionProviderActions {
+    display: flex;
+    justify-content: space-between;
+    gap: .35rem
+}
+
+.at-distributionProviderActions .cms-btn {
+    min-height: 1.8rem;
+    font-size: .65rem
+}
+
+.at-distributionDialog {
+    display: grid;
+    gap: .8rem
+}
+
+.at-distributionManual {
+    display: flex;
+    gap: .55rem;
+    padding: .75rem;
+    border-radius: .55rem;
+    color: #526a87;
+    background: #f2f6fb;
+    font-size: .75rem;
+    line-height: 1.4
+}
+
+.at-distributionDialogActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .5rem
+}
+
+.at-distributionLoading {
+    min-height: 20rem;
+    display: grid;
+    place-items: center;
+    border: 1px dashed #cbd8ea;
+    border-radius: .8rem;
+    color: #71829a
+}
+
+@media(max-width:900px) {
+    .at-distributionGrid {
+        grid-template-columns: repeat(2, minmax(0, 1fr))
+    }
+}
+
+@media(max-width:640px) {
+    .at-distributionHeader {
+        align-items: flex-start;
+        flex-direction: column
+    }
+
+    .at-distributionReadinessItems,
+    .at-distributionGrid {
+        grid-template-columns: 1fr
+    }
+
+    .at-distributionChannelsHead {
+        align-items: stretch;
+        flex-direction: column
+    }
+}

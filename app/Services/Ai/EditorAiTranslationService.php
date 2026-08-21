@@ -35,6 +35,10 @@ class EditorAiTranslationService
             ];
         }
 
+        if ($provider['provider_key'] === 'lm-studio') {
+            return $this->lmStudioTranslation($provider, $sourceText, $book->lang, $targetLocale, $terms->all());
+        }
+
         if ($provider['api_provider'] !== 'openai') {
             $this->fail('provider_key', "Provider [{$provider['provider_key']}] is configured but not implemented for translations yet.");
         }
@@ -109,6 +113,14 @@ class EditorAiTranslationService
         $resolvedModel = $model ?: ($setting?->model ?: 'mock-translation-v1');
         $provider = $this->providerConfig($accountId, $resolvedProviderKey);
 
+        if ($resolvedProviderKey === 'lm-studio') {
+            $models = $this->lmStudioModels();
+            if ($models === null || ! $models) {
+                $this->fail('provider_key', 'LM Studio is not reachable or has no language model available.');
+            }
+            $provider['models'] = $models;
+        }
+
         if (! in_array($resolvedModel, $provider['models'], true)) {
             $this->fail('model', "Model [{$resolvedModel}] is not available for provider [{$resolvedProviderKey}].");
         }
@@ -174,9 +186,73 @@ class EditorAiTranslationService
             })
             ->implode("\n");
 
-        return "Translate the following literary text from ".($sourceLocale ?: 'the source language')." to {$targetLocale}. Preserve meaning, voice, rhythm, paragraph structure, punctuation and dialogue. Return only the translation.\n\n"
+        return 'Translate the following literary text from '.($sourceLocale ?: 'the source language')." to {$targetLocale}. Preserve meaning, voice, rhythm, paragraph structure, punctuation and dialogue. Return only the translation.\n\n"
             .($glossary ? "Required glossary:\n{$glossary}\n\n" : '')
             ."Text to translate:\n{$sourceText}";
+    }
+
+    private function lmStudioTranslation(array $provider, string $sourceText, ?string $sourceLocale, string $targetLocale, array $terms): array
+    {
+        $baseUrl = rtrim($provider['base_url'] ?: 'http://127.0.0.1:1234/v1', '/');
+        try {
+            $response = Http::acceptJson()
+                ->timeout(180)
+                ->post("{$baseUrl}/chat/completions", [
+                    'model' => $provider['model'],
+                    'messages' => [
+                        ['role' => 'system', 'content' => $provider['system_prompt']],
+                        ['role' => 'user', 'content' => $this->translationPrompt($sourceText, $sourceLocale, $targetLocale, $terms)],
+                    ],
+                    'temperature' => 0.2,
+                ]);
+        } catch (\Throwable) {
+            $this->fail('provider_key', 'LM Studio is not reachable. Start its local server and load the selected model.');
+        }
+
+        if ($response->failed()) {
+            $this->fail('provider_key', 'LM Studio translation request failed: '.$response->body());
+        }
+
+        $translatedText = trim((string) $response->json('choices.0.message.content'));
+        if ($translatedText === '') {
+            $this->fail('provider_key', 'LM Studio returned an empty translation response.');
+        }
+
+        return [
+            'source' => 'ai',
+            'translated_text' => $translatedText,
+            'notes_json' => [
+                'provider_key' => $provider['provider_key'],
+                'provider_name' => $provider['name'],
+                'model' => $provider['model'],
+                'endpoint' => "{$baseUrl}/chat/completions",
+                'response_id' => $response->json('id'),
+                'glossary_terms_count' => count($terms),
+            ],
+        ];
+    }
+
+    private function lmStudioModels(): ?array
+    {
+        try {
+            $response = Http::acceptJson()
+                ->timeout(5)
+                ->get('http://127.0.0.1:1234/api/v1/models');
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($response->failed()) {
+            return null;
+        }
+
+        return collect($response->json('models', []))
+            ->filter(fn (array $model) => ($model['type'] ?? 'llm') === 'llm')
+            ->map(fn (array $model) => $model['key'] ?? null)
+            ->filter(fn ($model) => is_string($model) && $model !== '')
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function extractResponseText(array $payload): string

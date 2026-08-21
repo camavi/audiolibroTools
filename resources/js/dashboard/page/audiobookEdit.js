@@ -222,7 +222,7 @@ function loadAudiobook(keyBook) {
 
 async function loadTimeline(keyBook) {
     try {
-        const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline`);
+        const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline${audioEditionQuery()}`);
         timelineItems.value = audioData(payload).items || [];
         selectedTimelineItemKey.value = null;
         selectedTimelineItemKeys.value = [];
@@ -234,7 +234,7 @@ async function loadTimeline(keyBook) {
 async function saveTimeline(keyBook, showStatus = true) {
     timelinePersistence.value = 'saving';
     try {
-        const payload = await _.http.putJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline`, { items: timelineItems.value });
+        const payload = await _.http.putJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline`, { ...audioEditionPayload(), items: timelineItems.value.map(timelineSaveItem) });
         timelineItems.value = audioData(payload).items || timelineItems.value;
         timelinePersistence.value = 'saved';
         renderTimeline?.();
@@ -245,6 +245,33 @@ async function saveTimeline(keyBook, showStatus = true) {
         audioStatus.value = { type: 'danger', message: error.message || 'Unable to save timeline.' };
         return false;
     }
+}
+function timelineSaveItem(item) {
+    const numericId = Number(item.id);
+    const reference = (key) => {
+        const value = Number(item[key]);
+        return Number.isInteger(value) && value > 0 ? value : null;
+    };
+
+    return {
+        ...(Number.isInteger(numericId) && numericId > 0 ? { id: numericId } : {}),
+        track: ['voice', 'music', 'fx'].includes(item.track) ? item.track : 'voice',
+        lane: Math.max(0, Number(item.lane || 0)),
+        label: String(item.label || 'Audio clip').slice(0, 160),
+        start_ms: Math.max(0, Math.round(Number(item.start_ms || 0))),
+        duration_ms: Math.max(100, Math.round(Number(item.duration_ms || 100))),
+        trim_start_ms: Math.max(0, Math.round(Number(item.trim_start_ms || 0))),
+        trim_end_ms: Math.max(0, Math.round(Number(item.trim_end_ms || 0))),
+        fade_in_ms: Math.max(0, Math.round(Number(item.fade_in_ms || 0))),
+        fade_out_ms: Math.max(0, Math.round(Number(item.fade_out_ms || 0))),
+        volume: Math.min(100, Math.max(0, Math.round(Number(item.volume ?? 100)))),
+        muted: Boolean(item.muted),
+        is_group: Boolean(item.is_group),
+        book_audio_segment_id: reference('book_audio_segment_id'),
+        audio_library_voice_sample_id: reference('audio_library_voice_sample_id'),
+        audio_media_asset_id: reference('audio_media_asset_id'),
+        book_audio_job_id: reference('book_audio_job_id'),
+    };
 }
 function scheduleTimelineSave(keyBook) {
     if (!keyBook) return;
@@ -785,6 +812,7 @@ async function groupSelectedTimelineItems(keyBook) {
     }
     try {
         const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline/group`, {
+            ...audioEditionPayload(),
             item_ids: items.map((item) => item.id),
         });
         const masterId = audioData(payload).master_id;
@@ -845,21 +873,27 @@ async function removeSelectedTimelineItem(keyBook) {
     }
 
     const keys = new Set(items.map(timelineItemKey));
+    const persistedIds = items.map((item) => Number(item.id)).filter((id) => Number.isInteger(id) && id > 0);
     rememberTimelineSnapshot();
     keys.forEach((key) => { timelinePlayers.get(key)?.pause(); timelinePlayers.delete(key); });
-    timelineItems.value = timelineItems.value.filter((timelineItem) => !keys.has(timelineItemKey(timelineItem)));
-    selectedTimelineItemKey.value = null;
-    selectedTimelineItemKeys.value = [];
-    scheduleTimelineSave(keyBook);
-    audioStatus.value = { type: 'success', message: `${items.length} clip${items.length === 1 ? '' : 's'} removed. Use Undo to restore ${items.length === 1 ? 'it' : 'them'}.` };
-    renderTimeline?.();
+    try {
+        await Promise.all(persistedIds.map((id) => _.http.delJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline/${encodeURIComponent(id)}${audioEditionQuery()}`)));
+        timelineItems.value = timelineItems.value.filter((timelineItem) => !keys.has(timelineItemKey(timelineItem)));
+        selectedTimelineItemKey.value = null;
+        selectedTimelineItemKeys.value = [];
+        audioStatus.value = { type: 'success', message: `${items.length} clip${items.length === 1 ? '' : 's'} removed. Use Undo to restore ${items.length === 1 ? 'it' : 'them'}.` };
+        renderTimeline?.();
+    } catch (error) {
+        timelineItems.value = timelineSnapshot();
+        audioStatus.value = { type: 'danger', message: error.message || 'Unable to remove the selected audio clip.' };
+    }
 }
 
 async function ungroupSelectedTimelineItem(keyBook) {
     const item = selectedTimelineItem();
     if (!item?.is_group || !item.id) return;
     try {
-        const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline/${encodeURIComponent(item.id)}/ungroup`, {});
+        const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline/${encodeURIComponent(item.id)}/ungroup`, audioEditionPayload());
         timelineItems.value = audioData(payload).items || [];
         selectedTimelineItemKey.value = null;
         selectedTimelineItemKeys.value = [];
@@ -1120,7 +1154,7 @@ async function publishAudiobook(keyBook) {
     publishRunning.value = true;
     publishResult.value = null;
     try {
-        const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-publish`, {});
+        const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-publish`, audioEditionPayload());
         publishResult.value = audioData(payload);
         audioStatus.value = { type: 'success', message: 'Voice, Music and FX masters rendered successfully.' };
     } catch (error) {

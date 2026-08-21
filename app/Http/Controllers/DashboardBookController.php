@@ -1249,8 +1249,8 @@ class DashboardBookController extends Controller
             ->where('book_block_version_id', $block->current_version_id)
             ->where('book_edition_id', $edition->id)
             ->latest('created_at')->latest('id')->get();
-        $usedJobIds = $book->audioTimelineItems()->whereNotNull('book_audio_job_id')->pluck('book_audio_job_id')->flip();
-        $usedSegmentIds = $book->audioTimelineItems()->whereNotNull('book_audio_segment_id')->pluck('book_audio_segment_id')->flip();
+        $usedJobIds = $this->timelineItemsForEdition($book, $edition)->whereNotNull('book_audio_job_id')->pluck('book_audio_job_id')->flip();
+        $usedSegmentIds = $this->timelineItemsForEdition($book, $edition)->whereNotNull('book_audio_segment_id')->pluck('book_audio_segment_id')->flip();
         $generatorProfile = $assignment?->voiceProfile
             ?? (($profileId = $this->editionAudioSettings($book, $edition)['default_voice_profile_id'] ?? null) ? $book->voiceProfiles()->find($profileId) : null);
 
@@ -1368,9 +1368,10 @@ class DashboardBookController extends Controller
         return response()->json(['data' => ['generator_settings' => $this->serializeAudioGeneratorSettings($book, $this->audioEditionBlock($book, $block, $edition), $profile, $preview)]]);
     }
 
-    public function audioTimeline(string $keyBook): JsonResponse
+    public function audioTimeline(Request $request, string $keyBook): JsonResponse
     {
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
         $relations = [
             'audioSegment:id,block_uuid,audio_path,duration_ms,status,metadata_json',
             'librarySample:id,audio_library_voice_id,audio_path,duration_ms,original_name',
@@ -1383,7 +1384,7 @@ class DashboardBookController extends Controller
         $audioPath = static fn (BookAudioTimelineItem $item): ?string => $item->audioSegment
             ? route('dashboard.api.book-audio-segments.stream', $item->audioSegment)
             : ($item->mediaAsset ? route('dashboard.api.audio-media.stream', $item->mediaAsset) : ($item->librarySample ? route('dashboard.api.audio-library.samples.stream', $item->librarySample) : null));
-        $items = $book->audioTimelineItems()
+        $items = $this->timelineItemsForEdition($book, $edition)
             // Compound children are represented by their persisted master.
             // The original clip rows remain intact and are returned inside it.
             ->whereNull('parent_timeline_item_id')
@@ -1447,31 +1448,33 @@ class DashboardBookController extends Controller
     {
         $validated = $request->validate(['items' => ['required', 'array', 'max:300'], 'items.*.id' => ['nullable', 'integer'], 'items.*.track' => ['required', 'in:voice,music,fx'], 'items.*.lane' => ['nullable', 'integer', 'min:0', 'max:40'], 'items.*.label' => ['required', 'string', 'max:160'], 'items.*.start_ms' => ['required', 'integer', 'min:0'], 'items.*.duration_ms' => ['required', 'integer', 'min:100'], 'items.*.trim_start_ms' => ['nullable', 'integer', 'min:0'], 'items.*.trim_end_ms' => ['nullable', 'integer', 'min:0'], 'items.*.fade_in_ms' => ['nullable', 'integer', 'min:0'], 'items.*.fade_out_ms' => ['nullable', 'integer', 'min:0'], 'items.*.volume' => ['nullable', 'integer', 'min:0', 'max:100'], 'items.*.muted' => ['nullable', 'boolean'], 'items.*.is_group' => ['nullable', 'boolean'], 'items.*.book_audio_segment_id' => ['nullable', 'integer'], 'items.*.audio_library_voice_sample_id' => ['nullable', 'integer'], 'items.*.audio_media_asset_id' => ['nullable', 'integer'], 'items.*.book_audio_job_id' => ['nullable', 'integer']]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
         $sampleIds = collect($validated['items'])->pluck('audio_library_voice_sample_id')->filter()->map(fn ($id) => (int) $id)->unique()->values();
         abort_unless($sampleIds->isEmpty() || AudioLibraryVoiceSample::query()->whereIn('id', $sampleIds)->whereHas('voice', fn ($query) => $query->where('account_id', auth()->id()))->count() === $sampleIds->count(), 422);
         $mediaIds = collect($validated['items'])->pluck('audio_media_asset_id')->filter()->map(fn ($id) => (int) $id)->unique()->values();
         abort_unless($mediaIds->isEmpty() || AudioMediaAsset::query()->whereIn('id', $mediaIds)->where('account_id', auth()->id())->count() === $mediaIds->count(), 422);
-        DB::transaction(function () use ($book, $validated): void {
+        DB::transaction(function () use ($book, $edition, $validated): void {
             $submittedIds = collect($validated['items'])->pluck('id')->filter()->map(fn ($id) => (int) $id)->values();
             // Nested compound children are managed by their group/ungroup
             // endpoints and must not disappear when the client saves masters.
-            $existing = $book->audioTimelineItems()->whereNull('parent_timeline_item_id');
+            $existing = $this->timelineItemsForEdition($book, $edition)->whereNull('parent_timeline_item_id');
             $submittedIds->isEmpty() ? $existing->delete() : $existing->whereNotIn('id', $submittedIds)->delete();
 
             foreach ($validated['items'] as $index => $item) {
-                $record = isset($item['id']) ? $book->audioTimelineItems()->whereKey($item['id'])->firstOrFail() : new BookAudioTimelineItem(['book_id' => $book->id]);
+                $record = isset($item['id']) ? $this->timelineItemsForEdition($book, $edition)->whereKey($item['id'])->firstOrFail() : new BookAudioTimelineItem(['book_id' => $book->id, 'book_edition_id' => $edition->id]);
                 $record->fill([...$item, 'sort_order' => $index]);
                 $record->save();
             }
         });
 
-        return $this->audioTimeline($keyBook);
+        return $this->audioTimeline($request, $keyBook);
     }
 
-    public function deleteAudioTimelineItem(string $keyBook, BookAudioTimelineItem $timelineItem): JsonResponse
+    public function deleteAudioTimelineItem(Request $request, string $keyBook, BookAudioTimelineItem $timelineItem): JsonResponse
     {
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
-        abort_unless($timelineItem->book_id === $book->id, 404);
+        $edition = $this->audioEdition($request, $book);
+        abort_unless($timelineItem->book_id === $book->id && ((int) $timelineItem->book_edition_id === (int) $edition->id || ($edition->is_original && ! $timelineItem->book_edition_id)), 404);
 
         // The timeline entry is removed, while the generated source segment and
         // its audio file remain available for reuse elsewhere in the audiobook.
@@ -1495,8 +1498,8 @@ class DashboardBookController extends Controller
         $duration = $segments->sum(fn (BookAudioSegment $segment) => (int) $segment->duration_ms + (int) $segment->pause_after_ms);
         $placement = $validated['placement'] ?? 'paragraph';
 
-        [$item, $start, $shiftedItems, $replaced] = DB::transaction(function () use ($book, $job, $blockUuid, $segments, $duration, $validated, $placement): array {
-            $voiceItems = $book->audioTimelineItems()
+        [$item, $start, $shiftedItems, $replaced] = DB::transaction(function () use ($book, $edition, $job, $blockUuid, $segments, $duration, $validated, $placement): array {
+            $voiceItems = $this->timelineItemsForEdition($book, $edition)
                 ->whereNull('parent_timeline_item_id')
                 ->where('track', 'voice')
                 ->with(['audioJob:id,block_uuid', 'audioSegment:id,block_uuid'])
@@ -1563,10 +1566,10 @@ class DashboardBookController extends Controller
             }
 
             $item = BookAudioTimelineItem::query()->create([
-                'book_id' => $book->id, 'book_audio_segment_id' => $segments->first()->id,
+                'book_id' => $book->id, 'book_edition_id' => $edition->id, 'book_audio_segment_id' => $segments->first()->id,
                 'book_audio_job_id' => $job->id, 'is_group' => true, 'track' => 'voice',
                 'lane' => (int) ($validated['lane'] ?? 0), 'label' => $job->voiceProfile?->name ?: 'Narration group', 'start_ms' => $start,
-                'duration_ms' => $duration, 'sort_order' => $book->audioTimelineItems()->count(),
+                'duration_ms' => $duration, 'sort_order' => $book->audioTimelineItems()->where('book_edition_id', $edition->id)->count(),
             ]);
 
             return [$item, $start, $shiftedItems, false];
@@ -1599,7 +1602,7 @@ class DashboardBookController extends Controller
             if (! $job) {
                 continue;
             }
-            $existing = $book->audioTimelineItems()->whereNull('parent_timeline_item_id')->with(['audioJob:id,block_uuid', 'audioSegment:id,block_uuid'])->get()
+            $existing = $this->timelineItemsForEdition($book, $edition)->whereNull('parent_timeline_item_id')->with(['audioJob:id,block_uuid', 'audioSegment:id,block_uuid'])->get()
                 ->filter(fn (BookAudioTimelineItem $item) => ($item->audioJob?->block_uuid ?? $item->audioSegment?->block_uuid) === $block->block_uuid);
             if ($existing->isNotEmpty() && ! $replace) {
                 $skipped++;
@@ -1650,7 +1653,8 @@ class DashboardBookController extends Controller
             'item_ids.*' => ['integer', 'distinct'],
         ]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
-        $items = $book->audioTimelineItems()
+        $edition = $this->audioEdition($request, $book);
+        $items = $this->timelineItemsForEdition($book, $edition)
             ->whereIn('id', $validated['item_ids'])
             ->whereNull('parent_timeline_item_id')
             ->orderBy('start_ms')
@@ -1664,9 +1668,10 @@ class DashboardBookController extends Controller
 
         $start = $items->min('start_ms');
         $end = $items->max(fn (BookAudioTimelineItem $item) => (int) $item->start_ms + (int) $item->duration_ms);
-        $master = DB::transaction(function () use ($book, $items, $track, $lane, $start, $end): BookAudioTimelineItem {
+        $master = DB::transaction(function () use ($book, $edition, $items, $track, $lane, $start, $end): BookAudioTimelineItem {
             $master = BookAudioTimelineItem::query()->create([
                 'book_id' => $book->id,
+                'book_edition_id' => $edition->id,
                 'is_group' => true,
                 'track' => $track,
                 'lane' => $lane,
@@ -1684,10 +1689,11 @@ class DashboardBookController extends Controller
         return response()->json(['data' => ['master_id' => $master->id]], 201);
     }
 
-    public function ungroupAudioTimelineItem(string $keyBook, BookAudioTimelineItem $timelineItem): JsonResponse
+    public function ungroupAudioTimelineItem(Request $request, string $keyBook, BookAudioTimelineItem $timelineItem): JsonResponse
     {
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
-        abort_unless($timelineItem->book_id === $book->id && $timelineItem->is_group, 422);
+        $edition = $this->audioEdition($request, $book);
+        abort_unless($timelineItem->book_id === $book->id && ((int) $timelineItem->book_edition_id === (int) $edition->id || ($edition->is_original && ! $timelineItem->book_edition_id)) && $timelineItem->is_group, 422);
 
         if (! $timelineItem->book_audio_job_id) {
             $children = $timelineItem->timelineChildren()->get();
@@ -1697,7 +1703,7 @@ class DashboardBookController extends Controller
                 $timelineItem->delete();
             });
 
-            return $this->audioTimeline($keyBook);
+            return $this->audioTimeline($request, $keyBook);
         }
 
         $segments = $timelineItem->audioJob?->segments()->orderBy('segment_index')->get() ?? collect();
@@ -1732,13 +1738,14 @@ class DashboardBookController extends Controller
         }
         abort_if(empty($created), 422, 'The visible portion of this group contains no audio clips.');
 
-        DB::transaction(function () use ($book, $timelineItem, $created): void {
+        DB::transaction(function () use ($book, $edition, $timelineItem, $created): void {
             $lastIndex = count($created) - 1;
             foreach ($created as $index => $part) {
                 /** @var BookAudioSegment $segment */
                 $segment = $part['segment'];
                 BookAudioTimelineItem::query()->create([
                     'book_id' => $book->id,
+                    'book_edition_id' => $edition->id,
                     'book_audio_segment_id' => $segment->id,
                     'book_audio_job_id' => $timelineItem->book_audio_job_id,
                     'track' => $timelineItem->track,
@@ -1758,14 +1765,15 @@ class DashboardBookController extends Controller
             $timelineItem->delete();
         });
 
-        return $this->audioTimeline($keyBook);
+        return $this->audioTimeline($request, $keyBook);
     }
 
-    public function publishAudioTimeline(string $keyBook): JsonResponse
+    public function publishAudioTimeline(Request $request, string $keyBook): JsonResponse
     {
         set_time_limit(0);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
-        $roots = $book->audioTimelineItems()
+        $edition = $this->audioEdition($request, $book);
+        $roots = $this->timelineItemsForEdition($book, $edition)
             ->whereNull('parent_timeline_item_id')
             ->with([
                 'audioSegment', 'mediaAsset', 'librarySample',
@@ -2683,6 +2691,29 @@ class DashboardBookController extends Controller
         ]);
     }
 
+    public function approveAllTranslations(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate(['target_locale' => ['required', 'string', 'max:20']]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $targetLocale = strtolower(trim($validated['target_locale']));
+        $versionIds = $book->blocks()->whereNotNull('current_version_id')->pluck('current_version_id');
+
+        $approved = BookBlockTranslation::query()
+            ->where('book_id', $book->id)
+            ->where('target_locale', $targetLocale)
+            ->whereIn('source_book_block_version_id', $versionIds)
+            ->whereIn('status', ['draft', 'rejected'])
+            ->update([
+                'status' => 'approved',
+                'approved_at' => now(),
+                'resolved_at' => now(),
+                'resolved_by' => auth()->id(),
+                'updated_at' => now(),
+            ]);
+
+        return response()->json(['data' => ['approved_count' => $approved]]);
+    }
+
     public function storeBlockReview(
         Request $request,
         string $keyBook,
@@ -2861,6 +2892,14 @@ class DashboardBookController extends Controller
         return is_array($settings)
             ? $settings
             : ($edition->is_original ? ($book->audio_settings_json ?? []) : []);
+    }
+
+    private function timelineItemsForEdition(Book $book, BookEdition $edition)
+    {
+        return $book->audioTimelineItems()->where(function ($query) use ($edition): void {
+            $query->where('book_edition_id', $edition->id);
+            if ($edition->is_original) $query->orWhereNull('book_edition_id');
+        });
     }
 
     private function bookDesign(Book $book): array

@@ -15,6 +15,7 @@ class BookEditionController extends Controller
     {
         $book = $this->book($keyBook);
         $this->ensureOriginal($book);
+        $this->ensureApprovedTranslationEditions($book);
         return response()->json(['data' => ['editions' => $book->editions()->orderByDesc('is_original')->orderBy('locale')->get()->map(fn (BookEdition $edition) => $this->serialize($book, $edition))->values()]]);
     }
 
@@ -29,13 +30,50 @@ class BookEditionController extends Controller
 
     private function ensureOriginal(Book $book): BookEdition
     {
-        return $book->editions()->firstOrCreate(['locale' => strtolower($book->lang ?: 'en')], ['name' => $book->name, 'status' => 'ready', 'is_original' => true]);
+        $locale = strtolower($book->lang ?: 'en');
+        $edition = $book->editions()->firstOrCreate(
+            ['locale' => $locale],
+            ['name' => $book->name, 'status' => 'ready', 'is_original' => true],
+        );
+
+        $book->editions()->whereKeyNot($edition->id)->update(['is_original' => false]);
+        $edition->forceFill(['is_original' => true, 'status' => 'ready'])->save();
+
+        return $edition;
+    }
+
+    private function ensureApprovedTranslationEditions(Book $book): void
+    {
+        BookBlockTranslation::query()
+            ->where('book_id', $book->id)
+            ->where('status', 'approved')
+            ->whereNotNull('target_locale')
+            ->distinct()
+            ->pluck('target_locale')
+            ->map(fn (string $locale) => strtolower($locale))
+            ->each(fn (string $locale) => $book->editions()->firstOrCreate(
+                ['locale' => $locale],
+                ['name' => $book->name.' · '.strtoupper($locale), 'status' => 'draft', 'is_original' => false],
+            ));
     }
 
     private function serialize(Book $book, BookEdition $edition): array
     {
-        $total = $book->blocks()->where('status', '!=', 'deleted')->whereNotNull('current_version_id')->count();
-        $approved = $edition->is_original ? $total : BookBlockTranslation::query()->where('book_id', $book->id)->where('target_locale', $edition->locale)->where('status', 'approved')->whereIn('source_book_block_version_id', $book->blocks()->where('status', '!=', 'deleted')->pluck('current_version_id'))->distinct('book_block_id')->count('book_block_id');
+        $blocks = $book->blocks()
+            ->where('status', '!=', 'deleted')
+            ->whereNotNull('current_version_id')
+            ->whereNotNull('text_plain')
+            ->whereRaw("trim(text_plain) <> ''");
+        $total = $blocks->count();
+        $approved = $edition->is_original
+            ? $total
+            : BookBlockTranslation::query()
+                ->where('book_id', $book->id)
+                ->where('target_locale', $edition->locale)
+                ->where('status', 'approved')
+                ->whereIn('source_book_block_version_id', $blocks->pluck('current_version_id'))
+                ->distinct('book_block_id')
+                ->count('book_block_id');
         return ['id' => $edition->id, 'locale' => $edition->locale, 'name' => $edition->name, 'status' => $edition->is_original ? 'ready' : ($approved === $total && $total ? 'ready' : 'draft'), 'is_original' => $edition->is_original, 'approved_blocks' => $approved, 'total_blocks' => $total];
     }
 
