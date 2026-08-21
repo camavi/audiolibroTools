@@ -9,6 +9,7 @@ class BookAudioSegment extends Model
 {
     protected $fillable = [
         'book_id',
+        'book_edition_id',
         'book_block_id',
         'book_block_version_id',
         'book_voice_profile_id',

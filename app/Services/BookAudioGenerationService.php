@@ -40,7 +40,7 @@ class BookAudioGenerationService
                 }
 
                 $segments->push(BookAudioSegment::query()->create([
-                    'book_id' => $job->book_id, 'book_block_id' => $job->book_block_id,
+                    'book_id' => $job->book_id, 'book_edition_id' => $job->book_edition_id, 'book_block_id' => $job->book_block_id,
                     'book_block_version_id' => $job->book_block_version_id, 'book_voice_profile_id' => $job->book_voice_profile_id,
                     'book_audio_job_id' => $job->id, 'block_uuid' => $job->block_uuid,
                     'status' => 'completed', 'provider_key' => $job->provider_key, 'model' => $job->model,

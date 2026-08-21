@@ -3,16 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\BookBlockVersionConflictException;
-use App\Jobs\ProcessBookTranslationJob;
 use App\Jobs\ProcessBookAudioJob;
+use App\Jobs\ProcessBookTranslationJob;
 use App\Models\AiChatMessage;
 use App\Models\AiChatThread;
 use App\Models\AudioLibraryVoice;
 use App\Models\AudioLibraryVoiceSample;
 use App\Models\AudioMediaAsset;
 use App\Models\Book;
-use App\Models\BookAudioJob;
 use App\Models\BookAudioGenerationOverride;
+use App\Models\BookAudioJob;
 use App\Models\BookAudioSegment;
 use App\Models\BookAudioTimelineItem;
 use App\Models\BookBlock;
@@ -21,6 +21,7 @@ use App\Models\BookBlockReview;
 use App\Models\BookBlockTranslation;
 use App\Models\BookBlockVoiceAssignment;
 use App\Models\BookCategory;
+use App\Models\BookEdition;
 use App\Models\BookTranslationJob;
 use App\Models\BookTranslationTerm;
 use App\Models\BookVoiceProfile;
@@ -28,10 +29,10 @@ use App\Services\Ai\EditorAiChatService;
 use App\Services\Ai\EditorAiCorrectionService;
 use App\Services\Ai\EditorAiTranslationService;
 use App\Services\Ai\EditorAiVersionService;
-use App\Services\BookBlockService;
-use App\Services\QwenTtsService;
 use App\Services\AudioTextSegmenter;
+use App\Services\BookBlockService;
 use App\Services\Credits\TranslationCreditService;
+use App\Services\QwenTtsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -224,6 +225,8 @@ class DashboardBookController extends Controller
         $blocks = $book->blocks()
             ->where('status', '!=', 'deleted')
             ->whereNotNull('current_version_id')
+            ->whereNotNull('text_plain')
+            ->whereRaw("trim(text_plain) <> ''")
             ->get(['id', 'block_uuid', 'current_version_id']);
         $currentVersionIds = $blocks->pluck('current_version_id')->all();
 
@@ -388,16 +391,41 @@ class DashboardBookController extends Controller
         return response()->json(['data' => ['deleted' => true]]);
     }
 
-    public function editor(string $keyBook): JsonResponse
+    public function editor(Request $request, string $keyBook): JsonResponse
     {
+        $validated = $request->validate(['edition' => ['nullable', 'integer']]);
         $book = Book::query()
             ->where('key_book', $keyBook)
             ->firstOrFail();
+
+        $edition = ($validated['edition'] ?? null)
+            ? $book->editions()->findOrFail($validated['edition'])
+            : $book->editions()->where('is_original', true)->first();
 
         $blocks = $book->blocks()
             ->with('currentVersion')
             ->where('status', '!=', 'deleted')
             ->get();
+
+        if ($edition && ! $edition->is_original) {
+            $translations = BookBlockTranslation::query()
+                ->where('book_id', $book->id)
+                ->where('target_locale', $edition->locale)
+                ->where('status', 'approved')
+                ->whereIn('source_book_block_version_id', $blocks->pluck('current_version_id'))
+                ->latest('updated_at')
+                ->latest('id')
+                ->get()
+                ->groupBy('book_block_id')
+                ->map(fn ($items) => $items->first());
+
+            $blocks->each(function (BookBlock $block) use ($translations): void {
+                $translation = $translations->get($block->id);
+                if ($translation) {
+                    $block->text_plain = $translation->translated_text;
+                }
+            });
+        }
 
         return response()->json([
             'data' => [
@@ -407,7 +435,8 @@ class DashboardBookController extends Controller
                     'name' => $book->name,
                     'description' => $book->description,
                     'lang' => $book->lang,
-                    'audio_settings_json' => $book->audio_settings_json ?? [],
+                    'edition' => $edition ? ['id' => $edition->id, 'locale' => $edition->locale, 'is_original' => $edition->is_original] : null,
+                    'audio_settings_json' => $this->editionAudioSettings($book, $edition),
                     'book_design_json' => $this->bookDesign($book),
                 ],
                 'document' => [
@@ -1148,6 +1177,7 @@ class DashboardBookController extends Controller
                 ...(array_key_exists('icon', $validated) ? ['icon' => $validated['icon'] ?: 'person'] : []),
             ],
         ])->save();
+
         return response()->json(['data' => ['profile' => $this->serializeVoiceProfile($voiceProfile->fresh())]]);
     }
 
@@ -1157,10 +1187,11 @@ class DashboardBookController extends Controller
         abort_unless($voiceProfile->book_id === $book->id, 404);
         abort_unless($voiceProfile->role === 'character', 422, 'Only character profiles can be deleted here.');
         $voiceProfile->delete();
+
         return response()->json(['data' => ['deleted' => true]]);
     }
 
-    public function blockVoiceAssignment(string $keyBook, string $blockUuid): JsonResponse
+    public function blockVoiceAssignment(Request $request, string $keyBook, string $blockUuid): JsonResponse
     {
         $book = Book::query()
             ->where('key_book', $keyBook)
@@ -1170,10 +1201,12 @@ class DashboardBookController extends Controller
             ->with('currentVersion')
             ->where('block_uuid', $blockUuid)
             ->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
 
         $assignment = $block->voiceAssignments()
             ->with(['voiceProfile', 'blockVersion:id,version_number'])
             ->where('book_block_version_id', $block->current_version_id)
+            ->where('book_edition_id', $edition->id)
             ->latest('id')
             ->first();
 
@@ -1185,11 +1218,12 @@ class DashboardBookController extends Controller
         ]);
     }
 
-    public function blockAudio(string $keyBook, string $blockUuid): JsonResponse
+    public function blockAudio(Request $request, string $keyBook, string $blockUuid): JsonResponse
     {
         $book = Book::query()
             ->where('key_book', $keyBook)
             ->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
 
         $block = $book->blocks()
             ->with('currentVersion')
@@ -1199,29 +1233,32 @@ class DashboardBookController extends Controller
         $assignment = $block->voiceAssignments()
             ->with(['voiceProfile', 'blockVersion:id,version_number'])
             ->where('book_block_version_id', $block->current_version_id)
+            ->where('book_edition_id', $edition->id)
             ->latest('id')
             ->first();
 
         $segments = $block->audioSegments()
             ->with(['voiceProfile', 'blockVersion:id,version_number', 'audioJob:id,status'])
             ->where('book_block_version_id', $block->current_version_id)
+            ->where('book_edition_id', $edition->id)
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->get();
         $jobs = $block->audioJobs()
             ->with(['voiceProfile', 'segments' => fn ($query) => $query->orderBy('segment_index')])
             ->where('book_block_version_id', $block->current_version_id)
+            ->where('book_edition_id', $edition->id)
             ->latest('created_at')->latest('id')->get();
         $usedJobIds = $book->audioTimelineItems()->whereNotNull('book_audio_job_id')->pluck('book_audio_job_id')->flip();
         $usedSegmentIds = $book->audioTimelineItems()->whereNotNull('book_audio_segment_id')->pluck('book_audio_segment_id')->flip();
         $generatorProfile = $assignment?->voiceProfile
-            ?? ($book->audio_settings_json['default_voice_profile_id'] ?? null ? $book->voiceProfiles()->find($book->audio_settings_json['default_voice_profile_id']) : null);
+            ?? (($profileId = $this->editionAudioSettings($book, $edition)['default_voice_profile_id'] ?? null) ? $book->voiceProfiles()->find($profileId) : null);
 
         return response()->json([
             'data' => [
-                'block' => $this->serializeEditorBlock($block),
+                'block' => $this->serializeEditorBlock($this->audioEditionBlock($book, $block, $edition)),
                 'assignment' => $assignment ? $this->serializeVoiceAssignment($assignment, $block) : null,
-                'generator_settings' => $this->serializeAudioGeneratorSettings($book, $block, $generatorProfile),
+                'generator_settings' => $this->serializeAudioGeneratorSettings($book, $this->audioEditionBlock($book, $block, $edition), $generatorProfile, BookAudioGenerationOverride::query()->where('book_block_version_id', $block->current_version_id)->where('book_edition_id', $edition->id)->first()),
                 'segments' => $segments
                     ->map(fn (BookAudioSegment $segment) => $this->serializeAudioSegment($segment, $block))
                     ->values(),
@@ -1256,15 +1293,16 @@ class DashboardBookController extends Controller
         ]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
         $block = $book->blocks()->with('currentVersion')->where('block_uuid', $blockUuid)->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
         abort_if(! $block->currentVersion, 422, 'Save the paragraph before configuring its generated audio.');
 
         $text = trim($validated['generator_text']);
         abort_if($text === '', 422, 'The text sent to the generator cannot be empty.');
 
         $assignment = $block->voiceAssignments()->with('voiceProfile')
-            ->where('book_block_version_id', $block->currentVersion->id)->latest('id')->first();
+            ->where('book_block_version_id', $block->currentVersion->id)->where('book_edition_id', $edition->id)->latest('id')->first();
         $profile = $assignment?->voiceProfile
-            ?? (($profileId = data_get($book->audio_settings_json, 'default_voice_profile_id')) ? $book->voiceProfiles()->find($profileId) : null);
+            ?? (($profileId = $this->editionAudioSettings($book, $edition)['default_voice_profile_id'] ?? null) ? $book->voiceProfiles()->find($profileId) : null);
         $libraryVoice = $this->libraryVoiceForProfile($profile);
         $libraryVoiceId = $libraryVoice?->id;
         $toneId = $validated['tone_id'] ?? null;
@@ -1280,11 +1318,13 @@ class DashboardBookController extends Controller
 
         $override = BookAudioGenerationOverride::query()->updateOrCreate([
             'book_block_version_id' => $block->currentVersion->id,
+            'book_edition_id' => $edition->id,
         ], [
             'book_id' => $book->id,
+            'book_edition_id' => $edition->id,
             'book_block_id' => $block->id,
             'block_uuid' => $block->block_uuid,
-            'original_text' => $block->currentVersion->text_plain ?: $block->text_plain ?: '',
+            'original_text' => $this->audioEditionBlock($book, $block, $edition)->text_plain ?: '',
             'generator_text' => $text,
             'tone_id' => $toneId,
             'split_tones_json' => $validated['split_tones'] ?? [],
@@ -1292,7 +1332,7 @@ class DashboardBookController extends Controller
             'created_by' => auth()->id(),
         ]);
 
-        return response()->json(['data' => ['generator_settings' => $this->serializeAudioGeneratorSettings($book, $block, $profile, $override)]]);
+        return response()->json(['data' => ['generator_settings' => $this->serializeAudioGeneratorSettings($book, $this->audioEditionBlock($book, $block, $edition), $profile, $override)]]);
     }
 
     public function previewBlockAudioGeneratorSettings(Request $request, string $keyBook, string $blockUuid): JsonResponse
@@ -1311,20 +1351,21 @@ class DashboardBookController extends Controller
         ]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
         $block = $book->blocks()->with('currentVersion')->where('block_uuid', $blockUuid)->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
         abort_if(! $block->currentVersion, 422, 'Save the paragraph before configuring its generated audio.');
 
         $text = trim($validated['generator_text']);
         abort_if($text === '', 422, 'The text sent to the generator cannot be empty.');
         $assignment = $block->voiceAssignments()->with('voiceProfile')
-            ->where('book_block_version_id', $block->currentVersion->id)->latest('id')->first();
+            ->where('book_block_version_id', $block->currentVersion->id)->where('book_edition_id', $edition->id)->latest('id')->first();
         $profile = $assignment?->voiceProfile
-            ?? (($profileId = data_get($book->audio_settings_json, 'default_voice_profile_id')) ? $book->voiceProfiles()->find($profileId) : null);
+            ?? (($profileId = $this->editionAudioSettings($book, $edition)['default_voice_profile_id'] ?? null) ? $book->voiceProfiles()->find($profileId) : null);
         $preview = new BookAudioGenerationOverride([
             'generator_text' => $text,
             'split_settings_json' => $validated['split_settings'] ?? [],
         ]);
 
-        return response()->json(['data' => ['generator_settings' => $this->serializeAudioGeneratorSettings($book, $block, $profile, $preview)]]);
+        return response()->json(['data' => ['generator_settings' => $this->serializeAudioGeneratorSettings($book, $this->audioEditionBlock($book, $block, $edition), $profile, $preview)]]);
     }
 
     public function audioTimeline(string $keyBook): JsonResponse
@@ -1447,7 +1488,8 @@ class DashboardBookController extends Controller
             'lane' => ['nullable', 'integer', 'min:0', 'max:40'],
         ]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
-        abort_unless($job->book_id === $book->id && $job->block_uuid === $blockUuid && $job->status === 'completed', 404);
+        $edition = $this->audioEdition($request, $book);
+        abort_unless($job->book_id === $book->id && $job->book_edition_id === $edition->id && $job->block_uuid === $blockUuid && $job->status === 'completed', 404);
         $segments = $job->segments()->orderBy('segment_index')->get();
         abort_if($segments->isEmpty(), 422, 'This audio group has no completed clips.');
         $duration = $segments->sum(fn (BookAudioSegment $segment) => (int) $segment->duration_ms + (int) $segment->pause_after_ms);
@@ -1508,6 +1550,7 @@ class DashboardBookController extends Controller
                 $start = (int) $voiceItems
                     ->filter(function (BookAudioTimelineItem $item) use ($blockOrders, $targetOrder): bool {
                         $sourceUuid = $item->audioJob?->block_uuid ?? $item->audioSegment?->block_uuid;
+
                         return $sourceUuid && isset($blockOrders[$sourceUuid]) && (int) $blockOrders[$sourceUuid] < (int) $targetOrder;
                     })
                     ->max(fn (BookAudioTimelineItem $item) => (int) $item->start_ms + (int) $item->duration_ms);
@@ -1532,10 +1575,11 @@ class DashboardBookController extends Controller
         return response()->json(['data' => ['item_id' => $item->id, 'start_ms' => $start, 'shifted_items' => $shiftedItems, 'replaced' => $replaced]], 201);
     }
 
-    public function insertAllAudioSummary(string $keyBook): JsonResponse
+    public function insertAllAudioSummary(Request $request, string $keyBook): JsonResponse
     {
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
-        $latest = $book->audioJobs()->where('status', 'completed')->latest('id')->get()->unique('block_uuid');
+        $edition = $this->audioEdition($request, $book);
+        $latest = $book->audioJobs()->where('book_edition_id', $edition->id)->where('status', 'completed')->latest('id')->get()->unique('block_uuid');
 
         return response()->json(['data' => ['latest_audio_count' => $latest->count()]]);
     }
@@ -1544,19 +1588,28 @@ class DashboardBookController extends Controller
     {
         $validated = $request->validate(['replace_existing' => ['nullable', 'boolean']]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
         $replace = (bool) ($validated['replace_existing'] ?? false);
-        $latest = $book->audioJobs()->where('status', 'completed')->latest('id')->get()->unique('block_uuid')->keyBy('block_uuid');
+        $latest = $book->audioJobs()->where('book_edition_id', $edition->id)->where('status', 'completed')->latest('id')->get()->unique('block_uuid')->keyBy('block_uuid');
         $inserted = 0;
         $skipped = 0;
 
         foreach ($book->blocks()->get() as $block) {
             $job = $latest->get($block->block_uuid);
-            if (! $job) continue;
+            if (! $job) {
+                continue;
+            }
             $existing = $book->audioTimelineItems()->whereNull('parent_timeline_item_id')->with(['audioJob:id,block_uuid', 'audioSegment:id,block_uuid'])->get()
                 ->filter(fn (BookAudioTimelineItem $item) => ($item->audioJob?->block_uuid ?? $item->audioSegment?->block_uuid) === $block->block_uuid);
-            if ($existing->isNotEmpty() && ! $replace) { $skipped++; continue; }
-            if ($replace) $existing->each->delete();
-            $this->insertAudioGroupTimeline(Request::create('/', 'POST', ['placement' => 'paragraph']), $keyBook, $block->block_uuid, $job);
+            if ($existing->isNotEmpty() && ! $replace) {
+                $skipped++;
+
+                continue;
+            }
+            if ($replace) {
+                $existing->each->delete();
+            }
+            $this->insertAudioGroupTimeline(Request::create('/', 'POST', ['placement' => 'paragraph', 'edition' => $edition->id]), $keyBook, $block->block_uuid, $job);
             $inserted++;
         }
 
@@ -1722,9 +1775,13 @@ class DashboardBookController extends Controller
             ->get();
         $entries = ['voice' => [], 'music' => [], 'fx' => []];
         $addEntry = function (string $track, ?string $path, int $startMs, int $durationMs, int $trimStartMs, int $trimEndMs, float $volume, int $fadeInMs, int $fadeOutMs) use (&$entries): void {
-            if (! isset($entries[$track]) || ! $path || str_starts_with($path, 'mock://')) return;
+            if (! isset($entries[$track]) || ! $path || str_starts_with($path, 'mock://')) {
+                return;
+            }
             $absolute = Storage::disk('public')->path($path);
-            if (! is_file($absolute) || $durationMs < 1) return;
+            if (! is_file($absolute) || $durationMs < 1) {
+                return;
+            }
             $entries[$track][] = compact('absolute', 'startMs', 'durationMs', 'trimStartMs', 'trimEndMs', 'volume', 'fadeInMs', 'fadeOutMs');
         };
 
@@ -1735,6 +1792,7 @@ class DashboardBookController extends Controller
                     $volume = ((float) ($root->volume ?? 100) / 100) * ((float) ($child->volume ?? 100) / 100);
                     $addEntry($child->track, $path, (int) $child->start_ms, (int) $child->duration_ms, (int) $child->trim_start_ms, (int) $child->trim_end_ms, $volume, (int) $child->fade_in_ms, (int) $child->fade_out_ms);
                 }
+
                 continue;
             }
 
@@ -1744,6 +1802,7 @@ class DashboardBookController extends Controller
                     $addEntry($root->track, $segment->audio_path, (int) $root->start_ms + $offset, (int) $segment->duration_ms, 0, 0, (float) ($root->volume ?? 100) / 100, (int) $root->fade_in_ms, (int) $root->fade_out_ms);
                     $offset += (int) $segment->duration_ms + (int) $segment->pause_after_ms;
                 }
+
                 continue;
             }
 
@@ -1756,9 +1815,10 @@ class DashboardBookController extends Controller
             $trackEntries = $entries[$track];
             if (! count($trackEntries)) {
                 $channels[$track] = ['status' => 'empty', 'duration_ms' => 0, 'url' => null];
+
                 continue;
             }
-            $filename = "audiobooks/{$book->key_book}/published/{$track}-" . Str::uuid() . '.wav';
+            $filename = "audiobooks/{$book->key_book}/published/{$track}-".Str::uuid().'.wav';
             Storage::disk('public')->makeDirectory(dirname($filename));
             $this->renderAudioChannel($trackEntries, Storage::disk('public')->path($filename));
             $durationMs = max(array_map(fn (array $entry): int => $entry['startMs'] + $entry['durationMs'], $trackEntries));
@@ -1783,20 +1843,26 @@ class DashboardBookController extends Controller
             $duration = max(.001, ((int) $entry['durationMs']) / 1000);
             $trimStart = max(0, ((int) $entry['trimStartMs']) / 1000);
             $filter = "[{$index}:a]atrim=start={$trimStart}:duration={$duration},asetpts=PTS-STARTPTS";
-            $filter .= ',volume=' . max(0, min(4, (float) $entry['volume']));
-            if ((int) $entry['fadeInMs'] > 0) $filter .= ',afade=t=in:st=0:d=' . ((int) $entry['fadeInMs'] / 1000);
-            if ((int) $entry['fadeOutMs'] > 0) $filter .= ',afade=t=out:st=' . max(0, $duration - ((int) $entry['fadeOutMs'] / 1000)) . ':d=' . ((int) $entry['fadeOutMs'] / 1000);
+            $filter .= ',volume='.max(0, min(4, (float) $entry['volume']));
+            if ((int) $entry['fadeInMs'] > 0) {
+                $filter .= ',afade=t=in:st=0:d='.((int) $entry['fadeInMs'] / 1000);
+            }
+            if ((int) $entry['fadeOutMs'] > 0) {
+                $filter .= ',afade=t=out:st='.max(0, $duration - ((int) $entry['fadeOutMs'] / 1000)).':d='.((int) $entry['fadeOutMs'] / 1000);
+            }
             $delay = max(0, (int) $entry['startMs']);
             $filter .= ",adelay={$delay}|{$delay}[a{$index}]";
             $filters[] = $filter;
             $labels[] = "[a{$index}]";
         }
-        $filters[] = implode('', $labels) . 'amix=inputs=' . count($labels) . ':duration=longest:normalize=0,aresample=async=1:first_pts=0[mix]';
+        $filters[] = implode('', $labels).'amix=inputs='.count($labels).':duration=longest:normalize=0,aresample=async=1:first_pts=0[mix]';
         $arguments = array_merge($arguments, ['-filter_complex', implode(';', $filters), '-map', '[mix]', '-ac', '2', '-ar', '44100', '-c:a', 'pcm_s16le', $output]);
         $process = new Process($arguments);
         $process->setTimeout(0);
         $process->run();
-        if (! $process->isSuccessful()) throw new \RuntimeException('Audio mixdown failed: ' . trim($process->getErrorOutput() ?: $process->getOutput()));
+        if (! $process->isSuccessful()) {
+            throw new \RuntimeException('Audio mixdown failed: '.trim($process->getErrorOutput() ?: $process->getOutput()));
+        }
     }
 
     public function blockTranslations(string $keyBook, string $blockUuid): JsonResponse
@@ -2018,6 +2084,7 @@ class DashboardBookController extends Controller
             ->with('currentVersion')
             ->where('block_uuid', $blockUuid)
             ->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
 
         if (! $block->currentVersion) {
             return response()->json([
@@ -2030,6 +2097,7 @@ class DashboardBookController extends Controller
 
         $existingAssignment = $block->voiceAssignments()
             ->where('book_block_version_id', $block->currentVersion->id)
+            ->where('book_edition_id', $edition->id)
             ->first();
 
         if (empty($validated['voice_profile_id'])) {
@@ -2050,8 +2118,10 @@ class DashboardBookController extends Controller
         $assignment = BookBlockVoiceAssignment::query()->updateOrCreate([
             'book_block_id' => $block->id,
             'book_block_version_id' => $block->currentVersion->id,
+            'book_edition_id' => $edition->id,
         ], [
             'book_id' => $book->id,
+            'book_edition_id' => $edition->id,
             'book_voice_profile_id' => $profile->id,
             'block_uuid' => $block->block_uuid,
             'source' => 'manual',
@@ -2081,6 +2151,7 @@ class DashboardBookController extends Controller
             ->with('currentVersion')
             ->where('block_uuid', $blockUuid)
             ->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
 
         if (! $block->currentVersion) {
             return response()->json([
@@ -2162,8 +2233,10 @@ class DashboardBookController extends Controller
         $assignment = BookBlockVoiceAssignment::query()->updateOrCreate([
             'book_block_id' => $block->id,
             'book_block_version_id' => $block->currentVersion->id,
+            'book_edition_id' => $edition->id,
         ], [
             'book_id' => $book->id,
+            'book_edition_id' => $edition->id,
             'book_voice_profile_id' => $profile->id,
             'block_uuid' => $block->block_uuid,
             'source' => 'audio-library',
@@ -2198,6 +2271,7 @@ class DashboardBookController extends Controller
             ->with('currentVersion')
             ->where('block_uuid', $blockUuid)
             ->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
 
         if (! $block->currentVersion) {
             return response()->json([
@@ -2211,11 +2285,12 @@ class DashboardBookController extends Controller
         $assignment = $block->voiceAssignments()
             ->with('voiceProfile')
             ->where('book_block_version_id', $block->currentVersion->id)
+            ->where('book_edition_id', $edition->id)
             ->latest('id')
             ->first();
 
         $voiceProfile = $assignment?->voiceProfile;
-        if (! $voiceProfile && ($defaultProfileId = data_get($book->audio_settings_json, 'default_voice_profile_id'))) {
+        if (! $voiceProfile && ($defaultProfileId = $this->editionAudioSettings($book, $edition)['default_voice_profile_id'] ?? null)) {
             $voiceProfile = $book->voiceProfiles()->find($defaultProfileId);
         }
         if (! $voiceProfile?->voice_id) {
@@ -2229,21 +2304,25 @@ class DashboardBookController extends Controller
 
         $override = BookAudioGenerationOverride::query()
             ->where('book_block_version_id', $block->currentVersion->id)
+            ->where('book_edition_id', $edition->id)
             ->first();
         $providerKey = $validated['provider_key'] ?? 'mock';
         $model = $validated['model'] ?? ($providerKey === 'qwen-local' ? config('tts.qwen.model') : 'mock-tts-v1');
-        $text = $override?->generator_text ?: ($block->currentVersion->text_plain ?: $block->text_plain ?: '');
+        $editionBlock = $this->audioEditionBlock($book, $block, $edition);
+        $text = $override?->generator_text ?: ($editionBlock->text_plain ?: '');
         $generatorVoiceId = $voiceProfile->voice_id;
         $libraryVoiceId = $this->libraryVoiceForProfile($voiceProfile)?->id;
-        $settings = [...AudioTextSegmenter::DEFAULT_PAUSES, ...($book->audio_settings_json ?? []), ...($override?->split_settings_json ?? [])];
+        $settings = [...AudioTextSegmenter::DEFAULT_PAUSES, ...$this->editionAudioSettings($book, $edition), ...($override?->split_settings_json ?? [])];
         $parts = app(AudioTextSegmenter::class)->split($text, $settings);
-        $bookLocale = strtolower(str_replace('_', '-', (string) ($book->lang ?: config('app.locale', 'en'))));
+        $bookLocale = strtolower(str_replace('_', '-', (string) ($edition->locale ?: $book->lang ?: config('app.locale', 'en'))));
         $localeKey = explode('-', $bookLocale)[0] ?: 'en';
         $language = config("audiobook.locales.{$localeKey}.tts_code") ?: $localeKey;
         $source = $providerKey === 'qwen-local' ? 'qwen' : 'mock';
+        $editionAudioSettings = $this->editionAudioSettings($book, $edition);
 
         $job = BookAudioJob::query()->create([
             'book_id' => $book->id,
+            'book_edition_id' => $edition->id,
             'book_block_id' => $block->id,
             'book_block_version_id' => $block->currentVersion->id,
             'book_voice_profile_id' => $voiceProfile->id,
@@ -2263,6 +2342,9 @@ class DashboardBookController extends Controller
                 'tone_id' => $override?->tone_id,
                 'split_tones' => $override?->split_tones_json ?? [],
                 'generator_override_id' => $override?->id,
+                'voice_direction' => $editionAudioSettings['voice_direction'] ?? null,
+                'performance_prompt' => $editionAudioSettings['performance_prompt'] ?? null,
+                'narrator_name' => $editionAudioSettings['narrator_name'] ?? null,
             ],
             'result_json' => ['parts' => count($parts)],
             'started_at' => now(),
@@ -2334,6 +2416,7 @@ class DashboardBookController extends Controller
             }
         } catch (\Throwable $exception) {
             $job->forceFill(['status' => 'failed', 'error_message' => $exception->getMessage(), 'completed_at' => now()])->save();
+
             return response()->json(['message' => 'Qwen TTS generation failed: '.$exception->getMessage()], 502);
         }
         $totalDuration = $segments->sum(fn (BookAudioSegment $segment) => (int) $segment->duration_ms + (int) $segment->pause_after_ms);
@@ -2371,21 +2454,23 @@ class DashboardBookController extends Controller
             'model' => ['nullable', 'string', 'max:120'],
         ]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
         $regenerate = (bool) ($validated['regenerate_existing'] ?? false);
-        $defaultProfileId = data_get($book->audio_settings_json, 'default_voice_profile_id');
-        $hasDefaultVoice = $defaultProfileId && $book->voiceProfiles()->whereKey($defaultProfileId)->whereNotNull('voice_id')->exists();
+        $defaultProfileId = $this->editionAudioSettings($book, $edition)['default_voice_profile_id'] ?? null;
+        $hasDefaultVoice = $edition->is_original && $defaultProfileId && $book->voiceProfiles()->whereKey($defaultProfileId)->whereNotNull('voice_id')->exists();
         $blocks = $book->blocks()
             ->where('status', '!=', 'deleted')
             ->with(['currentVersion', 'voiceAssignments.voiceProfile'])
             ->get()
             ->filter(fn (BookBlock $block) => $block->currentVersion && trim((string) $block->text_plain) !== '')
             ->values();
-        $configuredBlocks = $blocks->filter(fn (BookBlock $block) => $hasDefaultVoice || $block->voiceAssignments->contains(fn (BookBlockVoiceAssignment $assignment) =>
-            (int) $assignment->book_block_version_id === (int) $block->current_version_id
+        $configuredBlocks = $blocks->filter(fn (BookBlock $block) => $hasDefaultVoice || $block->voiceAssignments->contains(fn (BookBlockVoiceAssignment $assignment) => (int) $assignment->book_block_version_id === (int) $block->current_version_id
+            && (int) $assignment->book_edition_id === (int) $edition->id
             && $assignment->voiceProfile?->voice_id
         ))->values();
         $existingVersions = BookAudioJob::query()
             ->where('book_id', $book->id)
+            ->where('book_edition_id', $edition->id)
             ->whereIn('status', ['queued', 'running', 'completed'])
             ->pluck('book_block_version_id')
             ->filter()
@@ -2399,6 +2484,7 @@ class DashboardBookController extends Controller
         foreach ($targets as $block) {
             if (! $block->currentVersion) {
                 $failed[] = ['block_uuid' => $block->block_uuid, 'message' => 'This block has no saved version.'];
+
                 continue;
             }
 
@@ -2406,6 +2492,7 @@ class DashboardBookController extends Controller
             // the request body so this internal call exactly matches the
             // normal "Generate audio" form submission.
             $generationRequest = $request->duplicate([], [
+                'edition' => $edition->id,
                 'provider_key' => $validated['provider_key'] ?? 'qwen-local',
                 'model' => $validated['model'] ?? config('tts.qwen.model'),
             ]);
@@ -2431,14 +2518,28 @@ class DashboardBookController extends Controller
 
     public function updateAudioSettings(Request $request, string $keyBook): JsonResponse
     {
-        $validated = $request->validate(['default_voice_profile_id' => ['nullable', 'integer']]);
+        $validated = $request->validate([
+            'default_voice_profile_id' => ['nullable', 'integer'],
+            'voice_direction' => ['nullable', 'string', 'max:500'],
+            'performance_prompt' => ['nullable', 'string', 'max:5000'],
+            'narrator_name' => ['nullable', 'string', 'max:160'],
+            'comma_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'semicolon_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'sentence_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+            'newline_ms' => ['nullable', 'integer', 'min:0', 'max:5000'],
+        ]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
         $profileId = $validated['default_voice_profile_id'] ?? null;
         abort_unless(! $profileId || $book->voiceProfiles()->whereKey($profileId)->whereNotNull('voice_id')->exists(), 422, 'Choose a configured voice.');
-        $settings = $book->audio_settings_json ?? [];
-        $settings['default_voice_profile_id'] = $profileId;
-        $book->forceFill(['audio_settings_json' => $settings])->save();
-        return response()->json(['data' => ['default_voice_profile_id' => $profileId]]);
+        $settings = [
+            ...$this->editionAudioSettings($book, $edition),
+            ...collect($validated)->only(['voice_direction', 'performance_prompt', 'narrator_name', 'comma_ms', 'semicolon_ms', 'sentence_ms', 'newline_ms'])->all(),
+            'default_voice_profile_id' => $profileId,
+        ];
+        $edition->forceFill(['metadata_json' => [...($edition->metadata_json ?? []), 'audio_settings' => $settings]])->save();
+
+        return response()->json(['data' => ['audio_settings_json' => $settings]]);
     }
 
     public function storeBlockTranslation(
@@ -2717,6 +2818,51 @@ class DashboardBookController extends Controller
         ];
     }
 
+    private function audioEdition(Request $request, Book $book): BookEdition
+    {
+        $editionId = $request->input('edition');
+
+        if ($editionId) return $book->editions()->findOrFail($editionId);
+
+        return $book->editions()->where('is_original', true)->first()
+            ?? $book->editions()->create([
+                'locale' => strtolower((string) ($book->lang ?: config('app.locale', 'en'))),
+                'name' => $book->name,
+                'status' => 'ready',
+                'is_original' => true,
+                'metadata_json' => [],
+            ]);
+    }
+
+    private function audioEditionBlock(Book $book, BookBlock $block, BookEdition $edition): BookBlock
+    {
+        if ($edition->is_original) return $block;
+
+        $translation = BookBlockTranslation::query()
+            ->where('book_id', $book->id)
+            ->where('book_block_id', $block->id)
+            ->where('source_book_block_version_id', $block->current_version_id)
+            ->where('target_locale', $edition->locale)
+            ->where('status', 'approved')
+            ->latest('updated_at')->latest('id')
+            ->first();
+        abort_unless($translation, 422, 'This paragraph does not have an approved translation for the selected edition.');
+
+        $editionBlock = clone $block;
+        $editionBlock->text_plain = $translation->translated_text;
+
+        return $editionBlock;
+    }
+
+    private function editionAudioSettings(Book $book, BookEdition $edition): array
+    {
+        $settings = data_get($edition->metadata_json, 'audio_settings');
+
+        return is_array($settings)
+            ? $settings
+            : ($edition->is_original ? ($book->audio_settings_json ?? []) : []);
+    }
+
     private function bookDesign(Book $book): array
     {
         return $this->normalizeBookDesign($book->book_design_json ?? []);
@@ -2742,8 +2888,11 @@ class DashboardBookController extends Controller
             $input = is_array($input) ? $input : [];
             $styles[$key] = $key === 'body' ? $styleDefaults : ['inherits' => 'body'];
             foreach ($styleFields as $field) {
-                if (array_key_exists($field, $input)) $styles[$key][$field] = $input[$field];
-                elseif (array_key_exists($field, $styleDefaults)) $styles[$key][$field] = $styleDefaults[$field];
+                if (array_key_exists($field, $input)) {
+                    $styles[$key][$field] = $input[$field];
+                } elseif (array_key_exists($field, $styleDefaults)) {
+                    $styles[$key][$field] = $styleDefaults[$field];
+                }
             }
         }
 
@@ -2829,6 +2978,7 @@ class DashboardBookController extends Controller
         } catch (\Throwable $exception) {
             abort(502, 'AT could not prepare this voice for generation: '.$exception->getMessage());
         }
+
         return [
             'provider' => 'qwen-local',
             'voice_id' => $libraryVoice->provider_voice_id,
@@ -2907,8 +3057,11 @@ class DashboardBookController extends Controller
 
     private function libraryVoiceForProfile(?BookVoiceProfile $profile, bool $withSamples = false): ?AudioLibraryVoice
     {
-        if (! $profile) return null;
+        if (! $profile) {
+            return null;
+        }
         $libraryVoiceId = data_get($profile->settings_json, 'audio_library_voice_id');
+
         return AudioLibraryVoice::query()
             ->where('account_id', auth()->id())
             ->when($withSamples, fn ($query) => $query->with('samples.toneDefinition'))
@@ -2945,7 +3098,7 @@ class DashboardBookController extends Controller
      * manuscript. Timing is optional, so unmatchable words are skipped rather
      * than making TTS generation fail for a particular language or script.
      *
-     * @param array<int, array<string, mixed>> $timings
+     * @param  array<int, array<string, mixed>>  $timings
      * @return array<int, array<string, mixed>>
      */
     private function attachWordSourceOffsets(array $timings, string $sourceText, int $segmentStart): array

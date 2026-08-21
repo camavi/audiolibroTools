@@ -159,17 +159,12 @@ function openBookSettingsDialog(keyBook) {
         categories: (book.categories || []).map(Number),
         lang: book.lang || '',
         coverImg: book.cover_img || '',
-        audioSettings: book.audio_settings || {},
     }));
     const title = _.rod(initial.title);
     const description = _.rod(initial.description);
     const categories = _.rod(initial.categories);
     const lang = _.rod(initial.lang);
     const coverImg = _.rod(initial.coverImg);
-    const commaPause = _.rod(String(initial.audioSettings.comma_ms ?? 250));
-    const semicolonPause = _.rod(String(initial.audioSettings.semicolon_ms ?? 750));
-    const sentencePause = _.rod(String(initial.audioSettings.sentence_ms ?? 500));
-    const newlinePause = _.rod(String(initial.audioSettings.newline_ms ?? 1000));
     const categoryOptions = _.rod([]);
     const loadingCategories = _.rod(false);
     const saving = _.rod(false);
@@ -213,10 +208,6 @@ function openBookSettingsDialog(keyBook) {
                             categories: (categories.value || []).map(Number),
                             lang: lang.value || null,
                             cover_img: coverImg.value.trim() || null,
-                            audio_settings: {
-                                comma_ms: Number(commaPause.value || 0), semicolon_ms: Number(semicolonPause.value || 0),
-                                sentence_ms: Number(sentencePause.value || 0), newline_ms: Number(newlinePause.value || 0),
-                            },
                         });
                         panelBook.value = normalizeDataPayload(payload);
                         close();
@@ -233,11 +224,6 @@ function openBookSettingsDialog(keyBook) {
                     _.Select({ class: 'cms-col-12', label: 'Book language', icon: 'language', model: lang, options: [{ value: '', label: 'Not set' }, ...bookLanguageOptions] }),
                     _.Textarea({ class: 'cms-col-24', label: 'Description', icon: 'notes', rows: 4, model: description }),
                     _.Input({ class: 'cms-col-24', label: 'Cover image URL', icon: 'image', model: coverImg, placeholder: 'https://… or /storage/…' }),
-                    _.div({ class: 'cms-col-24' }, _.h4('Audiobook timing'), _.small({ class: 'text-muted' }, 'Pauses are used by future grouped Qwen generations. Values are milliseconds.')),
-                    _.Input({ class: 'cms-col-6', label: 'Comma ,', type: 'number', min: 0, suffix: 'ms', model: commaPause }),
-                    _.Input({ class: 'cms-col-6', label: 'Semicolon ; :', type: 'number', min: 0, suffix: 'ms', model: semicolonPause }),
-                    _.Input({ class: 'cms-col-6', label: 'Sentence . ! ?', type: 'number', min: 0, suffix: 'ms', model: sentencePause }),
-                    _.Input({ class: 'cms-col-6', label: 'New paragraph', type: 'number', min: 0, suffix: 'ms', model: newlinePause }),
                     _.div({ class: 'cms-col-24' }, () => formStatus.value ? _.Alert({ type: formStatus.value.type, message: formStatus.value.message }) : null),
                     _.div({ class: 'cms-col-24', align: 'right' },
                         _.Btn({ type: 'button', color: 'secondary', class: 'cms-m-r-sm', onClick: close }, 'Cancel'),

@@ -2,6 +2,7 @@ import '../../../css/audiobookEdit.css';
 
 const audiobookBook = _.rod(null);
 const audiobookBlocks = _.rod([]);
+const audiobookEditionId = _.rod('');
 const activeBlockIndex = _.rod(0);
 const activeTab = _.rod('create');
 const audiobookViewMode = _.rod('developer');
@@ -70,6 +71,20 @@ function bookKey(ctx) {
     return ctx?.params?.key_book
         || window.location.pathname.match(/\/dashboard\/book\/([^/]+)\/audiobook\/edit/)?.[1]
         || null;
+}
+
+function editionId() {
+    return new URLSearchParams(window.location.search).get('edition') || '';
+}
+
+function audioEditionPayload() {
+    const edition = editionId();
+    return edition ? { edition: Number(edition) } : {};
+}
+
+function audioEditionQuery() {
+    const edition = editionId();
+    return edition ? `?edition=${encodeURIComponent(edition)}` : '';
 }
 
 function activeBlock() {
@@ -184,12 +199,15 @@ async function loadVoiceProfiles(keyBook) {
 }
 
 function loadAudiobook(keyBook) {
-    if (!keyBook || audiobookBook.value?.key_book === keyBook) return;
+    const selectedEditionId = editionId();
+    if (!keyBook || (audiobookBook.value?.key_book === keyBook && audiobookEditionId.value === selectedEditionId)) return;
 
-    _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/editor`)
+    const query = selectedEditionId ? `?edition=${encodeURIComponent(selectedEditionId)}` : '';
+    _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/editor${query}`)
         .then((payload) => {
             const data = audiobookPayload(payload);
             audiobookBook.value = data.book;
+            audiobookEditionId.value = selectedEditionId;
             bookDesign.value = cloneDesign(data.book?.book_design_json);
             hydrateDesignForm();
             audiobookBlocks.value = data.blocks;
@@ -863,7 +881,7 @@ async function loadBlockAudio(keyBook) {
     }
 
     try {
-        const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio`);
+        const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio${audioEditionQuery()}`);
         const data = audioData(payload);
         audioSegments.value = data.segments || [];
         audioGroups.value = data.groups || [];
@@ -900,6 +918,7 @@ async function generateSelectedAudio(keyBook) {
     let pollingStarted = false;
     try {
         const generated = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/generate`, {
+            ...audioEditionPayload(),
             provider_key: providerKey,
             model,
         }, providerKey === 'qwen-local' ? { timeout: 900000, retry: { attempts: 0 } } : undefined);
@@ -942,6 +961,7 @@ async function insertAudioGroup(keyBook, jobId, placement = 'paragraph') {
         const startMs = Math.round(Math.max(0, timelinePlayhead.value) * 1000);
         const group = audioGroups.value.find((candidate) => Number(candidate.id) === Number(jobId));
         const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/${encodeURIComponent(jobId)}/insert-timeline`, {
+            ...audioEditionPayload(),
             placement,
             ...(placement === 'playhead' ? {
                 start_ms: startMs,
@@ -1149,6 +1169,7 @@ function openGenerateBookAudioDialog(keyBook) {
         status.value = null;
         try {
             const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio/generate-all`, {
+                ...audioEditionPayload(),
                 regenerate_existing: regenerate.value,
                 provider_key: 'qwen-local',
                 model: model.value,
@@ -1196,14 +1217,14 @@ function openInsertAllAudioDialog(keyBook) {
     const replaceExisting = _.rod(false);
     const count = _.rod(null);
     const status = _.rod(null);
-    _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio/insert-all-summary`)
+    _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio/insert-all-summary${audioEditionQuery()}`)
         .then((payload) => { count.value = Number(audioData(payload).latest_audio_count || 0); })
         .catch(() => { status.value = { type: 'danger', message: 'Unable to load generated audio.' }; });
     const insert = async (close) => {
         if (allAudioInserting.value) return;
         allAudioInserting.value = true;
         try {
-            const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio/insert-all`, { replace_existing: replaceExisting.value });
+            const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio/insert-all`, { ...audioEditionPayload(), replace_existing: replaceExisting.value });
             const result = audioData(payload);
             await loadTimeline(keyBook);
             audioStatus.value = { type: 'success', message: `${result.inserted} latest audio master${result.inserted === 1 ? '' : 's'} inserted${result.skipped ? ` · ${result.skipped} already in timeline` : ''}.` };
@@ -1238,18 +1259,27 @@ function audioTabs() {
     }, label)));
 }
 
-function audioDirection() {
+function audioDirection({ narratorName = voiceName, voiceDirection = voiceTone, performancePrompt = deliveryNotes } = {}) {
     return _.div({ class: 'at-audioForm' },
-        _.Input({ label: 'Character / narrator', model: voiceName, icon: 'record_voice_over' }),
-        _.Input({ label: 'Voice direction', model: voiceTone, icon: 'graphic_eq' }),
-        _.Textarea({ label: 'Performance prompt', model: deliveryNotes, rows: 7, icon: 'auto_awesome' }),
+        _.Input({ label: 'Character / narrator', model: narratorName, icon: 'record_voice_over' }),
+        _.Input({ label: 'Voice direction', model: voiceDirection, icon: 'graphic_eq' }),
+        _.Textarea({ label: 'Performance prompt', model: performancePrompt, rows: 7, icon: 'auto_awesome' }),
         _.div({ class: 'at-audioHint' }, 'This direction is attached to the selected manuscript block and is used when the voice is generated.'),
     );
 }
 
 function openAudioDirectionDialog() {
     const keyBook = bookKey();
-    const defaultVoiceId = _.rod(String(audiobookBook.value?.audio_settings_json?.default_voice_profile_id || ''));
+    const audioSettings = audiobookBook.value?.audio_settings_json || {};
+    const defaultVoiceId = _.rod(String(audioSettings.default_voice_profile_id || ''));
+    const narratorName = _.rod(audioSettings.narrator_name || '');
+    const voiceDirection = _.rod(audioSettings.voice_direction || 'Warm, cinematic, intimate');
+    const performancePrompt = _.rod(audioSettings.performance_prompt || 'Keep a natural pace. Pause briefly after dialogue and preserve the emotional tone.');
+    const commaPause = _.rod(String(audioSettings.comma_ms ?? 250));
+    const semicolonPause = _.rod(String(audioSettings.semicolon_ms ?? 750));
+    const sentencePause = _.rod(String(audioSettings.sentence_ms ?? 500));
+    const newlinePause = _.rod(String(audioSettings.newline_ms ?? 1000));
+    const editionLocale = String(audiobookBook.value?.edition?.locale || audiobookBook.value?.lang || '').toLowerCase();
     const saving = _.rod(false);
     const status = _.rod(null);
     const libraryVoices = _.rod([]);
@@ -1260,9 +1290,9 @@ function openAudioDirectionDialog() {
         .catch((error) => { status.value = { type: 'warning', message: error.message || 'Audio Library could not be loaded.' }; })
         .finally(() => { libraryLoading.value = false; });
     const voiceOptions = () => {
-        const profiles = voiceProfiles.value.filter((profile) => profile.voice_id)
+        const profiles = voiceProfiles.value.filter((profile) => profile.voice_id && (!editionLocale || String(profile.language || '').toLowerCase() === editionLocale))
             .map((profile) => ({ value: String(profile.id), label: `Book voice · ${profile.name} · ${profile.settings_json?.tone_name || 'Default tone'}` }));
-        const library = libraryVoices.value.flatMap((voice) => (voice.samples || []).map((sample) => {
+        const library = libraryVoices.value.filter((voice) => !editionLocale || String(voice.language || '').toLowerCase() === editionLocale).flatMap((voice) => (voice.samples || []).map((sample) => {
             const value = `library:${voice.id}:${sample.tone_id || sample.tone?.id || ''}`;
             libraryChoice.set(value, { voice, sample });
             return { value, label: `Audio Library · ${voice.name} · ${sample.tone?.name || sample.tone || 'Default tone'}` };
@@ -1296,8 +1326,19 @@ function openAudioDirectionDialog() {
                     profileId = String(profile.id);
                 }
             }
-            await _.http.patchJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-settings`, { default_voice_profile_id: profileId });
-            audiobookBook.value = { ...audiobookBook.value, audio_settings_json: { ...(audiobookBook.value?.audio_settings_json || {}), default_voice_profile_id: profileId } };
+            const payload = await _.http.patchJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-settings`, {
+                ...audioEditionPayload(),
+                default_voice_profile_id: profileId,
+                narrator_name: narratorName.value.trim() || null,
+                voice_direction: voiceDirection.value.trim() || null,
+                performance_prompt: performancePrompt.value.trim() || null,
+                comma_ms: Number(commaPause.value || 0),
+                semicolon_ms: Number(semicolonPause.value || 0),
+                sentence_ms: Number(sentencePause.value || 0),
+                newline_ms: Number(newlinePause.value || 0),
+            });
+            const savedSettings = audioData(payload).audio_settings_json || {};
+            audiobookBook.value = { ...audiobookBook.value, audio_settings_json: savedSettings };
             close();
         } catch (error) { status.value = { type: 'danger', message: error.message || 'Unable to save the default voice.' }; }
         finally { saving.value = false; }
@@ -1310,13 +1351,26 @@ function openAudioDirectionDialog() {
                 _.h3('Audio direction'),
                 _.span({ class: 'text-muted' }, 'Set the narrator and delivery direction used when this block is generated.'),
             ),
-            content: ({ close }) => _.div({ class: 'at-audioDirectionDialog' },
+            content: () => _.div({ class: 'at-audioDirectionDialog' },
                 _.Select({ label: 'Default voice', icon: 'record_voice_over', model: defaultVoiceId, options: voiceOptions }),
                 () => libraryLoading.value ? _.small({ class: 'text-muted' }, 'Loading Audio Library voices…') : _.small({ class: 'text-muted' }, 'Audio Library selections are configured as the book narrator automatically.'),
-                audioDirection(),
+                audioDirection({ narratorName, voiceDirection, performancePrompt }),
+                _.div({ class: 'at-audioDirectionTiming' },
+                    _.h4('Audiobook timing'),
+                    _.small({ class: 'text-muted' }, 'Pauses used for generated audio in this language. Values are milliseconds.'),
+                    _.Row({ gap: 'md' },
+                        _.Input({ class: 'cms-col-6', label: 'Comma ,', type: 'number', min: 0, suffix: 'ms', model: commaPause }),
+                        _.Input({ class: 'cms-col-6', label: 'Semicolon ; :', type: 'number', min: 0, suffix: 'ms', model: semicolonPause }),
+                        _.Input({ class: 'cms-col-6', label: 'Sentence . ! ?', type: 'number', min: 0, suffix: 'ms', model: sentencePause }),
+                        _.Input({ class: 'cms-col-6', label: 'New paragraph', type: 'number', min: 0, suffix: 'ms', model: newlinePause }),
+                    ),
+                ),
                 () => status.value ? _.Alert(status.value) : null,
-                _.div({ class: 'at-characterDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Cancel'), _.Btn({ color: 'primary', icon: 'check', loading: saving, onClick: () => save(close) }, 'Save direction')),
             ),
+            actions: ({ close }) => [
+                _.Btn({ color: 'secondary', onClick: close }, 'Cancel'),
+                _.Btn({ color: 'primary', icon: 'check', loading: saving, onClick: () => save(close) }, 'Save direction'),
+            ],
         },
     }).open();
 }
@@ -1420,7 +1474,7 @@ async function assignProfileToActiveBlock(keyBook, profileId) {
     const block = activeBlock();
     if (!keyBook || !block?.block_uuid) return;
     try {
-        const payload = await _.http.patchJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/voice-assignment`, { voice_profile_id: profileId || null });
+        const payload = await _.http.patchJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/voice-assignment`, { ...audioEditionPayload(), voice_profile_id: profileId || null });
         const data = audioData(payload);
         blockVoiceAssignment.value = data.assignment || null;
         selectedLibraryVoice.value = data.assignment?.voice_profile || null;
@@ -1701,11 +1755,12 @@ async function openLibraryVoiceDialog(keyBook) {
         const requestedToneId = Number(sample.tone_id || sample.tone?.id || 0) || null;
         try {
             await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/library-voice`, {
+                ...audioEditionPayload(),
                 audio_library_voice_id: voice.id,
                 audio_library_voice_sample_id: sample.id,
                 tone_id: requestedToneId,
             }, { timeout: 900000, retry: { attempts: 0 } });
-            const data = audioData(await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/voice-assignment`));
+            const data = audioData(await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/voice-assignment${audioEditionQuery()}`));
             blockVoiceAssignment.value = data.assignment || null;
             selectedLibraryVoice.value = data.assignment?.voice_profile || { ...voice, selected_tone_id: requestedToneId };
             voiceName.value = voice.name;
@@ -1782,6 +1837,7 @@ function openAudioGeneratorSettingsDialog(keyBook) {
         infoTip(help),
     );
     const payloadForSettings = () => ({
+        ...audioEditionPayload(),
         generator_text: generatorText.value,
         tone_id: null,
         split_settings: splitSettingsPayload(),
@@ -1793,6 +1849,7 @@ function openAudioGeneratorSettingsDialog(keyBook) {
         status.value = null;
         try {
             const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/generator-settings/preview`, {
+                ...audioEditionPayload(),
                 generator_text: generatorText.value,
                 split_settings: splitSettingsPayload(),
             });
