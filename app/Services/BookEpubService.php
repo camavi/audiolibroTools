@@ -27,6 +27,7 @@ class BookEpubService
         $chapters = $this->chapters($blocks, $settings['reading']['chapter_break']);
         $manifest = [];
         $spine = [];
+        $manuscriptImages = $this->manuscriptImages($blocks);
 
         $zip->addFromString('OEBPS/styles/book.css', $this->stylesheet($book));
         $manifest[] = ['id' => 'css', 'href' => 'styles/book.css', 'media' => 'text/css'];
@@ -37,6 +38,11 @@ class BookEpubService
             $manifest[] = ['id' => 'cover-image', 'href' => 'images/cover.'.$cover['extension'], 'media' => $cover['mime'], 'properties' => 'cover-image'];
         }
 
+        foreach ($manuscriptImages as $image) {
+            $zip->addFromString('OEBPS/images/'.$image['filename'], $image['contents']);
+            $manifest[] = ['id' => $image['id'], 'href' => 'images/'.$image['filename'], 'media' => $image['mime']];
+        }
+
         if ($settings['reading']['include_title_page']) {
             $zip->addFromString('OEBPS/text/title-page.xhtml', $this->titlePage($settings, $cover));
             $manifest[] = ['id' => 'title-page', 'href' => 'text/title-page.xhtml', 'media' => 'application/xhtml+xml'];
@@ -45,7 +51,7 @@ class BookEpubService
 
         foreach ($chapters as $index => $chapter) {
             $id = 'chapter-'.($index + 1);
-            $zip->addFromString("OEBPS/text/{$id}.xhtml", $this->chapterDocument($chapter['title'], $chapter['paragraphs']));
+            $zip->addFromString("OEBPS/text/{$id}.xhtml", $this->chapterDocument($chapter['title'], $chapter['entries'], $manuscriptImages));
             $manifest[] = ['id' => $id, 'href' => "text/{$id}.xhtml", 'media' => 'application/xhtml+xml'];
             $spine[] = $id;
         }
@@ -69,31 +75,82 @@ class BookEpubService
     {
         $chapters = []; $current = null;
         foreach ($blocks as $block) {
+            $node = $block->content_json ?? [];
+            $attrs = $node['attrs'] ?? [];
             $text = trim((string) $block->text_plain);
-            if ($text === '') continue;
+            $isImage = $block->type === 'image' || ($node['type'] ?? null) === 'manuscriptImage';
+            $isPageBreak = ($attrs['pageBreak'] ?? false) === true;
+            if ($text === '' && !$isImage && !$isPageBreak) continue;
             $isChapter = $breakMode === 'heading' && in_array($block->type, ['chapter', 'chapter_title', 'heading'], true);
             if (! $current || $isChapter) {
                 if ($current) $chapters[] = $current;
-                $current = ['title' => $isChapter ? $text : 'Chapter '.(count($chapters) + 1), 'paragraphs' => $isChapter ? [] : [$text]];
+                $current = ['title' => $isChapter ? $text : 'Chapter '.(count($chapters) + 1), 'entries' => []];
+                if (!$isChapter) $current['entries'][] = $this->entry($block);
             } elseif ($block->type !== 'chapter_title') {
-                $current['paragraphs'][] = $text;
+                $current['entries'][] = $this->entry($block);
             }
         }
         if ($current) $chapters[] = $current;
-        return $chapters ?: [['title' => 'Book', 'paragraphs' => ['No manuscript content has been added yet.']]];
+        return $chapters ?: [['title' => 'Book', 'entries' => [['type' => 'paragraph', 'text' => 'No manuscript content has been added yet.', 'align' => null]]]];
     }
 
     private function cover(Book $book): ?array
     {
-        $url = (string) $book->cover_img;
-        $prefix = Storage::disk('public')->url('');
-        if ($url === '' || ! str_starts_with(parse_url($url, PHP_URL_PATH) ?: $url, $prefix)) return null;
-        $path = ltrim(substr(parse_url($url, PHP_URL_PATH) ?: $url, strlen($prefix)), '/');
+        $path = $this->publicPath((string) $book->cover_img);
+        if (! $path) return null;
         if (! Storage::disk('public')->exists($path)) return null;
         $contents = Storage::disk('public')->get($path);
         $mime = Storage::disk('public')->mimeType($path) ?: 'image/jpeg';
         $extension = match ($mime) { 'image/png' => 'png', 'image/webp' => 'webp', default => 'jpg' };
         return compact('contents', 'mime', 'extension');
+    }
+
+    private function entry(BookBlock $block): array
+    {
+        $node = $block->content_json ?? [];
+        $attrs = $node['attrs'] ?? [];
+        if (($attrs['pageBreak'] ?? false) === true) return ['type' => 'page_break'];
+        if ($block->type === 'image' || ($node['type'] ?? null) === 'manuscriptImage') {
+            return ['type' => 'image', 'src' => (string) ($attrs['src'] ?? ''), 'alt' => (string) ($attrs['alt'] ?? '')];
+        }
+        return ['type' => 'paragraph', 'text' => trim((string) $block->text_plain), 'align' => $attrs['textAlign'] ?? null];
+    }
+
+    private function manuscriptImages(iterable $blocks): array
+    {
+        $images = [];
+        foreach ($blocks as $block) {
+            $node = $block->content_json ?? [];
+            $attrs = $node['attrs'] ?? [];
+            $source = (string) ($attrs['src'] ?? '');
+            if (($node['type'] ?? null) !== 'manuscriptImage' || $source === '' || isset($images[$source])) continue;
+
+            $path = $this->publicPath($source);
+            if (! $path) continue;
+            if (!Storage::disk('public')->exists($path)) continue;
+
+            $mime = Storage::disk('public')->mimeType($path) ?: 'image/jpeg';
+            $extension = match ($mime) { 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif', default => 'jpg' };
+            $images[$source] = [
+                'id' => 'manuscript-image-'.(count($images) + 1),
+                'source' => $source,
+                'filename' => 'manuscript-'.(count($images) + 1).'.'.$extension,
+                'mime' => $mime,
+                'contents' => Storage::disk('public')->get($path),
+            ];
+        }
+
+        return array_values($images);
+    }
+
+    private function publicPath(string $url): ?string
+    {
+        if ($url === '') return null;
+        $pathUrl = parse_url($url, PHP_URL_PATH) ?: $url;
+        $prefixPath = rtrim((string) (parse_url(Storage::disk('public')->url(''), PHP_URL_PATH) ?: Storage::disk('public')->url('')), '/').'/';
+        if (!str_starts_with($pathUrl, $prefixPath)) return null;
+
+        return ltrim(substr($pathUrl, strlen($prefixPath)), '/');
     }
 
     private function stylesheet(Book $book): string
@@ -103,7 +160,7 @@ class BookEpubService
         $size = max(10, min(28, (float) ($body['font_size'] ?? 18)));
         $lineHeight = max(1, min(2.5, (float) ($body['line_height'] ?? 1.6)));
         $color = preg_match('/^#[0-9a-fA-F]{6}$/', $body['color'] ?? '') ? $body['color'] : '#182033';
-        return "body { margin: 5%; font-family: '{$font}', serif; font-size: {$size}px; line-height: {$lineHeight}; color: {$color}; } h1 { margin: 0 0 1.8em; page-break-before: always; } p { margin: 0 0 1em; } .title-page { text-align: center; margin-top: 28%; } .cover { max-width: 100%; max-height: 100%; }";
+        return "body { margin: 5%; font-family: '{$font}', serif; font-size: {$size}px; line-height: {$lineHeight}; color: {$color}; } h1 { margin: 0 0 1.8em; page-break-before: always; } p { margin: 0 0 1em; } .align-left { text-align:left; } .align-center { text-align:center; } .align-right { text-align:right; } .align-justify { text-align:justify; } .page-break { break-before: page; page-break-before: always; } figure { margin:1.6em 0; text-align:center; } .manuscript-image { max-width:100%; height:auto; } .title-page { text-align: center; margin-top: 28%; } .cover { max-width: 100%; max-height: 100%; }";
     }
 
     private function containerDocument(): string
@@ -118,9 +175,19 @@ class BookEpubService
         return $this->xhtml("<section class=\"title-page\">{$image}<h1>{$title}</h1>".($subtitle ? "<p>{$subtitle}</p>" : '').($author ? "<p>{$author}</p>" : '').'</section>');
     }
 
-    private function chapterDocument(string $title, array $paragraphs): string
+    private function chapterDocument(string $title, array $entries, array $images): string
     {
-        return $this->xhtml('<section><h1>'.$this->escape($title).'</h1>'.collect($paragraphs)->map(fn ($paragraph) => '<p>'.$this->escape($paragraph).'</p>')->implode('').'</section>');
+        $bySource = collect($images)->keyBy('source');
+        $content = collect($entries)->map(function (array $entry) use ($bySource) {
+            if ($entry['type'] === 'page_break') return '<div class="page-break"></div>';
+            if ($entry['type'] === 'image') {
+                $image = $bySource->get($entry['src']);
+                return $image ? '<figure><img class="manuscript-image" src="../images/'.$this->escape($image['filename']).'" alt="'.$this->escape($entry['alt']).'"/></figure>' : '';
+            }
+            $class = in_array($entry['align'], ['left', 'center', 'right', 'justify'], true) ? ' class="align-'.$entry['align'].'"' : '';
+            return '<p'.$class.'>'.$this->escape($entry['text']).'</p>';
+        })->implode('');
+        return $this->xhtml('<section><h1>'.$this->escape($title).'</h1>'.$content.'</section>');
     }
 
     private function navigation(array $settings, array $chapters): string

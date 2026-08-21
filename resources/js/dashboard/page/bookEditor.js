@@ -1,4 +1,4 @@
-import { Editor, Extension } from '@tiptap/core';
+import { Editor, Extension, Node } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
@@ -278,7 +278,7 @@ const TrackableBlocks = Extension.create({
     addGlobalAttributes() {
         return [
             {
-                types: ['paragraph', 'heading', 'blockquote', 'horizontalRule'],
+                types: ['paragraph', 'heading', 'blockquote', 'horizontalRule', 'manuscriptImage'],
                 attributes: {
                     blockId: {
                         default: null,
@@ -290,6 +290,13 @@ const TrackableBlocks = Extension.create({
                                 'data-block-id': attributes.blockId,
                             };
                         },
+                    },
+                    pageBreak: {
+                        default: false,
+                        parseHTML: element => element.getAttribute('data-page-break') === 'true',
+                        renderHTML: attributes => attributes.pageBreak
+                            ? { 'data-page-break': 'true' }
+                            : {},
                     },
                 },
             },
@@ -390,6 +397,49 @@ const TextAlignment = Extension.create({
     },
 });
 
+const ManuscriptImage = Node.create({
+    name: 'manuscriptImage',
+    group: 'block',
+    atom: true,
+    draggable: true,
+
+    addAttributes() {
+        return {
+            blockId: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-block-id'),
+                renderHTML: attributes => attributes.blockId ? { 'data-block-id': attributes.blockId } : {},
+            },
+            src: { default: null },
+            alt: { default: '' },
+            assetId: { default: null },
+        };
+    },
+
+    parseHTML() {
+        return [{ tag: 'img[data-manuscript-image="true"]' }];
+    },
+
+    renderHTML({ HTMLAttributes }) {
+        return ['img', {
+            ...HTMLAttributes,
+            'data-manuscript-image': 'true',
+        }];
+    },
+
+    addCommands() {
+        return {
+            setManuscriptImage: attributes => ({ commands }) => commands.insertContent({
+                type: this.name,
+                attrs: {
+                    ...attributes,
+                    blockId: attributes.blockId || createBlockId(),
+                },
+            }),
+        };
+    },
+});
+
 const CommentAnchors = Extension.create({
     name: 'commentAnchors',
 
@@ -439,7 +489,7 @@ function isTrackableNode(node) {
         ? node.type
         : node?.type?.name;
 
-    return ['paragraph', 'heading', 'blockquote', 'horizontalRule'].includes(type);
+    return ['paragraph', 'heading', 'blockquote', 'horizontalRule', 'manuscriptImage'].includes(type);
 }
 
 function withBlockIds(node, seenBlockIds = new Set()) {
@@ -778,6 +828,10 @@ function requestErrorMessage(error, fallback) {
     return firstError || payload.message || error?.message || fallback;
 }
 
+function csrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+
 function runUntracked(fn) {
     const untracked = globalThis.CMSwift?.reactive?.untracked;
 
@@ -795,7 +849,7 @@ function extractEditorBlocks(doc, blockMeta) {
         blocks.push({
             block_uuid: node.attrs.blockId,
             base_version_id: meta.current_version_id || null,
-            type: node.type === 'heading' ? 'heading' : node.type === 'horizontalRule' ? 'scene_break' : node.type,
+            type: node.type === 'heading' ? 'heading' : node.type === 'horizontalRule' ? 'scene_break' : node.type === 'manuscriptImage' ? 'image' : node.type,
             sort_order: (index + 1) * 1000,
             content_json: node,
             text_plain: textFromNode(node),
@@ -812,12 +866,15 @@ function blockKindLabel(type) {
         paragraph: 'Text',
         blockquote: 'Quote',
         scene_break: 'Break',
+        image: 'Image',
     };
 
     return labels[type] || 'Block';
 }
 
 function outlineLabel(block, index) {
+    if (block.content_json?.attrs?.pageBreak) return 'Page break';
+    if (block.type === 'image') return block.content_json?.attrs?.alt || 'Image';
     if (block.type === 'scene_break') return 'Scene break';
     if (block.text_plain) return block.text_plain;
 
@@ -3240,6 +3297,13 @@ function editorText(keyBook) {
     let isApplyingRemoteContent = false;
     let inlineCommentMarkerFrame = null;
     const blockMeta = new Map();
+    const findQuery = _.rod('');
+    const replaceQuery = _.rod('');
+    const findMatchIndex = _.rod(-1);
+    const findMatchCount = _.rod(0);
+    const mediaAssets = _.rod([]);
+    const mediaStatus = _.rod(null);
+    const mediaUploading = _.rod(false);
 
     const editorMount = _.div({
         class: 'at-tiptap-editor',
@@ -3380,13 +3444,13 @@ function editorText(keyBook) {
         refreshEditorUi();
     };
 
-    const toolbarButton = ({ icon, title, active, action }) => {
+    const toolbarButton = ({ icon, title, active, action, onClick }) => {
         return _.Button({
             icon,
             title,
             class: () => active?.() ? 'at-editorToolbar-btn is-active' : 'at-editorToolbar-btn',
             disabled: () => !editorReady.value,
-            onclick: () => runCommand(action),
+            onclick: () => onClick ? onClick() : runCommand(action),
         });
     };
 
@@ -3398,18 +3462,275 @@ function editorText(keyBook) {
 
     const setSceneBreak = (chain) => chain.setHorizontalRule();
 
+    const insertChapter = (chain) => chain.insertContent([
+        {
+            type: 'heading',
+            attrs: { level: 2, blockId: createBlockId() },
+            content: [{ type: 'text', text: 'Chapter title' }],
+        },
+        {
+            type: 'paragraph',
+            attrs: { blockId: createBlockId() },
+        },
+    ]);
+
+    const insertPageBreak = (chain) => chain.insertContent({
+        type: 'horizontalRule',
+        attrs: { blockId: createBlockId(), pageBreak: true },
+    });
+
     const clearFormatting = (chain) => chain.unsetAllMarks().clearNodes();
+
+    const findTextMatches = () => {
+        if (!editor) return [];
+
+        const query = findQuery.value.trim();
+        if (!query) return [];
+
+        const matches = [];
+        const needle = query.toLocaleLowerCase();
+        editor.state.doc.descendants((node, position) => {
+            if (!node.isText || !node.text) return;
+
+            const haystack = node.text.toLocaleLowerCase();
+            let offset = haystack.indexOf(needle);
+            while (offset !== -1) {
+                matches.push({ from: position + offset, to: position + offset + query.length });
+                offset = haystack.indexOf(needle, offset + query.length);
+            }
+        });
+
+        return matches;
+    };
+
+    const selectFindMatch = (direction = 1) => {
+        const matches = findTextMatches();
+        findMatchCount.value = matches.length;
+        if (!matches.length) {
+            findMatchIndex.value = -1;
+            return;
+        }
+
+        const nextIndex = ((findMatchIndex.value + direction) % matches.length + matches.length) % matches.length;
+        findMatchIndex.value = nextIndex;
+        editor.chain().focus().setTextSelection(matches[nextIndex]).run();
+        refreshEditorUi();
+    };
+
+    const refreshFindMatches = () => {
+        const matches = findTextMatches();
+        findMatchCount.value = matches.length;
+        findMatchIndex.value = matches.length ? 0 : -1;
+    };
+
+    const replaceCurrentMatch = () => {
+        const matches = findTextMatches();
+        if (!matches.length) return;
+
+        const index = Math.max(0, Math.min(findMatchIndex.value, matches.length - 1));
+        const match = matches[index];
+        editor.chain().focus().insertContentAt(match, replaceQuery.value).run();
+        refreshFindMatches();
+        selectFindMatch(1);
+    };
+
+    const replaceAllMatches = () => {
+        const matches = findTextMatches();
+        if (!matches.length) return;
+
+        const transaction = editor.state.tr;
+        [...matches].reverse().forEach((match) => {
+            transaction.insertText(replaceQuery.value, match.from, match.to);
+        });
+        editor.view.dispatch(transaction);
+        refreshFindMatches();
+    };
+
+    const openFindReplaceDialog = () => {
+        findQuery.value = '';
+        replaceQuery.value = '';
+        findMatchIndex.value = -1;
+        findMatchCount.value = 0;
+
+        _.Dialog({
+            size: 'md',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3('Find and replace'),
+                    _.span({ class: 'text-muted' }, 'Search within the manuscript and replace text safely.'),
+                ),
+                content: ({ close }) => _.div({ class: 'at-findReplaceDialog' },
+                    _.Input({
+                        label: 'Find',
+                        icon: 'search',
+                        model: findQuery,
+                        placeholder: 'Text to find',
+                        onInput: refreshFindMatches,
+                    }),
+                    _.Input({
+                        label: 'Replace with',
+                        icon: 'find_replace',
+                        model: replaceQuery,
+                        placeholder: 'Replacement text',
+                    }),
+                    _.div({ class: 'at-findReplaceResult' }, () => findMatchCount.value
+                        ? `${findMatchIndex.value + 1} of ${findMatchCount.value} matches`
+                        : 'No matches'
+                    ),
+                    _.div({ class: 'at-findReplaceActions' },
+                        _.Btn({ color: 'secondary', icon: 'keyboard_arrow_up', onClick: () => selectFindMatch(-1) }, 'Previous'),
+                        _.Btn({ color: 'secondary', icon: 'keyboard_arrow_down', onClick: () => selectFindMatch(1) }, 'Next'),
+                        _.Btn({ color: 'secondary', icon: 'find_replace', onClick: replaceCurrentMatch }, 'Replace'),
+                        _.Btn({ color: 'primary', icon: 'find_replace', onClick: replaceAllMatches }, 'Replace all'),
+                        _.Btn({ color: 'secondary', onClick: close }, 'Close'),
+                    )
+                ),
+            },
+        }).open();
+    };
+
+    const loadMediaAssets = async () => {
+        if (!keyBook) return;
+
+        mediaStatus.value = { type: 'loading', message: 'Loading image library…' };
+        try {
+            const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/media-assets`);
+            const data = normalizeDataPayload(payload);
+            mediaAssets.value = data.assets || [];
+            mediaStatus.value = null;
+        } catch (error) {
+            mediaStatus.value = { type: 'danger', message: requestErrorMessage(error, 'Unable to load the image library.') };
+        }
+    };
+
+    const uploadMediaAsset = async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            mediaStatus.value = { type: 'danger', message: 'Choose an image file.' };
+            return;
+        }
+
+        mediaUploading.value = true;
+        mediaStatus.value = null;
+        try {
+            const body = new FormData();
+            body.append('image', file);
+            body.append('name', file.name.replace(/\.[^.]+$/, ''));
+            const response = await fetch(`/dashboard/api/books/${encodeURIComponent(keyBook)}/media-assets`, {
+                method: 'POST',
+                headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken() },
+                body,
+            });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.message || 'Unable to upload the image.');
+
+            const asset = normalizeDataPayload(payload).asset;
+            if (asset) mediaAssets.value = [asset, ...mediaAssets.value];
+        } catch (error) {
+            mediaStatus.value = { type: 'danger', message: error.message || 'Unable to upload the image.' };
+        } finally {
+            mediaUploading.value = false;
+        }
+    };
+
+    const openMediaDialog = () => {
+        mediaAssets.value = [];
+        mediaStatus.value = null;
+        mediaUploading.value = false;
+        loadMediaAssets();
+
+        _.Dialog({
+            size: 'lg',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3('Insert image'),
+                    _.span({ class: 'text-muted' }, 'Upload an image or choose one already saved for this manuscript.'),
+                ),
+                content: ({ close }) => _.div({ class: 'at-mediaDialog' },
+                    _.div({ class: 'at-mediaDialog-actions' },
+                        _.Btn({
+                            color: 'primary',
+                            icon: 'upload_file',
+                            loading: mediaUploading,
+                            onClick: () => document.querySelector('#editor-media-upload')?.click(),
+                        }, 'Upload image'),
+                        _.Btn({ color: 'secondary', icon: 'refresh', onClick: loadMediaAssets }, 'Refresh'),
+                        _.input({
+                            id: 'editor-media-upload',
+                            type: 'file',
+                            accept: 'image/jpeg,image/png,image/webp,image/gif',
+                            hidden: true,
+                            onchange: uploadMediaAsset,
+                        })
+                    ),
+                    () => mediaStatus.value
+                        ? _.Alert(mediaStatus.value)
+                        : null,
+                    () => mediaAssets.value.length
+                        ? _.div({ class: 'at-mediaGrid' }, mediaAssets.value.map((asset) => _.button({
+                            type: 'button',
+                            class: 'at-mediaAsset',
+                            title: `Insert ${asset.name}`,
+                            onclick: () => {
+                                editor.chain().focus().setManuscriptImage({
+                                    src: asset.image_url,
+                                    alt: asset.name || 'Image',
+                                    assetId: String(asset.id),
+                                }).run();
+                                refreshEditorUi();
+                                close();
+                            },
+                        },
+                            _.img({ src: asset.image_url, alt: asset.name || '' }),
+                            _.span(asset.name || 'Image'),
+                            asset.width && asset.height ? _.small(`${asset.width} × ${asset.height}`) : null,
+                        )))
+                        : mediaStatus.value?.type === 'loading'
+                            ? _.div({ class: 'at-mediaEmpty' }, 'Loading images…')
+                            : _.div({ class: 'at-mediaEmpty' }, 'Upload the first image for this manuscript.'),
+                    _.div({ class: 'at-mediaDialog-footer' },
+                        _.Btn({ color: 'secondary', onClick: close }, 'Close')
+                    )
+                ),
+            },
+        }).open();
+    };
+
+    const openSelectionComment = () => {
+        const anchor = blockCommentSelectionAnchor.value;
+        const block = anchor
+            ? blockMeta.get(anchor.block_uuid) || currentEditorBlocks.find((item) => item.block_uuid === anchor.block_uuid)
+            : null;
+
+        if (!block || !anchor) {
+            editorStatus.value = { type: 'danger', message: 'Select text first to add an editorial comment.' };
+            return;
+        }
+
+        activeBlockCommentId.value = null;
+        blockCommentDraft.value = '';
+        setRightWorkspaceTool('comments');
+        focusEditorBlock(block.block_uuid);
+        loadBlockComments(block);
+    };
 
     const writerToolbar = () => [
         toolbarGroup('History', [
             toolbarButton({ icon: 'undo', title: 'Undo', action: (chain) => chain.undo() }),
             toolbarButton({ icon: 'redo', title: 'Redo', action: (chain) => chain.redo() }),
+            toolbarButton({ icon: 'search', title: 'Find and replace', onClick: openFindReplaceDialog }),
         ]),
         toolbarGroup('Block style', [
             toolbarButton({ icon: 'article', title: 'Paragraph', active: () => isActive('paragraph'), action: (chain) => chain.setParagraph() }),
             toolbarButton({ icon: 'title', title: 'Chapter title', active: () => isActive('heading', { level: 2 }), action: (chain) => chain.toggleHeading({ level: 2 }) }),
             toolbarButton({ icon: 'format_size', title: 'Section heading', active: () => isActive('heading', { level: 3 }), action: (chain) => chain.toggleHeading({ level: 3 }) }),
             toolbarButton({ icon: 'format_quote', title: 'Quote', active: () => isActive('blockquote'), action: (chain) => chain.toggleBlockquote() }),
+            toolbarButton({ icon: 'add_circle_outline', title: 'Insert chapter', action: insertChapter }),
         ]),
         toolbarGroup('Text style', [
             toolbarButton({ icon: 'format_bold', title: 'Bold', active: () => isActive('bold'), action: (chain) => chain.toggleBold() }),
@@ -3428,6 +3749,9 @@ function editorText(keyBook) {
             toolbarButton({ icon: 'format_list_bulleted', title: 'Bullet list', active: () => isActive('bulletList'), action: (chain) => chain.toggleBulletList() }),
             toolbarButton({ icon: 'format_list_numbered', title: 'Ordered list', active: () => isActive('orderedList'), action: (chain) => chain.toggleOrderedList() }),
             toolbarButton({ icon: 'horizontal_rule', title: 'Scene break', action: setSceneBreak }),
+            toolbarButton({ icon: 'vertical_align_bottom', title: 'Page break', action: insertPageBreak }),
+            toolbarButton({ icon: 'add_comment', title: 'Comment on selected text', onClick: openSelectionComment }),
+            toolbarButton({ icon: 'image', title: 'Insert image', onClick: openMediaDialog }),
         ]),
     ];
 
@@ -5675,6 +5999,7 @@ function editorText(keyBook) {
                 StarterKit,
                 TrackableBlocks,
                 TextAlignment,
+                ManuscriptImage,
                 CommentAnchors,
             ],
             content: defaultDocument(),

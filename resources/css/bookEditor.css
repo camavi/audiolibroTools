@@ -2729,6 +2729,91 @@
     color: #9f1239;
 }
 
+.at-findReplaceDialog {
+    display: grid;
+    gap: 14px;
+}
+
+.at-findReplaceResult {
+    min-height: 20px;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.at-findReplaceActions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.at-mediaDialog {
+    display: grid;
+    gap: 14px;
+}
+
+.at-mediaDialog-actions,
+.at-mediaDialog-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.at-mediaGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+    max-height: 440px;
+    overflow: auto;
+}
+
+.at-mediaAsset {
+    display: grid;
+    gap: 7px;
+    padding: 8px;
+    border: 1px solid #dbe3ee;
+    border-radius: 8px;
+    color: #334155;
+    background: #ffffff;
+    text-align: left;
+    cursor: pointer;
+}
+
+.at-mediaAsset:hover {
+    border-color: #93c5fd;
+    background: #f8fbff;
+}
+
+.at-mediaAsset img {
+    display: block;
+    width: 100%;
+    height: 112px;
+    border-radius: 5px;
+    object-fit: cover;
+}
+
+.at-mediaAsset span {
+    overflow: hidden;
+    font-size: 12px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.at-mediaAsset small,
+.at-mediaEmpty {
+    color: #64748b;
+    font-size: 11px;
+}
+
+.at-mediaEmpty {
+    padding: 28px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    text-align: center;
+}
+
 .at-tiptap-editor {
     flex: 1;
     min-height: 0;
@@ -2748,6 +2833,39 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
     outline: none;
     line-height: 1.65;
+}
+
+.at-tiptap-editor .tiptap img[data-manuscript-image="true"] {
+    display: block;
+    width: auto;
+    max-width: min(100%, 620px);
+    height: auto;
+    margin: 28px auto;
+    border-radius: 4px;
+}
+
+.at-tiptap-editor .tiptap hr[data-page-break="true"] {
+    position: relative;
+    height: 34px;
+    margin: 32px 0;
+    border: 0;
+    border-top: 1px dashed #94a3b8;
+}
+
+.at-tiptap-editor .tiptap hr[data-page-break="true"]::after {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    padding: 0 8px;
+    transform: translateX(-50%);
+    color: #64748b;
+    background: #ffffff;
+    content: 'Page break';
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
 }
 
 .at-tiptap-editor .tiptap>*:first-child {

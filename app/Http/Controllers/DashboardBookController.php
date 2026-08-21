@@ -2885,8 +2885,10 @@ class DashboardBookController extends Controller
         return $editionBlock;
     }
 
-    private function editionAudioSettings(Book $book, BookEdition $edition): array
+    private function editionAudioSettings(Book $book, ?BookEdition $edition): array
     {
+        if (! $edition) return $book->audio_settings_json ?? [];
+
         $settings = data_get($edition->metadata_json, 'audio_settings');
 
         return is_array($settings)

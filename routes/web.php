@@ -9,6 +9,7 @@ use App\Http\Controllers\BookDesignController;
 use App\Http\Controllers\BookDistributionController;
 use App\Http\Controllers\BookEditionController;
 use App\Http\Controllers\BookEpubController;
+use App\Http\Controllers\BookMediaController;
 use App\Http\Controllers\BookPdfController;
 use App\Http\Controllers\DashboardAiController;
 use App\Http\Controllers\DashboardBookController;
@@ -98,6 +99,9 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::post('/books/{keyBook}/design-assets/{asset}/use-cover', [BookDesignController::class, 'useAsCover'])->name('books.design-assets.use-cover');
     Route::patch('/books/{keyBook}/cover-spec', [BookDesignController::class, 'updateCoverSpec'])->name('books.cover-spec.update');
     Route::delete('/books/{keyBook}/design-assets/{asset}', [BookDesignController::class, 'destroy'])->name('books.design-assets.destroy');
+    Route::get('/books/{keyBook}/media-assets', [BookMediaController::class, 'index'])->name('books.media-assets.index');
+    Route::post('/books/{keyBook}/media-assets', [BookMediaController::class, 'store'])->name('books.media-assets.store');
+    Route::delete('/books/{keyBook}/media-assets/{asset}', [BookMediaController::class, 'destroy'])->name('books.media-assets.destroy');
     Route::get('/books/{keyBook}/epub', [BookEpubController::class, 'index'])->name('books.epub.index');
     Route::put('/books/{keyBook}/epub', [BookEpubController::class, 'update'])->name('books.epub.update');
     Route::post('/books/{keyBook}/epub/generate', [BookEpubController::class, 'generate'])->name('books.epub.generate');

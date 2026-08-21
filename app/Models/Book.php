@@ -49,6 +49,11 @@ class Book extends Model
         return $this->hasMany(BookDesignAsset::class);
     }
 
+    public function mediaAssets(): HasMany
+    {
+        return $this->hasMany(BookMediaAsset::class);
+    }
+
     public function distributionConnections(): HasMany
     {
         return $this->hasMany(BookDistributionConnection::class);

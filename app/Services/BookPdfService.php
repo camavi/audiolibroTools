@@ -49,14 +49,28 @@ class BookPdfService
         $blocks = $book->blocks()->where('status', '!=', 'deleted')->orderBy('sort_order')->get();
         $content = '';
         foreach ($blocks as $block) {
+            $node = $block->content_json ?? [];
+            $attrs = $node['attrs'] ?? [];
+            if (($attrs['pageBreak'] ?? false) === true) {
+                $content .= '<div class="page-break"></div>';
+                continue;
+            }
+            if ($block->type === 'image' || ($node['type'] ?? null) === 'manuscriptImage') {
+                $image = $this->imageDataUri((string) ($attrs['src'] ?? ''));
+                if ($image) $content .= '<figure><img class="manuscript-image" src="'.$image.'" alt="'.$this->escape($attrs['alt'] ?? '').'"/></figure>';
+                continue;
+            }
             $text = trim((string) $block->text_plain); if ($text === '') continue;
             $tag = in_array($block->type, ['heading', 'chapter', 'chapter_title'], true) ? 'h1' : 'p';
-            $class = $tag === 'h1' && $layout['chapter_new_page'] ? ' class="chapter"' : '';
+            $classes = [];
+            if ($tag === 'h1' && $layout['chapter_new_page']) $classes[] = 'chapter';
+            if (in_array($attrs['textAlign'] ?? null, ['left', 'center', 'right', 'justify'], true)) $classes[] = 'align-'.$attrs['textAlign'];
+            $class = $classes ? ' class="'.implode(' ', $classes).'"' : '';
             $content .= "<{$tag}{$class}>".$this->escape($text)."</{$tag}>";
         }
         $titlePage = $layout['title_page'] ? '<section class="title-page">'.($cover ? '<img class="cover" src="'.$cover.'"/>' : '').'<h1>'.$this->escape($meta['title']).'</h1>'.($meta['subtitle'] ? '<p class="subtitle">'.$this->escape($meta['subtitle']).'</p>' : '').($meta['author'] ? '<p class="author">'.$this->escape($meta['author']).'</p>' : '').'</section>' : '';
         $copyright = $layout['copyright_page'] ? '<section class="copyright"><p>'.$this->escape($meta['rights'] ?: 'All rights reserved.').'</p>'.($meta['publisher'] ? '<p>'.$this->escape($meta['publisher']).'</p>' : '').'</section>' : '';
-        return '<!doctype html><html><head><meta charset="utf-8"><style>@page { margin: '.$layout['margin_top'].'mm '.$layout['margin_outside'].'mm '.$layout['margin_bottom'].'mm '.$layout['margin_inside'].'mm; size: '.$paper['width'].'mm '.$paper['height'].'mm; } body { font-family: DejaVu Sans, sans-serif; font-size: '.$fontSize.'pt; line-height: '.$lineHeight.'; color: '.$color.'; } p { margin: 0 0 1em; text-align: '.$layout['alignment'].'; } h1 { font-size: '.max(18, $fontSize * 2).'pt; line-height:1.15; margin: 0 0 1.4em; } h1.chapter { page-break-before: always; } .title-page { text-align:center; page-break-after:always; padding-top:28%; } .title-page h1 { font-size:30pt; } .subtitle { text-align:center; font-size:15pt; } .author { text-align:center; margin-top:3em; } .cover { width:100%; max-height:540pt; object-fit:contain; margin-bottom:2em; } .copyright { page-break-after:always; padding-top:62%; font-size:8pt; color:#667085; }</style></head><body>'.$titlePage.$copyright.($content ?: '<p>No manuscript content has been added yet.</p>').'</body></html>';
+        return '<!doctype html><html><head><meta charset="utf-8"><style>@page { margin: '.$layout['margin_top'].'mm '.$layout['margin_outside'].'mm '.$layout['margin_bottom'].'mm '.$layout['margin_inside'].'mm; size: '.$paper['width'].'mm '.$paper['height'].'mm; } body { font-family: DejaVu Sans, sans-serif; font-size: '.$fontSize.'pt; line-height: '.$lineHeight.'; color: '.$color.'; } p { margin: 0 0 1em; text-align: '.$layout['alignment'].'; } h1 { font-size: '.max(18, $fontSize * 2).'pt; line-height:1.15; margin: 0 0 1.4em; } h1.chapter, .page-break { page-break-before: always; } .align-left { text-align:left; } .align-center { text-align:center; } .align-right { text-align:right; } .align-justify { text-align:justify; } figure { margin:1.8em 0; text-align:center; } .manuscript-image { max-width:100%; max-height:520pt; object-fit:contain; } .title-page { text-align:center; page-break-after:always; padding-top:28%; } .title-page h1 { font-size:30pt; } .subtitle { text-align:center; font-size:15pt; } .author { text-align:center; margin-top:3em; } .cover { width:100%; max-height:540pt; object-fit:contain; margin-bottom:2em; } .copyright { page-break-after:always; padding-top:62%; font-size:8pt; color:#667085; }</style></head><body>'.$titlePage.$copyright.($content ?: '<p>No manuscript content has been added yet.</p>').'</body></html>';
     }
 
     private function paper(array $format): array
@@ -69,10 +83,26 @@ class BookPdfService
 
     private function coverDataUri(Book $book): ?string
     {
-        $url = (string) $book->cover_img; $prefix = Storage::disk('public')->url(''); $pathUrl = parse_url($url, PHP_URL_PATH) ?: $url;
-        if ($url === '' || !str_starts_with($pathUrl, $prefix)) return null;
-        $path = ltrim(substr($pathUrl, strlen($prefix)), '/'); if (!Storage::disk('public')->exists($path)) return null;
+        $path = $this->publicPath((string) $book->cover_img);
+        if (! $path || !Storage::disk('public')->exists($path)) return null;
         return 'data:'.(Storage::disk('public')->mimeType($path) ?: 'image/jpeg').';base64,'.base64_encode(Storage::disk('public')->get($path));
+    }
+
+    private function imageDataUri(string $url): ?string
+    {
+        $path = $this->publicPath($url);
+        if (! $path || !Storage::disk('public')->exists($path)) return null;
+        return 'data:'.(Storage::disk('public')->mimeType($path) ?: 'image/jpeg').';base64,'.base64_encode(Storage::disk('public')->get($path));
+    }
+
+    private function publicPath(string $url): ?string
+    {
+        if ($url === '') return null;
+        $pathUrl = parse_url($url, PHP_URL_PATH) ?: $url;
+        $prefixPath = rtrim((string) (parse_url(Storage::disk('public')->url(''), PHP_URL_PATH) ?: Storage::disk('public')->url('')), '/').'/';
+        if (!str_starts_with($pathUrl, $prefixPath)) return null;
+
+        return ltrim(substr($pathUrl, strlen($prefixPath)), '/');
     }
 
     private function escape(?string $value): string { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); }
