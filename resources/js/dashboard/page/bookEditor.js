@@ -17,9 +17,9 @@ const indexView = _.rod(true);
 const commandView = _.rod(true);
 const editorReady = _.rod(false);
 const editorUiTick = _.rod(0);
-const editorPageFormat = _.rod('book');
 const editorStatus = _.rod(null);
 const saveStatus = _.rod('idle');
+const editorWordCount = _.rod(0);
 const confirmPanelActions = _.rod(true);
 const editorBook = _.rod(null);
 const editorOutline = _.rod([]);
@@ -163,16 +163,6 @@ let openSystemPromptDialog = () => { };
 const AUTOSAVE_DELAY = 1200;
 const commentAnchorPluginKey = new PluginKey('audiobookCommentAnchors');
 
-const pageFormatOptions = [
-    { label: 'Book - Novel', value: 'book' },
-    { label: 'Paperback 5x8', value: 'paperback-5x8' },
-    { label: 'Paperback 6x9', value: 'paperback-6x9' },
-    { label: 'A5', value: 'a5' },
-    { label: 'A4', value: 'a4' },
-    { label: 'US Letter', value: 'letter' },
-    { label: 'Screen draft', value: 'draft' },
-];
-
 const rightWorkspaceTools = [
     { id: 'chat', icon: 'forum', label: 'AI Chat' },
     { id: 'comments', icon: 'comment', label: 'Comments' },
@@ -247,14 +237,12 @@ function writeEditorPreference(key, value) {
 
 function restoreEditorPreferences() {
     const preferences = readEditorPreferences();
-    const pageFormats = new Set(pageFormatOptions.map((option) => option.value));
     const tools = new Set(rightWorkspaceTools.map((tool) => tool.id));
     const locales = new Set(translationLocaleOptions.map((option) => option.value));
 
     if (typeof preferences.indexView === 'boolean') indexView.value = preferences.indexView;
     if (typeof preferences.commandView === 'boolean') commandView.value = preferences.commandView;
     if (typeof preferences.confirmPanelActions === 'boolean') confirmPanelActions.value = preferences.confirmPanelActions;
-    if (pageFormats.has(preferences.pageFormat)) editorPageFormat.value = preferences.pageFormat;
     if (tools.has(preferences.rightWorkspaceTool)) rightWorkspaceTool.value = preferences.rightWorkspaceTool;
     if (locales.has(preferences.translationTargetLocale)) translationTargetLocale.value = preferences.translationTargetLocale;
     if (versionFilterOptions.some((option) => option.value === preferences.versionFilter)) versionFilter.value = preferences.versionFilter;
@@ -341,6 +329,64 @@ const TrackableBlocks = Extension.create({
                 },
             }),
         ];
+    },
+});
+
+const TextAlignment = Extension.create({
+    name: 'textAlignment',
+
+    addGlobalAttributes() {
+        return [{
+            types: ['paragraph', 'heading', 'blockquote'],
+            attributes: {
+                textAlign: {
+                    default: null,
+                    parseHTML: element => element.style.textAlign || null,
+                    renderHTML: attributes => attributes.textAlign
+                        ? { style: `text-align: ${attributes.textAlign}` }
+                        : {},
+                },
+            },
+        }];
+    },
+
+    addCommands() {
+        const applyAlignment = alignment => ({ state, dispatch }) => {
+            const allowedTypes = new Set(['paragraph', 'heading', 'blockquote']);
+            const transaction = state.tr;
+            let changed = false;
+            const setAlignment = (node, position) => {
+                if (!allowedTypes.has(node.type.name) || node.attrs.textAlign === alignment) return;
+
+                transaction.setNodeMarkup(position, undefined, {
+                    ...node.attrs,
+                    textAlign: alignment,
+                });
+                changed = true;
+            };
+
+            if (state.selection.empty) {
+                for (let depth = state.selection.$from.depth; depth > 0; depth -= 1) {
+                    const node = state.selection.$from.node(depth);
+                    if (!allowedTypes.has(node.type.name)) continue;
+
+                    setAlignment(node, state.selection.$from.before(depth));
+                    break;
+                }
+            } else {
+                state.doc.nodesBetween(state.selection.from, state.selection.to, (node, position) => {
+                    setAlignment(node, position);
+                });
+            }
+
+            if (changed && dispatch) dispatch(transaction);
+            return changed;
+        };
+
+        return {
+            setTextAlign: alignment => applyAlignment(alignment),
+            unsetTextAlign: () => applyAlignment(null),
+        };
     },
 });
 
@@ -801,11 +847,6 @@ function setCommandView(visible) {
 function setRightWorkspaceTool(toolId) {
     rightWorkspaceTool.value = toolId;
     writeEditorPreference('rightWorkspaceTool', toolId);
-}
-
-function setEditorPageFormat(format) {
-    editorPageFormat.value = format;
-    writeEditorPreference('pageFormat', format);
 }
 
 function setTranslationTargetLocale(locale) {
@@ -3201,7 +3242,7 @@ function editorText(keyBook) {
     const blockMeta = new Map();
 
     const editorMount = _.div({
-        class: () => `at-tiptap-editor page-${editorPageFormat.value}`,
+        class: 'at-tiptap-editor',
         role: 'textbox',
         'aria-label': 'Book content editor',
     });
@@ -3349,103 +3390,55 @@ function editorText(keyBook) {
         });
     };
 
-    const toolbarDivider = () => _.span({
-        class: 'at-editorToolbar-divider',
-        'aria-hidden': 'true',
-    });
-
-    const pageFormatSelect = () => _.label({ class: 'at-pageFormatSelect' },
-        _.span({ class: 'at-pageFormatSelect-label' }, 'Page'),
-        _.select({
-            value: editorPageFormat.value,
-            title: 'Page preview',
-            onchange: (event) => setEditorPageFormat(event.target.value),
-        },
-            pageFormatOptions.map((option) => _.option({
-                value: option.value,
-                selected: () => editorPageFormat.value === option.value,
-            }, option.label))
-        )
-    );
+    const toolbarGroup = (label, children) => _.div({
+        class: 'at-editorToolbar-group',
+        'aria-label': label,
+        role: 'group',
+    }, ...children);
 
     const setSceneBreak = (chain) => chain.setHorizontalRule();
 
     const clearFormatting = (chain) => chain.unsetAllMarks().clearNodes();
 
     const writerToolbar = () => [
-        pageFormatSelect(),
-        toolbarDivider(),
-        toolbarButton({
-            icon: 'undo',
-            title: 'Undo',
-            action: (chain) => chain.undo(),
-        }),
-        toolbarButton({
-            icon: 'redo',
-            title: 'Redo',
-            action: (chain) => chain.redo(),
-        }),
-        toolbarDivider(),
-        toolbarButton({
-            icon: 'article',
-            title: 'Paragraph',
-            active: () => isActive('paragraph'),
-            action: (chain) => chain.setParagraph(),
-        }),
-        toolbarButton({
-            icon: 'title',
-            title: 'Chapter title',
-            active: () => isActive('heading', { level: 2 }),
-            action: (chain) => chain.toggleHeading({ level: 2 }),
-        }),
-        toolbarButton({
-            icon: 'format_quote',
-            title: 'Quote',
-            active: () => isActive('blockquote'),
-            action: (chain) => chain.toggleBlockquote(),
-        }),
-        toolbarDivider(),
-        toolbarButton({
-            icon: 'format_bold',
-            title: 'Bold',
-            active: () => isActive('bold'),
-            action: (chain) => chain.toggleBold(),
-        }),
-        toolbarButton({
-            icon: 'format_italic',
-            title: 'Italic',
-            active: () => isActive('italic'),
-            action: (chain) => chain.toggleItalic(),
-        }),
-        toolbarButton({
-            icon: 'format_clear',
-            title: 'Clear formatting',
-            action: clearFormatting,
-        }),
-        toolbarDivider(),
-        toolbarButton({
-            icon: 'format_list_bulleted',
-            title: 'Bullet list',
-            active: () => isActive('bulletList'),
-            action: (chain) => chain.toggleBulletList(),
-        }),
-        toolbarButton({
-            icon: 'format_list_numbered',
-            title: 'Ordered list',
-            active: () => isActive('orderedList'),
-            action: (chain) => chain.toggleOrderedList(),
-        }),
-        toolbarButton({
-            icon: 'horizontal_rule',
-            title: 'Scene break',
-            action: setSceneBreak,
-        }),
+        toolbarGroup('History', [
+            toolbarButton({ icon: 'undo', title: 'Undo', action: (chain) => chain.undo() }),
+            toolbarButton({ icon: 'redo', title: 'Redo', action: (chain) => chain.redo() }),
+        ]),
+        toolbarGroup('Block style', [
+            toolbarButton({ icon: 'article', title: 'Paragraph', active: () => isActive('paragraph'), action: (chain) => chain.setParagraph() }),
+            toolbarButton({ icon: 'title', title: 'Chapter title', active: () => isActive('heading', { level: 2 }), action: (chain) => chain.toggleHeading({ level: 2 }) }),
+            toolbarButton({ icon: 'format_size', title: 'Section heading', active: () => isActive('heading', { level: 3 }), action: (chain) => chain.toggleHeading({ level: 3 }) }),
+            toolbarButton({ icon: 'format_quote', title: 'Quote', active: () => isActive('blockquote'), action: (chain) => chain.toggleBlockquote() }),
+        ]),
+        toolbarGroup('Text style', [
+            toolbarButton({ icon: 'format_bold', title: 'Bold', active: () => isActive('bold'), action: (chain) => chain.toggleBold() }),
+            toolbarButton({ icon: 'format_italic', title: 'Italic', active: () => isActive('italic'), action: (chain) => chain.toggleItalic() }),
+            toolbarButton({ icon: 'format_underlined', title: 'Underline', active: () => isActive('underline'), action: (chain) => chain.toggleUnderline() }),
+            toolbarButton({ icon: 'format_strikethrough', title: 'Strikethrough', active: () => isActive('strike'), action: (chain) => chain.toggleStrike() }),
+            toolbarButton({ icon: 'format_clear', title: 'Clear formatting', action: clearFormatting }),
+        ]),
+        toolbarGroup('Alignment', [
+            toolbarButton({ icon: 'format_align_left', title: 'Align left', active: () => isActive({ textAlign: 'left' }), action: (chain) => chain.setTextAlign('left') }),
+            toolbarButton({ icon: 'format_align_center', title: 'Center text', active: () => isActive({ textAlign: 'center' }), action: (chain) => chain.setTextAlign('center') }),
+            toolbarButton({ icon: 'format_align_right', title: 'Align right', active: () => isActive({ textAlign: 'right' }), action: (chain) => chain.setTextAlign('right') }),
+            toolbarButton({ icon: 'format_align_justify', title: 'Justify text', active: () => isActive({ textAlign: 'justify' }), action: (chain) => chain.setTextAlign('justify') }),
+        ]),
+        toolbarGroup('Structure', [
+            toolbarButton({ icon: 'format_list_bulleted', title: 'Bullet list', active: () => isActive('bulletList'), action: (chain) => chain.toggleBulletList() }),
+            toolbarButton({ icon: 'format_list_numbered', title: 'Ordered list', active: () => isActive('orderedList'), action: (chain) => chain.toggleOrderedList() }),
+            toolbarButton({ icon: 'horizontal_rule', title: 'Scene break', action: setSceneBreak }),
+        ]),
     ];
 
     const syncEditorBlocks = () => {
         if (!editor) return;
         currentEditorBlocks = extractEditorBlocks(editor.getJSON(), blockMeta);
         editorOutline.value = buildEditorOutline(currentEditorBlocks, blockMeta);
+        editorWordCount.value = currentEditorBlocks.reduce((total, block) => {
+            const words = (block.text_plain || '').trim().match(/\S+/g);
+            return total + (words?.length || 0);
+        }, 0);
     };
 
     const updateActiveBlock = () => {
@@ -5681,6 +5674,7 @@ function editorText(keyBook) {
             extensions: [
                 StarterKit,
                 TrackableBlocks,
+                TextAlignment,
                 CommentAnchors,
             ],
             content: defaultDocument(),
@@ -5714,13 +5708,37 @@ function editorText(keyBook) {
 
     return editorWrapper;
 }
+function editorWorkspaceHeader(keyBook) {
+    return _.header({ class: 'at-editorWorkspaceHeader' },
+        _.div({ class: 'at-editorWorkspaceHeader-start' },
+            _.Button({
+                class: () => indexView.value ? 'at-editorHeader-icon is-active' : 'at-editorHeader-icon',
+                icon: 'format_list_bulleted',
+                title: 'Show or hide manuscript outline',
+                onclick: () => setIndexView(!indexView.value),
+            })
+        ),
+        _.div({ class: 'at-editorWorkspaceHeader-title' },
+            _.strong(() => editorBook.value?.name || 'Untitled book'),
+            _.span(() => {
+                const block = activeOutlineItem();
+                return block ? `${outlineKindLabel(block)} · ${block.label}` : 'Manuscript editor';
+            })
+        ),
+        _.div({ class: 'at-editorWorkspaceHeader-end' },
+            _.Button({
+                class: () => commandView.value ? 'at-editorHeader-icon is-active' : 'at-editorHeader-icon',
+                icon: 'auto_awesome',
+                title: 'Show or hide writing tools',
+                onclick: () => setCommandView(!commandView.value),
+            })
+        )
+    );
+}
+
 function content(keyBook) {
     return _.div({ class: 'at-content', area: 'content' },
-        _.div({ class: 'at-topBar' },
-            _.Button({ onclick: () => setIndexView(!indexView.value), icon: 'menu' }),
-            _.div({ class: 'at-topBar-title' }, 'Content'),
-            _.Button({ onclick: () => setCommandView(!commandView.value), icon: 'auto_awesome' })
-        ),
+        editorWorkspaceHeader(keyBook),
         editorText(keyBook)
     );
 }
@@ -5728,6 +5746,7 @@ function bottomBar() {
     return _.div({ class: 'at-bottomBar', area: 'bottomBar' },
         _.div({ class: 'at-bottomBar-left' },
             _.span({ class: 'at-bottomBar-item is-strong' }, () => editorBook.value?.name || 'No book loaded'),
+            _.span({ class: 'at-bottomBar-item' }, () => `${editorWordCount.value.toLocaleString()} words`),
             _.span({ class: 'at-bottomBar-item' }, () => {
                 const outline = editorOutline.value;
                 const chapterCount = outline.filter((item) => item.isChapter).length;
@@ -5798,6 +5817,9 @@ function bottomBar() {
 export default function bookEditor(ctx = null) {
     const keyBook = readRouteBookKey(ctx);
     restoreEditorPreferences();
+    window.AudiobookTools?.setPageHeaderActions?.([
+        _.Btn({ color: 'secondary', icon: 'dashboard', onClick: () => _.router.navigate(`/dashboard/book/${keyBook}/panel`) }, 'Book panel'),
+    ]);
 
     return _.div({
         class: 'at-page-bookEditor',

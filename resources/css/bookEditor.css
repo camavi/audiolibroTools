@@ -174,19 +174,69 @@
     }
 }
 
-.at-topBar {
+.at-editorWorkspaceHeader {
     display: grid;
-    grid-template-columns: 45px 1fr 45px;
-    grid-template-rows: 1fr;
-    grid-column-gap: 10px;
-    grid-row-gap: 0px;
-    width: 100%;
+    grid-template-columns: minmax(48px, 1fr) minmax(220px, 2fr) minmax(150px, 1fr);
+    align-items: center;
+    min-height: 64px;
+    padding: 8px 14px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #ffffff;
+    box-sizing: border-box;
 }
 
-.at-topBar-title {
-    padding: 5px 10px;
-    font-size: 16px;
+.at-editorWorkspaceHeader-start,
+.at-editorWorkspaceHeader-end {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+
+.at-editorWorkspaceHeader-end {
+    justify-content: flex-end;
+}
+
+.at-editorWorkspaceHeader-title {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
     text-align: center;
+}
+
+.at-editorWorkspaceHeader-title strong,
+.at-editorWorkspaceHeader-title span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.at-editorWorkspaceHeader-title strong {
+    color: #172033;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.at-editorWorkspaceHeader-title span {
+    color: #64748b;
+    font-size: 11px;
+}
+
+.at-editorHeader-icon {
+    min-width: 34px;
+    height: 34px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+}
+
+.at-editorHeader-icon.is-active {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: #2563eb;
 }
 
 .at-indexBook-header {
@@ -2598,7 +2648,7 @@
 .at-editorText {
     min-width: 0;
     overflow: hidden;
-    height: calc(100% - 40px);
+    height: calc(100% - 64px);
 }
 
 .at-editorText-inner {
@@ -2611,57 +2661,59 @@
 .at-editorToolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 10px;
     align-items: center;
-    padding: 8px;
-    border-bottom: 1px solid #e0e0e0;
+    align-content: flex-start;
+    min-height: 66px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f9fafb;
+}
+
+.at-editorToolbar-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    min-height: 38px;
+    padding: 3px;
+    border: 1px solid #dbe3ee;
+    border-radius: 8px;
     background: #ffffff;
+    box-shadow: 0 1px 1px rgba(15, 23, 42, 0.02);
+}
+
+.at-editorToolbar .at-editorToolbar-btn,
+.at-editorToolbar .at-editorToolbar-btn.cms-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    width: 32px;
+    height: 32px;
+    min-height: 32px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    box-shadow: none;
+    color: #334155;
+}
+
+.at-editorToolbar .at-editorToolbar-btn:hover:not(:disabled),
+.at-editorToolbar .at-editorToolbar-btn.cms-btn:hover:not(:disabled) {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+.at-editorToolbar .at-editorToolbar-btn:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 1px;
 }
 
 .at-editorToolbar-btn.is-active {
-    background: #ededed;
-}
-
-.at-pageFormatSelect {
-    position: relative;
-    display: inline-flex;
-    flex-direction: column;
-    justify-content: center;
-    width: 180px;
-    height: 44px;
-    margin: 0;
-    padding: 6px 10px 5px;
-    border: 1px solid #d4d4d4;
-    border-radius: 4px;
-    background: #ffffff;
-    box-sizing: border-box;
-}
-
-.at-pageFormatSelect-label {
-    color: #64748b;
-    font-size: 10px;
-    line-height: 1.1;
-    margin-bottom: 3px;
-}
-
-.at-pageFormatSelect select {
-    width: 100%;
-    min-width: 0;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: #1f2937;
-    font: inherit;
-    font-size: 14px;
-    line-height: 1.2;
-    cursor: pointer;
-}
-
-.at-editorToolbar-divider {
-    width: 1px;
-    height: 26px;
-    margin: 0 4px;
-    background: #e0e0e0;
+    color: #2563eb !important;
+    background: #eff6ff !important;
 }
 
 .at-editorStatus {
@@ -2687,50 +2739,15 @@
 
 .at-tiptap-editor .tiptap {
     box-sizing: border-box;
-    width: min(100%, var(--at-editor-page-width, 760px));
+    width: min(100%, 760px);
     min-height: 100%;
     margin: 0 auto;
-    padding: var(--at-editor-page-padding, 64px 72px);
+    padding: 56px 68px;
     border: 1px solid #d6d6d6;
     background: #ffffff;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
     outline: none;
     line-height: 1.65;
-}
-
-.at-tiptap-editor.page-book {
-    --at-editor-page-width: 720px;
-    --at-editor-page-padding: 56px 68px;
-}
-
-.at-tiptap-editor.page-paperback-5x8 {
-    --at-editor-page-width: 520px;
-    --at-editor-page-padding: 48px 52px;
-}
-
-.at-tiptap-editor.page-paperback-6x9 {
-    --at-editor-page-width: 620px;
-    --at-editor-page-padding: 56px 62px;
-}
-
-.at-tiptap-editor.page-a5 {
-    --at-editor-page-width: 560px;
-    --at-editor-page-padding: 48px 52px;
-}
-
-.at-tiptap-editor.page-a4 {
-    --at-editor-page-width: 794px;
-    --at-editor-page-padding: 76px 84px;
-}
-
-.at-tiptap-editor.page-letter {
-    --at-editor-page-width: 816px;
-    --at-editor-page-padding: 72px 84px;
-}
-
-.at-tiptap-editor.page-draft {
-    --at-editor-page-width: 880px;
-    --at-editor-page-padding: 48px 56px;
 }
 
 .at-tiptap-editor .tiptap>*:first-child {
