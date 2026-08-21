@@ -251,6 +251,19 @@
     font-weight: 600;
 }
 
+.at-indexBook-headerTitle,
+.at-indexBook-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.at-indexBook-headerTitle .cms-btn {
+    min-height: 28px;
+    padding: 0 7px;
+    font-size: 11px;
+}
+
 .at-indexBook-count {
     color: #64748b;
     font-size: 12px;
@@ -270,25 +283,77 @@
 }
 
 .at-indexBook-item {
-    display: grid;
-    grid-template-columns: 58px minmax(0, 1fr) auto auto;
+    display: flex;
     align-items: center;
     width: 100%;
     min-height: 34px;
     margin: 0;
-    padding: 5px 7px;
+    padding: 3px 4px 3px 7px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    gap: 7px;
+}
+
+.at-indexBook-item.level-1 {
+    padding-left: 20px;
+}
+
+.at-indexBook-main {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr) auto auto;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+    padding: 2px 3px;
     border: 0;
     border-radius: 4px;
     background: transparent;
     color: #1f2937;
     text-align: left;
     cursor: pointer;
-    gap: 7px;
 }
 
-.at-indexBook-item.level-1 {
+.at-indexBook-dragHandle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    flex: 0 0 16px;
+    color: #94a3b8;
+    cursor: grab;
+}
+
+.at-indexBook-dragHandle .cms-icon,
+.at-indexBook-dragHandle .material-icons {
+    font-size: 17px;
+}
+
+.at-indexBook-item:hover .at-indexBook-dragHandle {
+    color: #475569;
+}
+
+.at-indexBook-item.level-1 .at-indexBook-main {
     grid-template-columns: 48px minmax(0, 1fr) auto auto;
-    padding-left: 20px;
+}
+
+.at-indexBook-actions {
+    opacity: 0;
+    transition: opacity .15s ease;
+}
+
+.at-indexBook-item:hover .at-indexBook-actions,
+.at-indexBook-item.is-active .at-indexBook-actions {
+    opacity: 1;
+}
+
+.at-indexBook-actions .cms-btn {
+    min-width: 25px;
+    min-height: 25px;
+    width: 25px;
+    height: 25px;
+    padding: 0;
 }
 
 .at-indexBook-item.is-chapter {
@@ -303,13 +368,34 @@
     border-top: 0;
 }
 
-.at-indexBook-item:hover,
-.at-indexBook-item.is-active {
+.at-indexBook-main:hover,
+.at-indexBook-item.is-active .at-indexBook-main {
     background: #f1f5f9;
 }
 
 .at-indexBook-item.is-active {
     box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.at-indexBook-item.is-dragging {
+    opacity: .42;
+}
+
+.at-indexBook-item.is-dropTarget {
+    border-top: 2px solid transparent;
+}
+
+.at-indexBook-item.is-dragOver {
+    border-top-color: #2563eb;
+    background: #eff6ff;
+}
+
+.at-indexBook-item[draggable="true"] {
+    cursor: grab;
+}
+
+.at-indexBook-item[draggable="true"]:active {
+    cursor: grabbing;
 }
 
 .at-indexBook-kind {
@@ -2750,6 +2836,17 @@
 .at-mediaDialog {
     display: grid;
     gap: 14px;
+}
+
+.at-renameChapterDialog {
+    display: grid;
+    gap: 14px;
+}
+
+.at-renameChapterActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
 }
 
 .at-mediaDialog-actions,

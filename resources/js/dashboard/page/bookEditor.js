@@ -24,6 +24,8 @@ const confirmPanelActions = _.rod(true);
 const editorBook = _.rod(null);
 const editorOutline = _.rod([]);
 const activeEditorBlockId = _.rod(null);
+const draggedOutlineBlockId = _.rod(null);
+const dragOverOutlineBlockId = _.rod(null);
 const rightWorkspaceTool = _.rod('chat');
 const blockVersions = _.rod([]);
 const blockVersionsStatus = _.rod('idle');
@@ -121,6 +123,10 @@ const savingAiProvider = _.rod(false);
 const savingAiSetting = _.rod(false);
 
 let focusEditorBlock = () => { };
+let createOutlineChapter = () => { };
+let renameOutlineChapter = () => { };
+let moveOutlineBlock = () => { };
+let moveOutlineBlockBefore = () => { };
 let loadBlockVersions = () => { };
 let restoreBlockVersion = () => { };
 let explainBlockVersion = () => { };
@@ -1686,7 +1692,10 @@ function indexBook() {
         class: () => !indexView.value ? 'at-indexBook cms-d-none' : 'at-indexBook', area: 'indexBook'
     },
         _.div({ class: 'at-indexBook-header' },
-            _.span('Book Index'),
+            _.div({ class: 'at-indexBook-headerTitle' },
+                _.span('Book Index'),
+                _.Btn({ dense: true, color: 'secondary', icon: 'add', title: 'New chapter', onClick: createOutlineChapter }, 'Chapter')
+            ),
             _.span({ class: 'at-indexBook-count' }, () => {
                 const outline = editorOutline.value;
                 const chapterCount = outline.filter((item) => item.isChapter).length;
@@ -1703,8 +1712,8 @@ function indexBook() {
                 return _.div({ class: 'at-indexBook-empty' }, 'No blocks');
             }
 
-            return outline.map((item) => _.button({
-                type: 'button',
+            return outline.map((item) => _.div({
+                draggable: true,
                 class: () => {
                     const classes = [
                         'at-indexBook-item',
@@ -1714,16 +1723,57 @@ function indexBook() {
 
                     if (item.isChapter) classes.push('is-chapter');
                     if (item.block_uuid === activeEditorBlockId.value) classes.push('is-active');
+                    if (item.block_uuid === draggedOutlineBlockId.value) classes.push('is-dragging');
+                    if (draggedOutlineBlockId.value && item.block_uuid !== draggedOutlineBlockId.value) classes.push('is-dropTarget');
+                    if (item.block_uuid === dragOverOutlineBlockId.value) classes.push('is-dragOver');
 
                     return classes.join(' ');
                 },
-                onclick: () => focusEditorBlock(item.block_uuid),
-                title: item.label,
+                ondragstart: (event) => {
+                    draggedOutlineBlockId.value = item.block_uuid;
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', item.block_uuid);
+                },
+                ondragend: () => {
+                    draggedOutlineBlockId.value = null;
+                    dragOverOutlineBlockId.value = null;
+                },
+                ondragover: (event) => {
+                    if (!draggedOutlineBlockId.value || draggedOutlineBlockId.value === item.block_uuid) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                    dragOverOutlineBlockId.value = item.block_uuid;
+                },
+                ondragleave: () => {
+                    if (dragOverOutlineBlockId.value === item.block_uuid) dragOverOutlineBlockId.value = null;
+                },
+                ondrop: (event) => {
+                    event.preventDefault();
+                    const sourceUuid = draggedOutlineBlockId.value || event.dataTransfer.getData('text/plain');
+                    moveOutlineBlockBefore(sourceUuid, item.block_uuid);
+                    draggedOutlineBlockId.value = null;
+                    dragOverOutlineBlockId.value = null;
+                },
             },
-                _.span({ class: `at-indexBook-kind kind-${item.type}` }, outlineKindLabel(item)),
-                _.span({ class: 'at-indexBook-label' }, item.label),
-                blockCommentBadge(item),
-                item.dirty ? _.span({ class: 'at-indexBook-dirty', title: 'Unsaved' }, '•') : null,
+                _.span({ class: 'at-indexBook-dragHandle', title: 'Drag to reorder', 'aria-hidden': 'true' },
+                    _.Icon({ name: 'drag_indicator' })
+                ),
+                _.button({
+                    type: 'button',
+                    class: 'at-indexBook-main',
+                    onclick: () => focusEditorBlock(item.block_uuid),
+                    title: item.label,
+                },
+                    _.span({ class: `at-indexBook-kind kind-${item.type}` }, outlineKindLabel(item)),
+                    _.span({ class: 'at-indexBook-label' }, item.label),
+                    blockCommentBadge(item),
+                    item.dirty ? _.span({ class: 'at-indexBook-dirty', title: 'Unsaved' }, '•') : null,
+                ),
+                _.div({ class: 'at-indexBook-actions' },
+                    item.isChapter ? _.Btn({ dense: true, color: 'secondary', icon: 'edit', title: 'Rename chapter', onClick: () => renameOutlineChapter(item.block_uuid) }) : null,
+                    _.Btn({ dense: true, color: 'secondary', icon: 'keyboard_arrow_up', title: 'Move up', onClick: () => moveOutlineBlock(item.block_uuid, -1) }),
+                    _.Btn({ dense: true, color: 'secondary', icon: 'keyboard_arrow_down', title: 'Move down', onClick: () => moveOutlineBlock(item.block_uuid, 1) }),
+                )
             ));
         })
     );
@@ -4023,6 +4073,103 @@ function editorText(keyBook) {
         refreshEditorUi();
     };
 
+    createOutlineChapter = () => {
+        if (!editor) return;
+
+        const chapterId = createBlockId();
+        editor.chain().focus('end').insertContent([
+            { type: 'heading', attrs: { level: 2, blockId: chapterId }, content: [{ type: 'text', text: 'New chapter' }] },
+            { type: 'paragraph', attrs: { blockId: createBlockId() } },
+        ]).run();
+        focusEditorBlock(chapterId);
+    };
+
+    renameOutlineChapter = (blockUuid) => {
+        const item = editorOutline.value.find((entry) => entry.block_uuid === blockUuid);
+        if (!item?.isChapter) return;
+
+        const title = _.rod(item.label);
+        const dialogStatus = _.rod(null);
+
+        _.Dialog({
+            size: 'sm',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3('Rename chapter'),
+                    _.span({ class: 'text-muted' }, 'Update the title shown in the manuscript outline and exports.'),
+                ),
+                content: ({ close }) => _.div({ class: 'at-renameChapterDialog' },
+                    _.Input({
+                        label: 'Chapter title',
+                        icon: 'title',
+                        model: title,
+                        autofocus: true,
+                    }),
+                    () => dialogStatus.value ? _.Alert(dialogStatus.value) : null,
+                    _.div({ class: 'at-renameChapterActions' },
+                        _.Btn({ color: 'secondary', onClick: close }, 'Cancel'),
+                        _.Btn({
+                            color: 'primary',
+                            icon: 'save',
+                            onClick: () => {
+                                const nextTitle = title.value.trim();
+                                if (!nextTitle) {
+                                    dialogStatus.value = { type: 'danger', message: 'Enter a chapter title.' };
+                                    return;
+                                }
+
+                                updateEditorBlockText(blockUuid, nextTitle);
+                                close();
+                            },
+                        }, 'Save title')
+                    )
+                ),
+            },
+        }).open();
+    };
+
+    moveOutlineBlock = (blockUuid, direction) => {
+        if (!editor || !blockUuid || !direction) return;
+
+        const document = editor.getJSON();
+        const content = [...(document.content || [])];
+        const index = content.findIndex((node) => node.attrs?.blockId === blockUuid);
+        const targetIndex = index + direction;
+        if (index < 0 || targetIndex < 0 || targetIndex >= content.length) return;
+
+        [content[index], content[targetIndex]] = [content[targetIndex], content[index]];
+        editor.commands.setContent({ ...document, content }, { emitUpdate: true, errorOnInvalidContent: true });
+        focusEditorBlock(blockUuid);
+    };
+
+    moveOutlineBlockBefore = (sourceUuid, targetUuid) => {
+        if (!editor || !sourceUuid || !targetUuid || sourceUuid === targetUuid) return;
+
+        const document = editor.getJSON();
+        const content = [...(document.content || [])];
+        const sourceIndex = content.findIndex((node) => node.attrs?.blockId === sourceUuid);
+        const targetIndex = content.findIndex((node) => node.attrs?.blockId === targetUuid);
+        if (sourceIndex < 0 || targetIndex < 0) return;
+
+        const sourceIsChapter = content[sourceIndex]?.type === 'heading';
+        let endIndex = sourceIndex + 1;
+        if (sourceIsChapter) {
+            while (endIndex < content.length && content[endIndex]?.type !== 'heading') endIndex += 1;
+        }
+
+        const moving = content.slice(sourceIndex, endIndex);
+        if (moving.some((node) => node.attrs?.blockId === targetUuid)) return;
+
+        const remaining = content.filter((_, index) => index < sourceIndex || index >= endIndex);
+        const nextTargetIndex = remaining.findIndex((node) => node.attrs?.blockId === targetUuid);
+        if (nextTargetIndex < 0) return;
+
+        remaining.splice(nextTargetIndex, 0, ...moving);
+        editor.commands.setContent({ ...document, content: remaining }, { emitUpdate: true, errorOnInvalidContent: true });
+        focusEditorBlock(sourceUuid);
+    };
+
     const updateBlockMetaFromSaved = (savedBlocks, localBlocks = currentEditorBlocks) => {
         (savedBlocks || []).forEach((block) => {
             const localBlock = localBlocks.find((item) => item.block_uuid === block.block_uuid) || block;
@@ -5880,6 +6027,8 @@ function editorText(keyBook) {
         currentEditorBlocks = [];
         editorOutline.value = [];
         activeEditorBlockId.value = null;
+        draggedOutlineBlockId.value = null;
+        dragOverOutlineBlockId.value = null;
         blockVersions.value = [];
         blockVersionsStatus.value = 'idle';
         blockVersionsContextKey.value = null;
@@ -5953,6 +6102,10 @@ function editorText(keyBook) {
         aiProviderSystemPrompt.value = '';
         customProviderApiKey.value = '';
         focusEditorBlock = () => { };
+        createOutlineChapter = () => { };
+        renameOutlineChapter = () => { };
+        moveOutlineBlock = () => { };
+        moveOutlineBlockBefore = () => { };
         loadBlockVersions = () => { };
         loadBlockReviews = () => { };
         createBlockReview = () => { };
