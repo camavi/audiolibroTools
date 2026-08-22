@@ -48,14 +48,14 @@ Route::get('/project-plan/file/{path}', function (string $path) {
     ]);
 })->where('path', '.*')->name('project-plan.file');
 
-Route::post('/auth/register', [AuthController::class, 'register'])->name('auth.register');
-Route::post('/auth/login', [AuthController::class, 'login'])->name('auth.login');
-Route::post('/auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
+Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:auth')->name('auth.register');
+Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:auth')->name('auth.login');
+Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth')->name('auth.logout');
 
 Route::get('/dashboard', function () {
     return view('dashboard');
-})->where('any', '.*');
-Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
+})->middleware('auth')->where('any', '.*');
+Route::prefix('dashboard/api')->middleware('auth')->name('dashboard.api.')->group(function () {
     Route::get('/prompts', [AiPromptController::class, 'index']);
     Route::post('/prompts', [AiPromptController::class, 'store']);
     Route::patch('/prompts/{prompt}', [AiPromptController::class, 'update']);
@@ -80,7 +80,7 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
     Route::get('/book-categories', [DashboardBookController::class, 'categories'])->name('book-categories');
     Route::get('/audio-library/voices', [AudioLibraryController::class, 'index'])->name('audio-library.voices');
     Route::post('/audio-library/voices', [AudioLibraryController::class, 'store'])->name('audio-library.voices.store');
-    Route::post('/audio-library/design-voices', [AudioLibraryController::class, 'storeDesignedVoice'])->name('audio-library.design-voices.store');
+    Route::post('/audio-library/design-voices', [AudioLibraryController::class, 'storeDesignedVoice'])->middleware('throttle:qwen')->name('audio-library.design-voices.store');
     Route::get('/audio-library/samples/{sample}/stream', [AudioLibraryController::class, 'stream'])->name('audio-library.samples.stream');
     Route::post('/audio-library/voices/{voice}', [AudioLibraryController::class, 'update'])->name('audio-library.voices.update');
     Route::delete('/audio-library/voices/{voice}', [AudioLibraryController::class, 'destroy'])->name('audio-library.voices.destroy');
@@ -169,7 +169,7 @@ Route::prefix('dashboard/api')->name('dashboard.api.')->group(function () {
 });
 Route::get('/dashboard/{any?}', function () {
     return view('dashboard');
-})->where('any', '.*');
+})->middleware('auth')->where('any', '.*');
 
 Route::get('/{locale?}', function (?string $locale = null) {
     $supportedLocales = array_keys(config('audiobook.locales'));

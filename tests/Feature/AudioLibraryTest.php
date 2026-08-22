@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AudioLibraryVoice;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -12,6 +13,12 @@ use Tests\TestCase;
 class AudioLibraryTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->actingAs(User::factory()->create());
+    }
 
     public function test_voice_library_can_create_list_update_and_delete_tone_samples(): void
     {

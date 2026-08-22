@@ -93,3 +93,11 @@
 - Avviata pagina `/dashboard/setting` con Settings generale CMSwift per preferenze editor locali, inclusa `Confirm panel actions`, rimuovendo il toggle temporaneo dal book editor.
 - Estesa pagina Settings con preferenze editor locali: visibilita' pannelli, tool destro predefinito, formato pagina, filtri Activity/Comments/Versions e lingua target traduzione.
 - Aggiunti AI defaults globali nella pagina Settings e fallback backend: i libri senza override specifico ereditano provider, modello e system prompt globali per servizio.
+
+## 2026-08-22
+
+- Completato hardening dashboard: pagine e API richiedono autenticazione, con test di accesso per guest e utenti autenticati.
+- Aggiunti rate limit per login/registrazione e Voice Design Qwen.
+- Reso l'avvio del dashboard coerente con `APP_DEBUG`, senza lasciare CMSwift in modalita' sviluppo in produzione.
+- Aggiunta checklist di deploy, monitoraggio e QA manuale responsive/accessibilita' in `docs/deployment.md`.
+- Verificati suite PHP completa e build Vite di produzione.

@@ -11,7 +11,7 @@
         <script>
 
             window.CMSwift_setting = {
-                modeDev: true,
+                modeDev: @js((bool) config('app.debug')),
                 themes: ['light', 'dark'],
                 themeList: ['light', 'dark'],
                 http: {

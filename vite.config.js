@@ -3,6 +3,16 @@ import laravel from 'laravel-vite-plugin';
 import { bunny } from 'laravel-vite-plugin/fonts';
 
 export default defineConfig({
+    build: {
+        rollupOptions: {
+            output: {
+                manualChunks(id) {
+                    if (id.includes('/node_modules/cmswift/')) return 'cmswift';
+                    if (id.includes('/node_modules/@tiptap/')) return 'tiptap';
+                },
+            },
+        },
+    },
     plugins: [
         laravel({
             input: [

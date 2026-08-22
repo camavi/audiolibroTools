@@ -22,6 +22,7 @@ use App\Models\BookDistributionConnection;
 use App\Models\BookEdition;
 use App\Models\BookTranslationJob;
 use App\Models\BookVoiceProfile;
+use App\Models\User;
 use App\Services\Ai\EditorAiTranslationService;
 use App\Services\BookAudioGenerationService;
 use App\Services\BookBlockService;
@@ -39,6 +40,15 @@ class DashboardBookTest extends TestCase
 {
     use RefreshDatabase;
 
+    private User $user;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->user = User::factory()->create();
+        $this->actingAs($this->user);
+    }
+
     public function test_dashboard_book_categories_are_returned(): void
     {
         BookCategory::query()->create([
@@ -51,7 +61,7 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.0.name', 'Fiction');
     }
 
-    public function test_dashboard_can_store_and_list_guest_music_media(): void
+    public function test_dashboard_can_store_and_list_account_music_media(): void
     {
         Storage::fake('public');
 
@@ -65,7 +75,7 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.asset.name', 'forest-ambience');
 
         $asset = AudioMediaAsset::query()->sole();
-        $this->assertNull($asset->account_id);
+        $this->assertSame($this->user->id, $asset->account_id);
         Storage::disk('public')->assertExists($asset->audio_path);
 
         $this->getJson('/dashboard/api/audio-media?kind=music')
@@ -305,7 +315,7 @@ class DashboardBookTest extends TestCase
         config()->set('ai_providers.defaults.1.is_configured', true);
         config()->set('ai_providers.defaults.1.managed_api_key', 'at-server-openai-key');
         Queue::fake();
-        AccountCreditBalance::query()->create(['account_id' => null, 'available_credits' => 100]);
+        AccountCreditBalance::query()->create(['account_id' => $this->user->id, 'available_credits' => 100]);
         $book = $this->createBook();
         app(BookBlockService::class)->saveBlock($book, [
             'block_uuid' => (string) Str::uuid(),
@@ -403,7 +413,7 @@ class DashboardBookTest extends TestCase
         $this->assertSame('Draft description', $book->description);
         $this->assertSame([$category->id], $book->categories);
 
-        Storage::disk('local')->assertExists("bookEdit/guest/{$book->key_book}.json");
+        Storage::disk('local')->assertExists("bookEdit/{$this->user->id}/{$book->key_book}.json");
     }
 
     public function test_dashboard_returns_translation_progress_for_current_block_versions(): void
@@ -2364,6 +2374,7 @@ class DashboardBookTest extends TestCase
     private function createBook(): Book
     {
         return Book::query()->create([
+            'account_id' => $this->user->id,
             'key_book' => md5('dashboard-editor-test'.Str::random(8)),
             'id_file' => 0,
             'name' => 'Editor Book',
