@@ -91,7 +91,7 @@ class BookEpubService
             }
         }
         if ($current) $chapters[] = $current;
-        return $chapters ?: [['title' => 'Book', 'entries' => [['type' => 'paragraph', 'text' => 'No manuscript content has been added yet.', 'align' => null]]]];
+        return $chapters ?: [['title' => 'Book', 'entries' => [['node' => ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'No manuscript content has been added yet.']]]]]]];
     }
 
     private function cover(Book $book): ?array
@@ -108,12 +108,11 @@ class BookEpubService
     private function entry(BookBlock $block): array
     {
         $node = $block->content_json ?? [];
-        $attrs = $node['attrs'] ?? [];
-        if (($attrs['pageBreak'] ?? false) === true) return ['type' => 'page_break'];
-        if ($block->type === 'image' || ($node['type'] ?? null) === 'manuscriptImage') {
-            return ['type' => 'image', 'src' => (string) ($attrs['src'] ?? ''), 'alt' => (string) ($attrs['alt'] ?? '')];
+        if (! $node) {
+            $node = ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => trim((string) $block->text_plain)]]];
         }
-        return ['type' => 'paragraph', 'text' => trim((string) $block->text_plain), 'align' => $attrs['textAlign'] ?? null];
+
+        return ['node' => $node];
     }
 
     private function manuscriptImages(iterable $blocks): array
@@ -160,7 +159,7 @@ class BookEpubService
         $size = max(10, min(28, (float) ($body['font_size'] ?? 18)));
         $lineHeight = max(1, min(2.5, (float) ($body['line_height'] ?? 1.6)));
         $color = preg_match('/^#[0-9a-fA-F]{6}$/', $body['color'] ?? '') ? $body['color'] : '#182033';
-        return "body { margin: 5%; font-family: '{$font}', serif; font-size: {$size}px; line-height: {$lineHeight}; color: {$color}; } h1 { margin: 0 0 1.8em; page-break-before: always; } p { margin: 0 0 1em; } .align-left { text-align:left; } .align-center { text-align:center; } .align-right { text-align:right; } .align-justify { text-align:justify; } .page-break { break-before: page; page-break-before: always; } figure { margin:1.6em 0; text-align:center; } .manuscript-image { max-width:100%; height:auto; } .title-page { text-align: center; margin-top: 28%; } .cover { max-width: 100%; max-height: 100%; }";
+        return "body { margin: 5%; font-family: '{$font}', serif; font-size: {$size}px; line-height: {$lineHeight}; color: {$color}; } h1 { margin: 0 0 1.8em; page-break-before: always; } p { margin: 0 0 1em; } blockquote { margin:1.4em 1.5em; color:#475569; font-style:italic; } ul,ol { margin:0 0 1em 1.4em; } a { color:#1d4ed8; text-decoration:underline; } .align-left { text-align:left; } .align-center { text-align:center; } .align-right { text-align:right; } .align-justify { text-align:justify; } .page-break { break-before: page; page-break-before: always; } .scene-break { width:32%; margin:1.6em auto; border:0; border-top:1px solid #64748b; } figure { margin:1.6em 0; text-align:center; } .manuscript-image { max-width:100%; height:auto; } .title-page { text-align: center; margin-top: 28%; } .cover { max-width: 100%; max-height: 100%; }";
     }
 
     private function containerDocument(): string
@@ -178,15 +177,13 @@ class BookEpubService
     private function chapterDocument(string $title, array $entries, array $images): string
     {
         $bySource = collect($images)->keyBy('source');
-        $content = collect($entries)->map(function (array $entry) use ($bySource) {
-            if ($entry['type'] === 'page_break') return '<div class="page-break"></div>';
-            if ($entry['type'] === 'image') {
-                $image = $bySource->get($entry['src']);
-                return $image ? '<figure><img class="manuscript-image" src="../images/'.$this->escape($image['filename']).'" alt="'.$this->escape($entry['alt']).'"/></figure>' : '';
-            }
-            $class = in_array($entry['align'], ['left', 'center', 'right', 'justify'], true) ? ' class="align-'.$entry['align'].'"' : '';
-            return '<p'.$class.'>'.$this->escape($entry['text']).'</p>';
-        })->implode('');
+        $renderer = new BookRichTextRenderer;
+        $content = collect($entries)->map(fn (array $entry) => $renderer->render($entry['node'], [
+            'image' => function (array $attrs) use ($bySource): string {
+                $image = $bySource->get($attrs['src'] ?? '');
+                return $image ? '<figure><img class="manuscript-image" src="../images/'.$this->escape($image['filename']).'" alt="'.$this->escape($attrs['alt'] ?? '').'"/></figure>' : '';
+            },
+        ]))->implode('');
         return $this->xhtml('<section><h1>'.$this->escape($title).'</h1>'.$content.'</section>');
     }
 

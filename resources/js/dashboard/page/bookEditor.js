@@ -3365,6 +3365,7 @@ function editorText(keyBook) {
     let pendingSave = false;
     let autosaveBlocked = false;
     let isApplyingRemoteContent = false;
+    let editorDocumentLoaded = false;
     let inlineCommentMarkerFrame = null;
     const blockMeta = new Map();
     const findQuery = _.rod('');
@@ -5967,7 +5968,9 @@ function editorText(keyBook) {
     };
 
     const saveDirtyBlocks = async ({ retryOnConflict = true } = {}) => {
-        if (!keyBook || autosaveBlocked) return false;
+        // Never derive deletions from the temporary empty document rendered while
+        // the persisted manuscript is still loading.
+        if (!keyBook || autosaveBlocked || !editorDocumentLoaded) return false;
 
         if (saveInFlight) {
             pendingSave = true;
@@ -6048,7 +6051,7 @@ function editorText(keyBook) {
     };
 
     const scheduleAutosave = () => {
-        if (!keyBook || autosaveBlocked) return;
+        if (!keyBook || autosaveBlocked || !editorDocumentLoaded) return;
 
         setSaveStatus('dirty');
         clearTimeout(autosaveTimer);
@@ -6078,6 +6081,7 @@ function editorText(keyBook) {
     const loadEditorDocument = async () => {
         if (!keyBook) return defaultDocument();
 
+        editorDocumentLoaded = false;
         editorStatus.value = { type: 'loading', message: 'Loading editor...' };
 
         try {
@@ -6101,9 +6105,11 @@ function editorText(keyBook) {
 
             setSaveStatus('saved');
             editorStatus.value = null;
+            editorDocumentLoaded = true;
 
             return content;
         } catch (error) {
+            editorDocumentLoaded = false;
             editorStatus.value = {
                 type: 'danger',
                 message: error.message || 'Unable to load editor.',
