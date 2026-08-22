@@ -103,7 +103,17 @@ class QwenTtsService
 
     private function request()
     {
-        $request = Http::acceptJson()->timeout(config('tts.qwen.timeout', 900));
+        $timeout = (int) config('tts.qwen.timeout', 900);
+
+        // Voice design can require a cold model load before Qwen returns its
+        // first response. The HTTP client already waits for this timeout, but
+        // PHP's default 30-second execution limit would otherwise terminate
+        // the cURL request first.
+        set_time_limit($timeout + 15);
+
+        $request = Http::acceptJson()
+            ->connectTimeout(15)
+            ->timeout($timeout);
         $key = config('tts.qwen.api_key');
 
         return filled($key) ? $request->withToken($key) : $request;
