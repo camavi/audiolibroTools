@@ -2849,6 +2849,17 @@
     gap: 8px;
 }
 
+.at-chapterDetailsDialog {
+    display: grid;
+    gap: 14px;
+}
+
+.at-chapterDetailsActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
 .at-mediaDialog-actions,
 .at-mediaDialog-footer {
     display: flex;

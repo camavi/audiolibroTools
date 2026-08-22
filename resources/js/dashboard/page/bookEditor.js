@@ -127,6 +127,7 @@ let createOutlineChapter = () => { };
 let renameOutlineChapter = () => { };
 let moveOutlineBlock = () => { };
 let moveOutlineBlockBefore = () => { };
+let openChapterDetails = () => { };
 let loadBlockVersions = () => { };
 let restoreBlockVersion = () => { };
 let explainBlockVersion = () => { };
@@ -342,6 +343,21 @@ const TrackableBlocks = Extension.create({
                 },
             }),
         ];
+    },
+});
+
+const ChapterDetails = Extension.create({
+    name: 'chapterDetails',
+
+    addGlobalAttributes() {
+        return [{
+            types: ['heading'],
+            attributes: {
+                chapterSummary: { default: '' },
+                chapterNotes: { default: '' },
+                chapterStatus: { default: 'draft' },
+            },
+        }];
     },
 });
 
@@ -1667,6 +1683,9 @@ function buildEditorOutline(blocks, blockMeta) {
             level: isChapter || !hasChapter ? 0 : 1,
             chapterNumber: isChapter ? chapterNumber : null,
             blockNumberInChapter: !isChapter && hasChapter ? blockNumberInChapter : null,
+            chapterSummary: isChapter ? (block.content_json?.attrs?.chapterSummary || '') : '',
+            chapterNotes: isChapter ? (block.content_json?.attrs?.chapterNotes || '') : '',
+            chapterStatus: isChapter ? (block.content_json?.attrs?.chapterStatus || 'draft') : null,
         };
     });
 }
@@ -1770,6 +1789,7 @@ function indexBook() {
                     item.dirty ? _.span({ class: 'at-indexBook-dirty', title: 'Unsaved' }, '•') : null,
                 ),
                 _.div({ class: 'at-indexBook-actions' },
+                    item.isChapter ? _.Btn({ dense: true, color: 'secondary', icon: 'info', title: 'Chapter details', onClick: () => openChapterDetails(item.block_uuid) }) : null,
                     item.isChapter ? _.Btn({ dense: true, color: 'secondary', icon: 'edit', title: 'Rename chapter', onClick: () => renameOutlineChapter(item.block_uuid) }) : null,
                     _.Btn({ dense: true, color: 'secondary', icon: 'keyboard_arrow_up', title: 'Move up', onClick: () => moveOutlineBlock(item.block_uuid, -1) }),
                     _.Btn({ dense: true, color: 'secondary', icon: 'keyboard_arrow_down', title: 'Move down', onClick: () => moveOutlineBlock(item.block_uuid, 1) }),
@@ -4129,6 +4149,67 @@ function editorText(keyBook) {
         }).open();
     };
 
+    openChapterDetails = (blockUuid) => {
+        const outlineItem = editorOutline.value.find((item) => item.block_uuid === blockUuid);
+        const document = editor?.getJSON();
+        const node = document?.content?.find((item) => item.attrs?.blockId === blockUuid);
+        if (!outlineItem?.isChapter || !node) return;
+
+        const summary = _.rod(node.attrs?.chapterSummary || '');
+        const notes = _.rod(node.attrs?.chapterNotes || '');
+        const status = _.rod(node.attrs?.chapterStatus || 'draft');
+        const statusOptions = [
+            { value: 'draft', label: 'Draft' },
+            { value: 'review', label: 'In review' },
+            { value: 'ready', label: 'Ready' },
+        ];
+        const chapterIndex = currentEditorBlocks.findIndex((block) => block.block_uuid === blockUuid);
+        const chapterBlocks = [];
+        for (const block of currentEditorBlocks.slice(chapterIndex + 1)) {
+            if (block.type === 'heading') break;
+            chapterBlocks.push(block);
+        }
+        const words = chapterBlocks.reduce((total, block) => total + ((block.text_plain || '').match(/\S+/g)?.length || 0), 0);
+
+        _.Dialog({
+            size: 'lg',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3(`Chapter details · ${outlineItem.label}`),
+                    _.span({ class: 'text-muted' }, `${words.toLocaleString()} words in this chapter`),
+                ),
+                content: ({ close }) => _.div({ class: 'at-chapterDetailsDialog' },
+                    _.Textarea({ label: 'Synopsis', icon: 'summarize', rows: 4, model: summary, placeholder: 'What happens in this chapter?' }),
+                    _.Textarea({ label: 'Private author notes', icon: 'sticky_note_2', rows: 5, model: notes, placeholder: 'Plot, character or research notes…' }),
+                    _.Select({ label: 'Writing status', icon: 'flag', model: status, options: statusOptions }),
+                    _.div({ class: 'at-chapterDetailsActions' },
+                        _.Btn({ color: 'secondary', onClick: close }, 'Cancel'),
+                        _.Btn({
+                            color: 'primary', icon: 'save', onClick: () => {
+                                const latest = editor.getJSON();
+                                const content = (latest.content || []).map((entry) => entry.attrs?.blockId === blockUuid
+                                    ? {
+                                        ...entry,
+                                        attrs: {
+                                            ...entry.attrs,
+                                            chapterSummary: summary.value.trim(),
+                                            chapterNotes: notes.value.trim(),
+                                            chapterStatus: status.value,
+                                        },
+                                    }
+                                    : entry);
+                                editor.commands.setContent({ ...latest, content }, { emitUpdate: true, errorOnInvalidContent: true });
+                                focusEditorBlock(blockUuid);
+                                close();
+                            },
+                        }, 'Save details')
+                    )
+                ),
+            },
+        }).open();
+    };
+
     moveOutlineBlock = (blockUuid, direction) => {
         if (!editor || !blockUuid || !direction) return;
 
@@ -6106,6 +6187,7 @@ function editorText(keyBook) {
         renameOutlineChapter = () => { };
         moveOutlineBlock = () => { };
         moveOutlineBlockBefore = () => { };
+        openChapterDetails = () => { };
         loadBlockVersions = () => { };
         loadBlockReviews = () => { };
         createBlockReview = () => { };
@@ -6151,6 +6233,7 @@ function editorText(keyBook) {
             extensions: [
                 StarterKit,
                 TrackableBlocks,
+                ChapterDetails,
                 TextAlignment,
                 ManuscriptImage,
                 CommentAnchors,
