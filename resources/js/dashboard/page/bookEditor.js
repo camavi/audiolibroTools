@@ -3660,6 +3660,56 @@ function editorText(keyBook) {
         }).open();
     };
 
+    const openLinkDialog = () => {
+        if (!editor) return;
+
+        const { from, to } = editor.state.selection;
+        const selectedText = editor.state.doc.textBetween(from, to, ' ').trim();
+        if (!selectedText) {
+            editorStatus.value = { type: 'danger', message: 'Select text before adding a link.' };
+            return;
+        }
+
+        const href = _.rod(editor.getAttributes('link').href || '');
+        const dialogStatus = _.rod(null);
+        _.Dialog({
+            size: 'sm',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3('Add link'),
+                    _.span({ class: 'text-muted' }, `Selected text: “${selectedText}”`),
+                ),
+                content: ({ close }) => _.div({ class: 'at-linkDialog' },
+                    _.Input({
+                        label: 'URL',
+                        icon: 'link',
+                        model: href,
+                        placeholder: 'https://example.com',
+                        autofocus: true,
+                    }),
+                    () => dialogStatus.value ? _.Alert(dialogStatus.value) : null,
+                    _.div({ class: 'at-linkDialogActions' },
+                        _.Btn({ color: 'secondary', onClick: close }, 'Cancel'),
+                        _.Btn({
+                            color: 'primary', icon: 'link', onClick: () => {
+                                const value = href.value.trim();
+                                if (!value) {
+                                    dialogStatus.value = { type: 'danger', message: 'Enter a valid URL.' };
+                                    return;
+                                }
+
+                                editor.chain().focus().setTextSelection({ from, to }).setLink({ href: value }).run();
+                                refreshEditorUi();
+                                close();
+                            },
+                        }, 'Save link')
+                    )
+                ),
+            },
+        }).open();
+    };
+
     const loadMediaAssets = async () => {
         if (!keyBook) return;
 
@@ -3807,6 +3857,8 @@ function editorText(keyBook) {
             toolbarButton({ icon: 'format_italic', title: 'Italic', active: () => isActive('italic'), action: (chain) => chain.toggleItalic() }),
             toolbarButton({ icon: 'format_underlined', title: 'Underline', active: () => isActive('underline'), action: (chain) => chain.toggleUnderline() }),
             toolbarButton({ icon: 'format_strikethrough', title: 'Strikethrough', active: () => isActive('strike'), action: (chain) => chain.toggleStrike() }),
+            toolbarButton({ icon: 'link', title: 'Add or edit link', active: () => isActive('link'), onClick: openLinkDialog }),
+            toolbarButton({ icon: 'link_off', title: 'Remove link', active: () => isActive('link'), action: (chain) => chain.unsetLink() }),
             toolbarButton({ icon: 'format_clear', title: 'Clear formatting', action: clearFormatting }),
         ]),
         toolbarGroup('Alignment', [
