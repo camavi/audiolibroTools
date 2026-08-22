@@ -1,4 +1,5 @@
 import '../../../css/audiobookEdit.css';
+import { bookPanelButton } from '../shared/bookPanelButton';
 
 const audiobookBook = _.rod(null);
 const audiobookBlocks = _.rod([]);
@@ -2520,7 +2521,7 @@ export default function audiobookEdit(ctx) {
     loadAudiobook(keyBook); loadTimeline(keyBook);
     loadBlockAudio(keyBook);
     window.AudiobookTools?.setPageHeaderActions?.([
-        _.Btn({ color: 'secondary', onClick: () => _.router.navigate(`/dashboard/book/${keyBook}/panel`) }, 'Book panel'),
+        bookPanelButton(keyBook),
         _.Btn({ color: 'primary', icon: 'publish', loading: publishRunning, onClick: () => openPublishDialog(keyBook) }, 'Publish audiobook'),
     ]);
 

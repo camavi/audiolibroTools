@@ -2954,15 +2954,6 @@
     line-height: 1.65;
 }
 
-/*
- * Temporary visual workaround: TipTap currently drops boundary spaces around
- * a link in the persisted document. Investigate the mark/DOM serialization
- * path before removing this margin or treating the issue as resolved.
- */
-.at-tiptap-editor .tiptap a {
-    margin-inline: 0.12em;
-}
-
 .at-tiptap-editor .tiptap img[data-manuscript-image="true"] {
     display: block;
     width: auto;

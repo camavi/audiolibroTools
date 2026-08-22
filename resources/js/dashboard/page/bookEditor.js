@@ -9,6 +9,7 @@ import {
     resolveBookBlockTranslation,
     translationLocaleOptions,
 } from '../shared/bookTranslations';
+import { bookPanelButton } from '../shared/bookPanelButton';
 
 
 const EDITOR_PREFERENCES_KEY = 'audiobookTools.editor.preferences';
@@ -537,6 +538,38 @@ function withBlockIds(node, seenBlockIds = new Set()) {
         nextNode.content = nextNode.content.map((child) => withBlockIds(child, seenBlockIds));
     }
 
+    return nextNode;
+}
+
+function hasLinkMark(node) {
+    return node?.type === 'text' && node.marks?.some((mark) => mark.type === 'link');
+}
+
+function protectLinkBoundarySpaces(node) {
+    if (!node || typeof node !== 'object') return node;
+
+    const nextNode = { ...node };
+    if (!Array.isArray(node.content)) return nextNode;
+
+    const content = node.content.map(protectLinkBoundarySpaces);
+    content.forEach((child, index) => {
+        if (!hasLinkMark(child)) return;
+
+        const previous = content[index - 1];
+        const next = content[index + 1];
+
+        // Insert one protected space on both sides of an inline link before
+        // TipTap parses the document. This also restores a boundary space
+        // already removed by the DOM serialization path.
+        if (previous?.type === 'text') {
+            previous.text = `${previous.text || ''}`.replace(/\s*$/, '\u00A0');
+        }
+        if (next?.type === 'text') {
+            next.text = `${next.text || ''}`.replace(/^\s*/, '\u00A0');
+        }
+    });
+
+    nextNode.content = content;
     return nextNode;
 }
 
@@ -6120,7 +6153,7 @@ function editorText(keyBook) {
     };
 
     const applyRemoteContent = async () => {
-        const content = await loadEditorDocument();
+        const content = protectLinkBoundarySpaces(await loadEditorDocument());
         if (!editor || !editorMount.isConnected) return;
 
         try {
@@ -6437,7 +6470,7 @@ export default function bookEditor(ctx = null) {
     const keyBook = readRouteBookKey(ctx);
     restoreEditorPreferences();
     window.AudiobookTools?.setPageHeaderActions?.([
-        _.Btn({ color: 'secondary', icon: 'dashboard', onClick: () => _.router.navigate(`/dashboard/book/${keyBook}/panel`) }, 'Book panel'),
+        bookPanelButton(keyBook),
     ]);
 
     return _.div({

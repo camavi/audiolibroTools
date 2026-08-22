@@ -1,4 +1,5 @@
 import '../../../css/bookDesign.css';
+import { bookPanelButton } from '../shared/bookPanelButton';
 
 const designBook = _.rod(null);
 const assets = _.rod([]);
@@ -147,7 +148,7 @@ async function removeAsset(bookKey, asset) {
 export default function bookDesign(ctx) {
     const bookKey = keyBook(ctx);
     loadDesign(bookKey);
-    window.AudiobookTools?.setPageHeaderActions?.([_.Btn({ color: 'secondary', icon: 'arrow_back', onClick: () => _.router.navigate(`/dashboard/book/${bookKey}/panel`) }, 'Book panel')]);
+    window.AudiobookTools?.setPageHeaderActions?.([bookPanelButton(bookKey)]);
 
     return _.main({ class: 'at-bookDesignPage' },
         _.section({ class: 'at-bookDesignHeader' }, _.div(_.span('Design studio'), _.h2(() => designBook.value?.name || 'Book design'), _.p('Set the final cover format and keep every visual asset ready for your editions.'))),

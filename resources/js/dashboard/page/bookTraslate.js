@@ -7,6 +7,7 @@ import {
     translationData,
     translationLocaleOptions,
 } from '../shared/bookTranslations';
+import { bookPanelButton } from '../shared/bookPanelButton';
 
 const translationBook = _.rod(null);
 const translationBlocks = _.rod([]);
@@ -971,7 +972,7 @@ export default function bookTraslate(ctx) {
     const keyBook = bookKey(ctx);
     loadWorkspace(keyBook);
     window.AudiobookTools?.setPageHeaderActions?.([
-        _.Btn({ color: 'secondary', icon: 'dashboard', onClick: () => _.router.navigate(`/dashboard/book/${keyBook}/panel`) }, 'Book panel'),
+        bookPanelButton(keyBook),
     ]);
 
     return _.div({ class: 'at-translateRoute' }, () => pageContent(keyBook));

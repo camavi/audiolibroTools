@@ -1,4 +1,5 @@
 import '../../../css/bookEpub.css';
+import { bookPanelButton } from '../shared/bookPanelButton';
 
 const epubData = _.rod(null);
 const loading = _.rod(true);
@@ -64,7 +65,7 @@ async function generateEpub(bookKey) {
 
 export default function bookEpub(ctx) {
     const bookKey = keyBook(ctx); loadEpub(bookKey);
-    window.AudiobookTools?.setPageHeaderActions?.([_.Btn({ color: 'secondary', icon: 'arrow_back', onClick: () => _.router.navigate(`/dashboard/book/${bookKey}/panel`) }, 'Book panel')]);
+    window.AudiobookTools?.setPageHeaderActions?.([bookPanelButton(bookKey)]);
     return _.main({ class: 'at-bookEpubPage' },
         _.section({ class: 'at-bookEpubHeader' }, _.div(_.span('ePub studio'), _.h2('Professional ePub edition'), _.p('Set publication metadata, reading navigation and a clean, reflowable edition ready for e-readers.')), _.Btn({ color: 'primary', icon: 'auto_stories', loading: generating, onClick: () => generateEpub(bookKey) }, 'Create ePub')),
         () => pageStatus.value ? _.Alert(pageStatus.value) : null,
