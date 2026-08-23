@@ -30,6 +30,9 @@
                 }
             }
             };
+            window.AudiobookToolsBootstrap = {
+                role: @js(auth()->user()?->role ?? 'user'),
+            };
         </script>
         @vite(['resources/css/dashboard.css', 'resources/css/bookEditor.css', 'resources/js/dashboard.js'])
     </head>

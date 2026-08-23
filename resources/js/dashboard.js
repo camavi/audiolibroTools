@@ -17,6 +17,7 @@ import activityPage from './dashboard/page/activity.js';
 import statisticsPage from './dashboard/page/statistics.js';
 import teamPage from './dashboard/page/team.js';
 import promptsPage from './dashboard/page/prompts.js';
+import supportPage from './dashboard/page/support.js';
 import logoutPage from './dashboard/page/logout.js';
 import dashboardHomePage from './dashboard/page/dashboardHome.js';
 
@@ -50,6 +51,18 @@ const navGroups = [
     { label: 'Settings', key: 'setting', icon: 'settings', link: '/dashboard/setting' },
     { label: 'Prompts AI', key: 'prompts-ai', icon: 'psychology', link: '/dashboard/prompts' },
     { label: 'Audio', key: 'upload-audio', icon: 'graphic_eq', link: '/dashboard/upload-audio' },
+    { label: 'Help & support', key: 'support', icon: 'support_agent', link: '/dashboard/support' },
+    ...(window.AudiobookToolsBootstrap?.role === 'admin'
+        ? [{
+            label: 'Administration',
+            icon: 'admin_panel_settings',
+            expanded: true,
+            items: [
+                { label: 'Tickets', key: 'admin-tickets', icon: 'support_agent', link: '/dashboard/admin/tickets' },
+                { label: 'All users', key: 'admin-users', icon: 'group', link: '/dashboard/admin/users' },
+            ],
+        }]
+        : []),
     { label: 'Logout', key: 'logout', icon: 'logout', link: '/dashboard/logout' },
 ];
 
@@ -226,6 +239,10 @@ _.router.add('/dashboard/activity', routePage(activityPage));
 _.router.add('/dashboard/statistics', routePage(statisticsPage));
 _.router.add('/dashboard/team', routePage(teamPage));
 _.router.add('/dashboard/prompts', routePage(promptsPage));
+_.router.add('/dashboard/support', routePage(supportPage));
+_.router.add('/dashboard/admin', routePage(supportPage));
+_.router.add('/dashboard/admin/tickets', routePage(supportPage));
+_.router.add('/dashboard/admin/users', routePage(supportPage));
 _.router.add('/dashboard/logout', routePage(logoutPage));
 
 _.router.start();

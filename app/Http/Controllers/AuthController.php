@@ -31,6 +31,13 @@ class AuthController extends Controller
         if (! Auth::attempt(['email' => strtolower($data['email']), 'password' => $data['password']], (bool) ($data['remember'] ?? false))) {
             return response()->json(['message' => 'The email or password is incorrect.', 'errors' => ['email' => ['The email or password is incorrect.']]], 422);
         }
+        /** @var User $user */
+        $user = Auth::user();
+        if ($user->isBlocked()) {
+            Auth::logout();
+
+            return response()->json(['message' => 'This account is currently restricted. Please contact support.'], 403);
+        }
         $request->session()->regenerate();
         return response()->json(['data' => ['redirect' => '/dashboard']]);
     }

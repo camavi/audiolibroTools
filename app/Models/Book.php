@@ -16,6 +16,10 @@ class Book extends Model
         'categories',
         'lang',
         'cover_img',
+        'moderation_status',
+        'moderation_reason',
+        'moderated_at',
+        'moderated_by',
         'audio_settings_json',
         'book_design_json',
         'epub_settings_json',
@@ -36,6 +40,7 @@ class Book extends Model
             'epub_generated_at' => 'datetime',
             'pdf_settings_json' => 'array',
             'pdf_generated_at' => 'datetime',
+            'moderated_at' => 'datetime',
         ];
     }
 

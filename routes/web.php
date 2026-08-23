@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AiPromptController;
+use App\Http\Controllers\AdminSupportController;
 use App\Http\Controllers\AudioLibraryController;
 use App\Http\Controllers\AudioMediaController;
 use App\Http\Controllers\AuthController;
@@ -15,6 +16,7 @@ use App\Http\Controllers\DashboardAiController;
 use App\Http\Controllers\DashboardBookController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\StatisticsController;
+use App\Http\Controllers\SupportTicketController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TokenWalletController;
 use Illuminate\Support\Facades\Route;
@@ -54,8 +56,29 @@ Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth
 
 Route::get('/dashboard', function () {
     return view('dashboard');
-})->middleware('auth')->where('any', '.*');
-Route::prefix('dashboard/api')->middleware('auth')->name('dashboard.api.')->group(function () {
+})->middleware(['auth', 'account.active'])->where('any', '.*');
+Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.can-write'])->name('dashboard.api.')->group(function () {
+    Route::get('/support/tickets', [SupportTicketController::class, 'index'])->name('support.tickets.index');
+    Route::post('/support/tickets', [SupportTicketController::class, 'store'])->name('support.tickets.store');
+    Route::get('/support/tickets/{ticket}', [SupportTicketController::class, 'show'])->name('support.tickets.show');
+    Route::post('/support/tickets/{ticket}/messages', [SupportTicketController::class, 'reply'])->name('support.tickets.reply');
+
+    Route::middleware('staff:admin')->prefix('admin')->name('admin.')->group(function (): void {
+        Route::get('/users', [AdminSupportController::class, 'users'])->name('users.index');
+        Route::get('/users/{user}', [AdminSupportController::class, 'userDetail'])->name('users.show');
+        Route::patch('/users/{user}', [AdminSupportController::class, 'updateUser'])->name('users.update');
+        Route::patch('/users/{user}/status', [AdminSupportController::class, 'updateAccountStatus'])->name('users.status.update');
+        Route::post('/users/{user}/credits', [AdminSupportController::class, 'adjustCredits'])->name('users.credits.adjust');
+        Route::post('/users/{user}/password-reset', [AdminSupportController::class, 'sendPasswordReset'])->name('users.password-reset.store');
+        Route::patch('/users/{user}/books/{book}/moderation', [AdminSupportController::class, 'moderateBook'])->name('users.books.moderation.update');
+        Route::post('/users/{user}/copyright-notices', [AdminSupportController::class, 'sendCopyrightNotice'])->name('users.copyright-notices.store');
+    });
+    Route::middleware('staff:support,admin')->prefix('admin')->name('admin.')->group(function (): void {
+        Route::get('/tickets', [AdminSupportController::class, 'tickets'])->name('tickets.index');
+        Route::get('/tickets/{ticket}', [AdminSupportController::class, 'showTicket'])->name('tickets.show');
+        Route::patch('/tickets/{ticket}', [AdminSupportController::class, 'updateTicket'])->name('tickets.update');
+        Route::post('/tickets/{ticket}/messages', [AdminSupportController::class, 'reply'])->name('tickets.reply');
+    });
     Route::get('/prompts', [AiPromptController::class, 'index']);
     Route::post('/prompts', [AiPromptController::class, 'store']);
     Route::patch('/prompts/{prompt}', [AiPromptController::class, 'update']);
@@ -169,7 +192,7 @@ Route::prefix('dashboard/api')->middleware('auth')->name('dashboard.api.')->grou
 });
 Route::get('/dashboard/{any?}', function () {
     return view('dashboard');
-})->middleware('auth')->where('any', '.*');
+})->middleware(['auth', 'account.active'])->where('any', '.*');
 
 Route::get('/{locale?}', function (?string $locale = null) {
     $supportedLocales = array_keys(config('audiobook.locales'));

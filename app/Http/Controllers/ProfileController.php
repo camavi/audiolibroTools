@@ -131,7 +131,7 @@ class ProfileController extends Controller
 
     private function serialize(User $user): array
     {
-        return $user->only('id', 'name', 'email') + ['created_at' => $user->created_at?->toISOString()];
+        return $user->only('id', 'name', 'email', 'role') + ['created_at' => $user->created_at?->toISOString()];
     }
 
     private function dataSummary(User $user): array
