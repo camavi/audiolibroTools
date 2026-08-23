@@ -1,6 +1,6 @@
 import '../../../css/support.css';
 
-const profile = _.rod(null); const tickets = _.rod([]); const users = _.rod([]); const usersPage = _.rod(1); const usersLastPage = _.rod(1); const loading = _.rod(true); const status = _.rod(null); const tab = _.rod('mine');
+const profile = _.rod(null); const tickets = _.rod([]); const users = _.rod([]); const usersPage = _.rod(1); const usersLastPage = _.rod(1); const usersTotal = _.rod(0); const userSearch = _.rod(''); const loading = _.rod(true); const usersLoading = _.rod(false); const status = _.rod(null); const tab = _.rod('mine');
 const dataOf = (payload) => payload?.data?.data || payload?.data || payload || {};
 const errorMessage = (error, fallback) => error?.data?.message || error?.message || fallback;
 const isStaff = () => ['support', 'admin'].includes(profile.value?.user?.role);
@@ -21,8 +21,10 @@ async function loadTickets() {
     const endpoint = isStaff() && (tab.value === 'staff' || isAdministration()) ? '/dashboard/api/admin/tickets' : '/dashboard/api/support/tickets';
     const data = dataOf(await _.http.getJSON(endpoint)); tickets.value = data.tickets || [];
 }
-async function loadUsers(reset = false) { if (reset) usersPage.value = 1; const data = dataOf(await _.http.getJSON(`/dashboard/api/admin/users?page=${usersPage.value}`)); users.value = reset ? (data.users || []) : [...users.value, ...(data.users || [])]; usersLastPage.value = data.pagination?.last_page || 1; }
-async function loadMoreUsers() { usersPage.value += 1; try { await loadUsers(); } catch (error) { usersPage.value -= 1; status.value = { type: 'danger', message: errorMessage(error, 'Unable to load more users.') }; } }
+async function loadUsers(reset = false) { if (reset) usersPage.value = 1; usersLoading.value = true; try { const query = new URLSearchParams({ page: String(usersPage.value) }); if (userSearch.value.trim()) query.set('search', userSearch.value.trim()); const data = dataOf(await _.http.getJSON(`/dashboard/api/admin/users?${query}`)); users.value = data.users || []; usersLastPage.value = data.pagination?.last_page || 1; usersTotal.value = data.pagination?.total || 0; } finally { usersLoading.value = false; } }
+async function goUserPage(page) { if (page < 1 || page > usersLastPage.value || page === usersPage.value) return; usersPage.value = page; try { await loadUsers(); } catch (error) { status.value = { type: 'danger', message: errorMessage(error, 'Unable to load users.') }; } }
+let userSearchTimer = null;
+function searchUsers() { clearTimeout(userSearchTimer); userSearchTimer = setTimeout(() => loadUsers(true).catch((error) => { status.value = { type: 'danger', message: errorMessage(error, 'Unable to search users.') }; }), 250); }
 function createTicket() {
     const subject = _.rod(''), category = _.rod('general'), message = _.rod(''), saving = _.rod(false), note = _.rod(null);
     const save = async (close) => { if (!subject.value.trim() || !message.value.trim()) { note.value = { type: 'warning', message: 'Enter a subject and a message.' }; return; } saving.value = true; try { await _.http.postJSON('/dashboard/api/support/tickets', { subject: subject.value.trim(), category: category.value, message: message.value.trim() }); close(); await loadTickets(); status.value = { type: 'success', message: 'Your request was sent to support.' }; } catch (error) { note.value = { type: 'danger', message: errorMessage(error, 'Unable to create the request.') }; } finally { saving.value = false; } };
@@ -104,18 +106,20 @@ function actionIcon(user, action, icon, label, color = 'secondary') {
 
 function usersWorkspace() {
     return _.section({ class: 'at-supportCard at-supportUsersPage' },
-        _.div({ class: 'at-supportHead' }, _.h3('All users'), _.small(() => `${users.value.length} loaded`)),
+        _.div({ class: 'at-supportHead' }, _.h3('All users'), _.small(() => `${usersTotal.value} total`)),
+        _.Input({ label: 'Search users', icon: 'search', model: userSearch, placeholder: 'Name or email', onInput: searchUsers }),
         _.Table({
             class: 'at-adminUsersTable',
             rows: () => users.value,
             rowKey: 'id',
-            searchable: 'Search by name or email',
-            searchKeys: ['name', 'email', 'role', 'account_status'],
-            pageSize: 10,
-            pageSizeOptions: [10, 25, 50],
+            loading: () => usersLoading.value,
+            pageSize: 30,
+            pageSizeOptions: [30],
+            hideFooter: true,
             emptyText: 'No users found.',
             columns: [
-                { key: 'name', label: 'User', render: (user) => _.div(_.strong(user.name), _.small(user.email)) },
+                { key: 'mail', label: 'Mail', render: (user) => _.div(_.small(user.email)) },
+                { key: 'name', label: 'User', render: (user) => _.div(_.strong(user.name)) },
                 { key: 'role', label: 'Role', render: (user) => _.span({ class: `at-adminRole is-${user.role}` }, user.role) },
                 { key: 'account_status', label: 'Account status', render: (user) => _.span({ class: `at-adminStatus is-${user.account_status || 'active'}` }, user.account_status || 'active') },
                 { key: 'open_tickets_count', label: 'Open tickets' },
@@ -130,7 +134,11 @@ function usersWorkspace() {
                 actionIcon(user, 'status', 'block', 'Block or suspend account', 'danger'),
             ),
         }),
-        () => usersPage.value < usersLastPage.value ? _.Btn({ color: 'secondary', icon: 'expand_more', onClick: loadMoreUsers }, 'Load more users') : null,
+        () => usersLastPage.value > 1 ? _.div({ class: 'at-supportActions' },
+            _.Btn({ color: 'secondary', icon: 'chevron_left', disabled: () => usersPage.value <= 1, onClick: () => goUserPage(usersPage.value - 1) }, 'Previous'),
+            _.small(() => `Page ${usersPage.value} of ${usersLastPage.value}`),
+            _.Btn({ color: 'secondary', icon: 'chevron_right', disabled: () => usersPage.value >= usersLastPage.value, onClick: () => goUserPage(usersPage.value + 1) }, 'Next'),
+        ) : null,
     );
 }
 

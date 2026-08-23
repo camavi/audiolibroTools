@@ -24,7 +24,7 @@ class AdminSupportController extends Controller
 
     public function users(Request $request): JsonResponse
     {
-        $data = $request->validate(['search' => ['nullable', 'string', 'max:120']]);
+        $data = $request->validate(['search' => ['nullable', 'string', 'max:120'], 'page' => ['nullable', 'integer', 'min:1']]);
         $search = trim((string) ($data['search'] ?? ''));
         $users = User::query()
             ->when($search !== '', fn ($query) => $query->where(fn ($query) => $query->where('name', 'like', "%{$search}%")->orWhere('email', 'like', "%{$search}%")))
