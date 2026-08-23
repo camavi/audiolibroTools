@@ -101,3 +101,4 @@
 - Reso l'avvio del dashboard coerente con `APP_DEBUG`, senza lasciare CMSwift in modalita' sviluppo in produzione.
 - Aggiunta checklist di deploy, monitoraggio e QA manuale responsive/accessibilita' in `docs/deployment.md`.
 - Verificati suite PHP completa e build Vite di produzione.
+- Approvata QA manuale responsive e keyboard della dashboard; confermato anche il test reale Qwen contro il taglio dell'ultima parola.

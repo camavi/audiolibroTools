@@ -32,6 +32,8 @@ Run `php artisan test` before release. Do not cache configuration until every pr
 
 ## Manual QA before release
 
+Status: approved on 2026-08-23.
+
 Check the public site and signed-in dashboard at 320 px, 768 px and 1440 px widths.
 
 - Navigate the login dialog, dashboard drawer, forms, dialogs and editor using only the keyboard.

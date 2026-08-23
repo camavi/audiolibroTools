@@ -2023,6 +2023,37 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.groups.0.status', 'completed');
     }
 
+    public function test_qwen_audio_adds_a_trailing_pause_after_the_last_sentence(): void
+    {
+        Queue::fake();
+        Storage::fake('public');
+        Http::fake([
+            'http://127.0.0.1:8020/v1/speech' => Http::response([
+                'data' => ['audio_url' => '/v1/audio/final-phrase', 'duration_ms' => 1400],
+            ], 201),
+            'http://127.0.0.1:8020/v1/audio/final-phrase' => Http::response('qwen-wav'),
+        ]);
+        $book = $this->createBook();
+        $blockUuid = (string) Str::uuid();
+        app(BookBlockService::class)->saveBlock($book, [
+            'block_uuid' => $blockUuid, 'type' => 'paragraph', 'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Pronuncia l ultima parola.'),
+            'text_plain' => 'Pronuncia l ultima parola.',
+        ]);
+        $profile = BookVoiceProfile::query()->create([
+            'book_id' => $book->id, 'name' => 'Narrator', 'role' => 'narrator',
+            'voice_provider' => 'qwen-local', 'voice_id' => 'narrator-main',
+        ]);
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/voice-assignment", ['voice_profile_id' => $profile->id])->assertOk();
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/audio/generate", ['provider_key' => 'qwen-local', 'model' => 'quality'])->assertAccepted();
+
+        app(BookAudioGenerationService::class)->generate(BookAudioJob::query()->latest('id')->value('id'));
+
+        Http::assertSent(fn ($request) => str_ends_with($request->url(), '/v1/speech')
+            && $request['text'] === 'Pronuncia l ultima parola. …');
+        Storage::disk('public')->assertExists(BookAudioSegment::query()->latest('id')->value('audio_path'));
+    }
+
     public function test_dashboard_requires_voice_assignment_before_audio_generation(): void
     {
         $book = $this->createBook();

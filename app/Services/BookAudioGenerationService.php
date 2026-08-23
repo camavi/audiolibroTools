@@ -77,7 +77,11 @@ class BookAudioGenerationService
     private function ttsReadyText(string $text): string
     {
         $text = rtrim($text);
-        return preg_match('/[.!?…][\\]\\[\\)\\}”’"”]*$/u', $text) === 1 ? $text : $text.'.';
+        $terminal = preg_match('/[.!?…][\\]\\[\\)\\}”’"”]*$/u', $text) === 1;
+
+        // A final pause token prevents Qwen from ending the utterance on the
+        // last phoneme, which can make the final word sound truncated.
+        return ($terminal ? $text : $text.'.').' …';
     }
 
     private function voiceId(BookAudioJob $job, array $request, mixed $toneId, QwenTtsService $qwen): string
