@@ -162,16 +162,18 @@ function openDesignVoiceDialog() {
         } catch (error) { dialogStatus.value = { type: 'danger', message: error.message || 'Unable to generate the designed voice.' }; }
         finally { saving.value = false; }
     };
-    _.Dialog({ size: 'xl', stickyActions: true, slots: {
-        header: _.div(_.h3('Add design voice'), _.span({ class: 'text-muted' }, 'Describe a voice, then generate a reusable Qwen reference for each tone.')),
-        content: ({ close }) => _.div({ class: 'at-uploadAudioDialog' },
-            _.div({ class: 'at-uploadAudioVoiceFields' }, _.Input({ label: 'Voice name', model: name, icon: 'record_voice_over', placeholder: 'e.g. Elara' }), _.Select({ label: 'Voice type', model: type, options: [{ value: 'female', label: 'Female' }, { value: 'male', label: 'Male' }, { value: 'neutral', label: 'Neutral' }] }), _.Select({ label: 'Language', model: language, options: languageOptions() })),
-            _.Textarea({ class: 'cms-col-24', label: 'Voice description', model: description, rows: 3, placeholder: 'Age, accent, vocal texture, character and general performance.' }),
-            _.div({ class: 'at-uploadAudioSamplesHead' }, _.div(_.strong('Tone designs'), _.small('Each tone creates its own reference sample, ready for Qwen cloning.')), _.Btn({ color: 'secondary', icon: 'add', onClick: addDesign }, 'Add tone design')),
-            emptyDesigns, designList, () => dialogStatus.value ? _.Alert(dialogStatus.value) : null,
-            _.div({ class: 'at-uploadAudioDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Cancel'), _.Btn({ color: 'primary', loading: saving, icon: 'auto_awesome', onClick: () => save(close) }, 'Generate design voice')),
-        ),
-    } }).open();
+    _.Dialog({
+        size: 'xl', stickyActions: true, slots: {
+            header: _.div(_.h3('Add design voice'), _.span({ class: 'text-muted' }, 'Describe a voice, then generate a reusable Qwen reference for each tone.')),
+            content: ({ close }) => _.div({ class: 'at-uploadAudioDialog' },
+                _.div({ class: 'at-uploadAudioVoiceFields' }, _.Input({ label: 'Voice name', model: name, icon: 'record_voice_over', placeholder: 'e.g. Elara' }), _.Select({ label: 'Voice type', model: type, options: [{ value: 'female', label: 'Female' }, { value: 'male', label: 'Male' }, { value: 'neutral', label: 'Neutral' }] }), _.Select({ label: 'Language', model: language, options: languageOptions() })),
+                _.Textarea({ class: 'cms-col-24', label: 'Voice description', model: description, rows: 3, placeholder: 'Age, accent, vocal texture, character and general performance.' }),
+                _.div({ class: 'at-uploadAudioSamplesHead' }, _.div(_.strong('Tone designs'), _.small('Each tone creates its own reference sample, ready for Qwen cloning.')), _.Btn({ color: 'secondary', icon: 'add', onClick: addDesign }, 'Add tone design')),
+                emptyDesigns, designList, () => dialogStatus.value ? _.Alert(dialogStatus.value) : null,
+                _.div({ class: 'at-uploadAudioDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Cancel'), _.Btn({ color: 'primary', loading: saving, icon: 'auto_awesome', onClick: () => save(close) }, 'Generate design voice')),
+            ),
+        }
+    }).open();
     addDesign();
 }
 
@@ -184,7 +186,7 @@ async function deleteVoice(voice) {
 export default function uploadAudio() {
     loadVoices();
     return _.main({ class: 'at-uploadAudioPage' },
-        _.section({ class: 'at-uploadAudioHeader' }, _.div(_.span({ class: 'at-uploadAudioEyebrow' }, 'Audio'), _.h2('Voices & tone samples'), _.p('Keep uploaded and designed voice references ready for every audiobook.')), _.div({ class: 'at-uploadAudioHeaderActions' }, _.Btn({ color: 'secondary', icon: 'upload_file', onClick: () => openVoiceDialog() }, 'Add voice'), _.Btn({ color: 'primary', icon: 'auto_awesome', onClick: () => openDesignVoiceDialog() }, 'Add design voice'))),
+        _.section({ class: 'at-uploadAudioHeader' }, _.div(_.span({ class: 'at-uploadAudioEyebrow' }, 'Audio'), _.h2('Voices & tone samples'), _.p('Keep uploaded and designed voice references ready for every audiobook.')), _.div({ class: 'at-uploadAudioHeaderActions' }, _.Btn({ color: 'secondary', icon: 'upload_file', onClick: () => openVoiceDialog() }, 'Add voice'), _.Btn({ class: 'cms-m-l-sm', color: 'primary', icon: 'auto_awesome', onClick: () => openDesignVoiceDialog() }, 'Add design voice'))),
         () => status.value ? _.Alert(status.value) : null,
         _.section({ class: 'at-uploadAudioLibrary' },
             _.div({ class: 'at-uploadAudioToolbar' }, _.Input({ label: false, model: search, icon: 'search', placeholder: 'Search voice, language or notes…', onInput: () => loadVoices() }), _.span(() => `${voices.value.length} voice${voices.value.length === 1 ? '' : 's'}`)),

@@ -1,1 +1,151 @@
-.at-teamPage{max-width:1080px;margin:0 auto;padding:20px;color:#1b3155}.at-teamHero,.at-teamCard{border:1px solid #d9e4f5;border-radius:14px;background:#fff}.at-teamHero{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 22px;background:#fbfdff}.at-teamHero span,.at-teamHead span{display:block;color:#2d6bca;font-size:.71rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.at-teamHero h2,.at-teamHead h3{margin:3px 0;color:#203a63}.at-teamHero p{margin:0;color:#5b7197}.at-teamGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.at-teamCard{padding:18px}.at-teamHead{display:flex;justify-content:space-between;margin-bottom:12px}.at-teamHead small,.at-teamRow small{color:#7789a3;font-size:.72rem}.at-teamRow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;border-top:1px solid #edf1f7}.at-teamRow strong,.at-teamRow small{display:block}.at-teamRow strong{font-size:.86rem}.at-teamRow>span{font-size:.7rem;font-weight:800;text-transform:capitalize}.at-teamRow .is-pending{color:#a56b15}.at-teamRow .is-accepted{color:#28734b}.at-teamRow .is-declined{color:#a44f4f}.at-teamActions{display:flex;gap:7px}.at-teamDialog,.at-teamPermissions{display:grid;gap:10px}.at-teamPermissions{grid-template-columns:1fr 1fr}.at-teamEmpty{min-height:120px;display:grid;place-items:center;color:#7789a3;text-align:center}.at-teamEmpty .material-icons{font-size:30px}.at-teamLoading{padding:50px;text-align:center;color:#7789a3}@media(max-width:700px){.at-teamPage{padding:14px}.at-teamHero{align-items:stretch;flex-direction:column}.at-teamHero .cms-btn{width:100%}.at-teamGrid,.at-teamPermissions{grid-template-columns:1fr}}
+.at-teamPage {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 20px;
+    color: #1b3155
+}
+
+.at-teamHero,
+.at-teamCard {
+    border: 1px solid #d9e4f5;
+    border-radius: 14px;
+    background: #fff
+}
+
+.at-teamHero {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 22px;
+    background: #fbfdff
+}
+
+.at-teamHero span,
+.at-teamHead span {
+    letter-spacing: .1em;
+    text-transform: uppercase
+}
+
+.at-teamHero h2,
+.at-teamHead h3 {
+    margin: 3px 0;
+    color: #203a63
+}
+
+.at-teamHero p {
+    margin: 0;
+    color: #5b7197
+}
+
+.at-teamGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 14px
+}
+
+.at-teamCard {
+    padding: 18px
+}
+
+.at-teamHead {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px
+}
+
+.at-teamHead small,
+.at-teamRow small {
+    color: #7789a3;
+    font-size: .72rem
+}
+
+.at-teamRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 0;
+    border-top: 1px solid #edf1f7
+}
+
+.at-teamRow strong,
+.at-teamRow small {
+    display: block
+}
+
+.at-teamRow strong {
+    font-size: .86rem
+}
+
+.at-teamRow>span {
+    font-size: .7rem;
+    font-weight: 800;
+    text-transform: capitalize
+}
+
+.at-teamRow .is-pending {
+    color: #a56b15
+}
+
+.at-teamRow .is-accepted {
+    color: #28734b
+}
+
+.at-teamRow .is-declined {
+    color: #a44f4f
+}
+
+.at-teamActions {
+    display: flex;
+    gap: 7px
+}
+
+.at-teamDialog,
+.at-teamPermissions {
+    display: grid;
+    gap: 10px
+}
+
+.at-teamPermissions {
+    grid-template-columns: 1fr 1fr
+}
+
+.at-teamEmpty {
+    min-height: 120px;
+    display: grid;
+    place-items: center;
+    color: #7789a3;
+    text-align: center
+}
+
+.at-teamEmpty .material-icons {
+    font-size: 30px
+}
+
+.at-teamLoading {
+    padding: 50px;
+    text-align: center;
+    color: #7789a3
+}
+
+@media(max-width:700px) {
+    .at-teamPage {
+        padding: 14px
+    }
+
+    .at-teamHero {
+        align-items: stretch;
+        flex-direction: column
+    }
+
+    .at-teamHero .cms-btn {
+        width: 100%
+    }
+
+    .at-teamGrid,
+    .at-teamPermissions {
+        grid-template-columns: 1fr
+    }
+}

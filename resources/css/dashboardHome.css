@@ -1,1 +1,307 @@
-.at-homePage{max-width:1120px;margin:0 auto;padding:28px 20px;color:#1c3358}.at-homeWorkspace{display:grid;gap:16px}.at-homeHero,.at-homeSection,.at-homeStart,.at-homeStats{border:1px solid #d9e4f5;border-radius:16px;background:#fff}.at-homeHero{position:relative;display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:130px;padding:28px 30px;overflow:hidden;background:linear-gradient(115deg,#fff 0%,#f2f7ff 100%)}.at-homeHero:after{position:absolute;right:-55px;top:-55px;width:190px;height:190px;border:32px solid #dceaff;border-radius:50%;content:''}.at-homeHero>div,.at-homeHero>.cms-btn{position:relative;z-index:1}.at-homeHero .cms-btn,.at-homeStart .cms-btn{color:#fff!important}.at-homeHero span,.at-homeSectionHead span,.at-homeStart>div>span{display:block;color:#2c6dcc;font-size:.71rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.at-homeHero h2,.at-homeSectionHead h3,.at-homeStart h3{margin:5px 0;color:#203a63}.at-homeHero h2{font-size:1.55rem}.at-homeHero p,.at-homeStart p{margin:0;color:#607695}.at-homeSection{padding:18px}.at-homeSectionHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px}.at-homeBooks{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.at-homeBook{display:grid;grid-template-columns:40px 1fr;gap:9px;text-align:left;padding:10px;border:1px solid #e2eaf5;border-radius:10px;background:#fbfcff}.at-homeBook img,.at-homeBookCover{grid-row:span 3;width:40px;height:54px;object-fit:cover;border-radius:5px;background:#eaf1fb;color:#5c7dac;display:grid;place-items:center}.at-homeBook strong,.at-homeBook span,.at-homeBook small{display:block}.at-homeBook strong{font-size:.84rem;color:#294567}.at-homeBook span{overflow:hidden;color:#6d809b;font-size:.71rem;text-overflow:ellipsis;white-space:nowrap}.at-homeBook small{color:#8a99ad;font-size:.65rem}.at-homeStart{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:16px;padding:22px 24px}.at-homeStartIcon{width:54px;height:54px;display:grid;place-items:center;border-radius:14px;background:#eaf2ff;color:#3976cb}.at-homeStartIcon .material-icons{font-size:29px}.at-homeSteps{display:flex;gap:6px;margin-top:11px}.at-homeSteps span{padding:4px 7px;border-radius:99px;background:#f1f5fb;color:#6e82a1!important;font-size:.65rem!important;font-weight:700!important;letter-spacing:0!important;text-transform:none!important}.at-homeActions{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.at-homeAction{display:grid;grid-template-columns:auto 1fr;gap:5px 9px;align-items:center;padding:13px;border:1px solid #e0e8f4;border-radius:10px;background:#fbfdff;text-align:left}.at-homeAction:hover{border-color:#a9c6ef;background:#f7faff}.at-homeAction>.material-icons:first-child{grid-row:span 2;color:#3976cb}.at-homeAction>.material-icons:last-child{grid-column:2;justify-self:end;color:#8596ac;font-size:17px}.at-homeAction strong,.at-homeAction span{display:block}.at-homeAction strong{font-size:.78rem;color:#2b4668}.at-homeAction span{font-size:.67rem;color:#72849d}.at-homeStats{display:grid;grid-template-columns:repeat(3,1fr)}.at-homeStats>div{display:flex;align-items:center;gap:9px;padding:14px;border-left:1px solid #e3eaf4}.at-homeStats>div:first-child{border-left:0}.at-homeStats .material-icons{color:#3976cb}.at-homeStats strong,.at-homeStats span{display:block}.at-homeStats span{color:#71849e;font-size:.72rem}.at-homeLoading{padding:60px;text-align:center;color:#7084a3}@media(max-width:760px){.at-homePage{padding:14px}.at-homeHero,.at-homeStart{align-items:stretch;grid-template-columns:1fr;flex-direction:column}.at-homeHero:after{display:none}.at-homeHero .cms-btn,.at-homeStart .cms-btn{margin-left:0;width:100%}.at-homeBooks,.at-homeActions{grid-template-columns:1fr}.at-homeStats{grid-template-columns:1fr}.at-homeStats>div{border-left:0;border-top:1px solid #e3eaf4}.at-homeStats>div:first-child{border-top:0}}
+.at-homePage {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 28px 20px;
+    color: #1c3358
+}
+
+.at-homeWorkspace {
+    display: grid;
+    gap: 16px
+}
+
+.at-homeHero,
+.at-homeSection,
+.at-homeStart,
+.at-homeStats {
+    border: 1px solid #d9e4f5;
+    border-radius: 16px;
+    background: #fff
+}
+
+.at-homeHero {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    min-height: 130px;
+    padding: 28px 30px;
+    overflow: hidden;
+    background: linear-gradient(115deg, #fff 0%, #f2f7ff 100%)
+}
+
+.at-homeHero:after {
+    position: absolute;
+    right: -55px;
+    top: -55px;
+    width: 190px;
+    height: 190px;
+    border: 32px solid #dceaff;
+    border-radius: 50%;
+    content: ''
+}
+
+.at-homeHero>div,
+.at-homeHero>.cms-btn {
+    position: relative;
+    z-index: 1
+}
+
+.at-homeHero .cms-btn,
+.at-homeStart .cms-btn {
+    color: #fff !important
+}
+
+.at-homeHero span,
+.at-homeSectionHead span,
+.at-homeStart>div>span {
+    letter-spacing: .1em;
+    text-transform: uppercase
+}
+
+.at-homeHero h2,
+.at-homeSectionHead h3,
+.at-homeStart h3 {
+    margin: 5px 0;
+    color: #203a63
+}
+
+.at-homeHero h2 {
+    font-size: 1.55rem
+}
+
+.at-homeHero p,
+.at-homeStart p {
+    margin: 0;
+    color: #607695
+}
+
+.at-homeSection {
+    padding: 18px
+}
+
+.at-homeSectionHead {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 13px
+}
+
+.at-homeBooks {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px
+}
+
+.at-homeBook {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 9px;
+    text-align: left;
+    padding: 10px;
+    border: 1px solid #e2eaf5;
+    border-radius: 10px;
+    background: #fbfcff
+}
+
+.at-homeBook img,
+.at-homeBookCover {
+    grid-row: span 3;
+    width: 40px;
+    height: 54px;
+    object-fit: cover;
+    border-radius: 5px;
+    background: #eaf1fb;
+    color: #5c7dac;
+    display: grid;
+    place-items: center
+}
+
+.at-homeBook strong,
+.at-homeBook span,
+.at-homeBook small {
+    display: block
+}
+
+.at-homeBook strong {
+    font-size: .84rem;
+    color: #294567
+}
+
+.at-homeBook span {
+    overflow: hidden;
+    color: #6d809b;
+    text-overflow: ellipsis;
+    white-space: nowrap
+}
+
+.at-homeBook small {
+    color: #8a99ad;
+    font-size: .65rem
+}
+
+.at-homeStart {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 16px;
+    padding: 22px 24px
+}
+
+.at-homeStartIcon {
+    width: 54px;
+    height: 54px;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    background: #eaf2ff;
+    color: #3976cb
+}
+
+.at-homeStartIcon .material-icons {
+    font-size: 29px
+}
+
+.at-homeSteps {
+    display: flex;
+    gap: 6px;
+    margin-top: 11px
+}
+
+.at-homeSteps span {
+    padding: 4px 7px;
+    border-radius: 99px;
+    background: #f1f5fb;
+    color: #6e82a1 !important;
+    font-size: .65rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important
+}
+
+.at-homeActions {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 9px
+}
+
+.at-homeAction {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 5px 9px;
+    align-items: center;
+    padding: 13px;
+    border: 1px solid #e0e8f4;
+    border-radius: 10px;
+    background: #fbfdff;
+    text-align: left
+}
+
+.at-homeAction:hover {
+    border-color: #a9c6ef;
+    background: #f7faff
+}
+
+.at-homeAction>.material-icons:first-child {
+    grid-row: span 2;
+    color: #3976cb
+}
+
+.at-homeAction>.material-icons:last-child {
+    grid-column: 2;
+    justify-self: end;
+    color: #8596ac;
+    font-size: 17px
+}
+
+.at-homeAction strong,
+.at-homeAction span {
+    display: block
+}
+
+.at-homeAction strong {
+    font-size: .78rem;
+    color: #2b4668
+}
+
+.at-homeAction span {
+    color: #72849d
+}
+
+.at-homeStats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr)
+}
+
+.at-homeStats>div {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 14px;
+    border-left: 1px solid #e3eaf4
+}
+
+.at-homeStats>div:first-child {
+    border-left: 0
+}
+
+.at-homeStats .material-icons {
+    color: #3976cb
+}
+
+.at-homeStats strong,
+.at-homeStats span {
+    display: block
+}
+
+.at-homeStats span {
+    color: #71849e;
+}
+
+.at-homeLoading {
+    padding: 60px;
+    text-align: center;
+    color: #7084a3
+}
+
+@media(max-width:760px) {
+    .at-homePage {
+        padding: 14px
+    }
+
+    .at-homeHero,
+    .at-homeStart {
+        align-items: stretch;
+        grid-template-columns: 1fr;
+        flex-direction: column
+    }
+
+    .at-homeHero:after {
+        display: none
+    }
+
+    .at-homeHero .cms-btn,
+    .at-homeStart .cms-btn {
+        margin-left: 0;
+        width: 100%
+    }
+
+    .at-homeBooks,
+    .at-homeActions {
+        grid-template-columns: 1fr
+    }
+
+    .at-homeStats {
+        grid-template-columns: 1fr
+    }
+
+    .at-homeStats>div {
+        border-left: 0;
+        border-top: 1px solid #e3eaf4
+    }
+
+    .at-homeStats>div:first-child {
+        border-top: 0
+    }
+}
