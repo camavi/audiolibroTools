@@ -81,6 +81,8 @@
 .at-abtReading {
     min-height: 0;
     overflow: auto;
+    overscroll-behavior: contain;
+    scroll-behavior: smooth;
 }
 
 .at-abtLoading {
@@ -156,10 +158,36 @@
 }
 
 .at-abtText p.is-reading {
-    padding: .75rem;
+    position: relative;
     border-radius: .5rem;
-    background: rgb(99 102 241 / 11%);
-    box-shadow: inset 3px 0 var(--cms-primary, #4f46e5);
+    background: linear-gradient(90deg, rgb(99 102 241 / 14%), rgb(99 102 241 / 7%));
+}
+
+.at-abtText p.is-reading::before {
+    position: absolute;
+    top: .35rem;
+    bottom: .35rem;
+    left: -10px;
+    width: .22rem;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #818cf8, var(--cms-primary, #4f46e5));
+    box-shadow: 0 0 .55rem rgb(79 70 229 / 34%);
+    content: '';
+}
+
+.at-audioReadingWord {
+    border-radius: .18rem;
+    background: #fde68a;
+    box-decoration-break: clone;
+    box-shadow: 0 0 0 .08rem rgb(245 158 11 / 35%);
+    color: var(--at-text);
+}
+
+.at-abtClipAnchor {
+    display: inline-block;
+    width: 0;
+    height: 1em;
+    vertical-align: middle;
 }
 
 .at-abtProgress {

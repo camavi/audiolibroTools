@@ -1373,7 +1373,7 @@ class DashboardBookController extends Controller
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
         $edition = $this->audioEdition($request, $book);
         $relations = [
-            'audioSegment:id,block_uuid,audio_path,duration_ms,status,metadata_json',
+            'audioSegment:id,block_uuid,audio_path,duration_ms,status,source_start,source_end,metadata_json',
             'librarySample:id,audio_library_voice_id,audio_path,duration_ms,original_name',
             'mediaAsset:id,account_id,audio_path,duration_ms,original_name',
             'audioJob.segments:id,book_audio_job_id,audio_path,duration_ms,pause_after_ms,segment_index,text_plain,source_start,source_end,metadata_json',
@@ -1396,6 +1396,9 @@ class DashboardBookController extends Controller
                 $data = $item->toArray();
                 $data['audio_path'] = $audioPath($item);
                 $data['block_uuid'] = $item->audioJob?->block_uuid ?? $item->audioSegment?->block_uuid;
+                $data['source_start'] = $item->audioSegment?->source_start;
+                $data['source_end'] = $item->audioSegment?->source_end;
+                $data['word_timings'] = $item->audioSegment?->metadata_json['word_timings'] ?? [];
                 $data['group_segments'] = $item->is_group && $item->audioJob
                     ? $item->audioJob->segments->sortBy('segment_index')->values()->map(fn (BookAudioSegment $segment) => [
                         'id' => $segment->id, 'audio_path' => route('dashboard.api.book-audio-segments.stream', $segment),
@@ -1837,6 +1840,29 @@ class DashboardBookController extends Controller
         }
 
         return response()->json(['data' => ['channels' => $channels, 'duration_ms' => max(array_column($channels, 'duration_ms'))]]);
+    }
+
+    /** Render masters once per saved timeline fingerprint and reuse them for the reader preview. */
+    public function previewAudioTimeline(Request $request, string $keyBook): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
+        $items = $this->timelineItemsForEdition($book, $edition)
+            ->whereNull('parent_timeline_item_id')
+            ->with(['audioSegment', 'mediaAsset', 'librarySample', 'audioJob.segments', 'timelineChildren.audioSegment', 'timelineChildren.mediaAsset', 'timelineChildren.librarySample'])
+            ->orderBy('track')->orderBy('sort_order')->get();
+        $fingerprint = hash('sha256', json_encode($items->toArray(), JSON_THROW_ON_ERROR));
+        $cached = data_get($edition->metadata_json, 'audio_preview');
+        if (is_array($cached) && ($cached['fingerprint'] ?? null) === $fingerprint && isset($cached['channels'])) {
+            return response()->json(['data' => [...$cached, 'cached' => true]]);
+        }
+
+        $rendered = $this->publishAudioTimeline($request, $keyBook)->getData(true)['data'];
+        $preview = ['fingerprint' => $fingerprint, 'channels' => $rendered['channels'], 'duration_ms' => $rendered['duration_ms'], 'generated_at' => now()->toIso8601String()];
+        $edition->metadata_json = [...($edition->metadata_json ?? []), 'audio_preview' => $preview];
+        $edition->save();
+
+        return response()->json(['data' => [...$preview, 'cached' => false]]);
     }
 
     /** @param array<int, array<string, mixed>> $entries */

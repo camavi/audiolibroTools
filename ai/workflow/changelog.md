@@ -1,5 +1,10 @@
 # Registro Avanzamento
 
+## 2026-08-24
+
+- Avviato player preview audiolibro: tre master separati Voice, Music e FX, cache per edizione basata sul fingerprint della timeline e invalidazione automatica alla sua modifica.
+- Definiti comportamenti reader: Cover mostra copertina/dettagli; Text segue il transport; Block evidenzia il blocco corrente; Word evidenzia la parola corrente tramite timing TTS.
+
 ## 2026-07-27
 
 - Creata struttura iniziale `ai/`.
