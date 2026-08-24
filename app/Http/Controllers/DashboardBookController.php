@@ -1836,7 +1836,7 @@ class DashboardBookController extends Controller
             // Build the URL from the current API request host. APP_URL is
             // commonly `http://localhost` in local .env files, while dev.sh
             // serves Laravel on 127.0.0.1:8000 (or another configured port).
-            $channels[$track] = ['status' => 'ready', 'duration_ms' => $durationMs, 'url' => url(Storage::disk('public')->url($filename))];
+            $channels[$track] = ['status' => 'ready', 'duration_ms' => $durationMs, 'url' => url(Storage::disk('public')->url($filename)), 'path' => $filename];
         }
 
         return response()->json(['data' => ['channels' => $channels, 'duration_ms' => max(array_column($channels, 'duration_ms'))]]);
@@ -1853,8 +1853,8 @@ class DashboardBookController extends Controller
             ->orderBy('track')->orderBy('sort_order')->get();
         $fingerprint = hash('sha256', json_encode($items->toArray(), JSON_THROW_ON_ERROR));
         $cached = data_get($edition->metadata_json, 'audio_preview');
-        if (is_array($cached) && ($cached['fingerprint'] ?? null) === $fingerprint && isset($cached['channels'])) {
-            return response()->json(['data' => [...$cached, 'cached' => true]]);
+        if (is_array($cached) && ($cached['fingerprint'] ?? null) === $fingerprint && isset($cached['channels']) && collect($cached['channels'])->filter(fn ($channel) => ($channel['status'] ?? null) === 'ready')->every(fn ($channel) => !empty($channel['path']) && Storage::disk('public')->exists($channel['path']))) {
+            return response()->json(['data' => [...$cached, 'channels' => $this->previewChannelUrls($request, $keyBook, $cached['channels']), 'cached' => true]]);
         }
 
         $rendered = $this->publishAudioTimeline($request, $keyBook)->getData(true)['data'];
@@ -1862,7 +1862,24 @@ class DashboardBookController extends Controller
         $edition->metadata_json = [...($edition->metadata_json ?? []), 'audio_preview' => $preview];
         $edition->save();
 
-        return response()->json(['data' => [...$preview, 'cached' => false]]);
+        return response()->json(['data' => [...$preview, 'channels' => $this->previewChannelUrls($request, $keyBook, $preview['channels']), 'cached' => false]]);
+    }
+
+    public function streamAudioPreview(Request $request, string $keyBook, string $track)
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
+        $channel = data_get($edition->metadata_json, "audio_preview.channels.{$track}");
+        $path = is_array($channel) ? ($channel['path'] ?? null) : null;
+        abort_unless($path && Storage::disk('public')->exists($path), 404);
+        $absolute = Storage::disk('public')->path($path);
+        return response()->file($absolute, ['Content-Type' => mime_content_type($absolute) ?: 'audio/wav', 'Accept-Ranges' => 'bytes']);
+    }
+
+    private function previewChannelUrls(Request $request, string $keyBook, array $channels): array
+    {
+        $edition = $request->input('edition');
+        return collect($channels)->mapWithKeys(fn (array $channel, string $track) => [$track => [...$channel, 'url' => !empty($channel['path']) ? route('dashboard.api.books.audio-preview.stream', ['keyBook' => $keyBook, 'track' => $track]).($edition ? '?edition='.urlencode((string) $edition) : '') : null]])->all();
     }
 
     /** @param array<int, array<string, mixed>> $entries */

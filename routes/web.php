@@ -145,6 +145,7 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
     Route::put('/books/{keyBook}/audio-timeline', [DashboardBookController::class, 'saveAudioTimeline'])->name('books.audio-timeline.save');
     Route::post('/books/{keyBook}/audio-publish', [DashboardBookController::class, 'publishAudioTimeline'])->name('books.audio-publish');
     Route::post('/books/{keyBook}/audio-preview', [DashboardBookController::class, 'previewAudioTimeline'])->name('books.audio-preview');
+    Route::get('/books/{keyBook}/audio-preview/{track}', [DashboardBookController::class, 'streamAudioPreview'])->whereIn('track', ['voice', 'music', 'fx'])->name('books.audio-preview.stream');
     Route::delete('/books/{keyBook}/audio-timeline/{timelineItem}', [DashboardBookController::class, 'deleteAudioTimelineItem'])->name('books.audio-timeline.delete');
     Route::post('/books/{keyBook}/voices', [DashboardBookController::class, 'storeVoiceProfile'])->name('books.voices.store');
     Route::patch('/books/{keyBook}/voices/{voiceProfile}', [DashboardBookController::class, 'updateVoiceProfile'])->name('books.voices.update');

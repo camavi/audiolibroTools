@@ -192,13 +192,29 @@
 
 .at-abtProgress {
     position: relative;
-    height: .45rem;
-    background: var(--at-border, #e5e7eb);
+    height: .38rem;
+    background: #dbe7ff;
 }
 
 .at-abtProgressLine {
     height: 100%;
+    border-radius: 0 999px 999px 0;
+    background: linear-gradient(90deg, #2563eb, #4f46e5);
+    transition: width .12s linear;
+}
+
+.at-abtProgressThumb {
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    width: .72rem;
+    height: .72rem;
+    border: 2px solid var(--at-surface-subtle, #fff);
+    border-radius: 50%;
     background: var(--cms-primary, #4f46e5);
+    box-shadow: 0 2px 7px rgb(30 64 175 / 35%);
+    transform: translate(-50%, -50%);
+    transition: left .12s linear;
 }
 
 .at-abtProgress input {
