@@ -7,9 +7,9 @@
 .at-promptsHero,
 .at-promptsSearch,
 .at-promptCard {
-    border: 1px solid #d9e4f5;
+    border: 1px solid var(--at-border);
     border-radius: 14px;
-    background: #fff
+    background: var(--at-surface)
 }
 
 .at-promptsHero {
@@ -113,13 +113,13 @@
     grid-column: 1/-1;
     padding: 60px;
     text-align: center;
-    color: #7487a3
+    color: var(--at-muted)
 }
 
 .at-promptsLoading {
     padding: 50px;
     text-align: center;
-    color: #7487a3
+    color: var(--at-muted)
 }
 
 @media(max-width:760px) {

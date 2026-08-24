@@ -28,6 +28,13 @@ let pageHeaderActions = () => [];
 const bookEditionOptions = _.rod([]);
 const selectedBookEdition = _.rod('');
 const bookEditionVisible = _.rod(false);
+const dashboardTheme = _.rod(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
+const dashboardLocaleOptions = window.AudiobookToolsBootstrap?.locales || [];
+const savedDashboardLocale = localStorage.getItem('audiobook-tools:locale');
+const initialDashboardLocale = dashboardLocaleOptions.some((option) => option.value === savedDashboardLocale)
+    ? savedDashboardLocale
+    : (window.AudiobookToolsBootstrap?.locale || document.documentElement.lang || 'en');
+const dashboardLocale = _.rod(initialDashboardLocale);
 
 
 const navGroups = [
@@ -164,11 +171,56 @@ function changeBookEdition(editionId) {
     window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
+function selectChangeValue(value, fallback = '') {
+    return value && typeof value === 'object' && 'target' in value
+        ? value.target?.value ?? fallback
+        : value ?? fallback;
+}
+
+function setDashboardTheme(theme) {
+    _.setTheme(theme);
+}
+
+function setDashboardLocale(locale) {
+    const nextLocale = selectChangeValue(locale, dashboardLocale.value);
+    const selected = dashboardLocaleOptions.find((option) => option.value === nextLocale);
+    if (!selected) return;
+
+    dashboardLocale.value = nextLocale;
+    document.documentElement.lang = nextLocale;
+    document.documentElement.dir = selected.direction || 'ltr';
+    localStorage.setItem('audiobook-tools:locale', nextLocale);
+}
+
+setDashboardLocale(initialDashboardLocale);
+
 window.AudiobookTools = {
     ...(window.AudiobookTools || {}),
     setPageHeaderActions,
     selectedBookEdition,
+    setDashboardTheme,
+    setDashboardLocale,
 };
+
+const globalHeaderControls = () => _.div({ class: 'at-dashboardGlobalControls' },
+    _.Select({
+        class: 'at-dashboardLocaleSelect',
+        label: false,
+        model: dashboardLocale,
+        options: dashboardLocaleOptions,
+        onChange: setDashboardLocale,
+    }),
+    _.Btn({
+        class: 'at-dashboardThemeToggle',
+        color: 'secondary',
+        title: _.getTheme() === 'dark' ? 'Use light theme' : 'Use dark theme',
+        ariaLabel: _.getTheme() === 'dark' ? 'Use light theme' : 'Use dark theme',
+        icon: _.getTheme() === 'dark' ? 'light_mode' : 'dark_mode',
+        onClick: () => {
+            setDashboardTheme(_.getTheme() === 'dark' ? 'light' : 'dark');
+        },
+    })
+);
 
 const rightHeader = _.div({ class: 'at-dashboardPageActions' }, () => {
     pageHeaderActionsVersion.value;
@@ -177,6 +229,7 @@ const rightHeader = _.div({ class: 'at-dashboardPageActions' }, () => {
             ? _.Select({ class: 'at-dashboardEditionSelect', model: selectedBookEdition, options: () => bookEditionOptions.value, onChange: changeBookEdition })
             : null),
         ...pageHeaderActions(),
+        globalHeaderControls(),
     ];
 });
 

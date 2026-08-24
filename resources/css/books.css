@@ -36,7 +36,7 @@
 
 .at-libraryHeader p {
     margin: .55rem 0 0;
-    color: var(--cms-text-muted, #6b7280);
+    color: var(--cms-text-muted, var(--at-muted));
 }
 
 .at-libraryShelf {
@@ -90,9 +90,9 @@
     justify-content: space-between;
     padding: 1rem;
     overflow: hidden;
-    color: #fff;
+    color: var(--at-surface);
     text-align: left;
-    background: linear-gradient(155deg, #172554, #0f172a);
+    background: linear-gradient(155deg, #172554, var(--at-text));
 }
 
 .at-bookCover::after {
@@ -155,7 +155,7 @@
     min-height: 2.7em;
     margin: .38rem 0 .7rem;
     overflow: hidden;
-    color: var(--cms-text-muted, #6b7280);
+    color: var(--cms-text-muted, var(--at-muted));
     font-size: .84rem;
     line-height: 1.35;
     -webkit-box-orient: vertical;
@@ -165,7 +165,7 @@
 .at-libraryBookDetails {
     display: grid;
     gap: .35rem;
-    color: var(--cms-text-muted, #6b7280);
+    color: var(--cms-text-muted, var(--at-muted));
     font-size: .75rem;
 }
 
@@ -186,7 +186,7 @@
     text-align: center;
 }
 
-.at-libraryEmpty p { color: var(--cms-text-muted, #6b7280); }
+.at-libraryEmpty p { color: var(--cms-text-muted, var(--at-muted)); }
 .at-libraryEmpty .cms-btn { margin-top: .75rem; }
 
 .at-libraryEmptyIcon {
@@ -195,7 +195,7 @@
     font-size: 2.25rem;
 }
 
-.at-libraryNotice { color: var(--cms-text-muted, #6b7280); }
+.at-libraryNotice { color: var(--cms-text-muted, var(--at-muted)); }
 .at-libraryNotice--error { color: var(--cms-danger, #b91c1c); }
 .at-libraryNotice .cms-btn { margin-left: .75rem; }
 

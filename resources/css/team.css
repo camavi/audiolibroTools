@@ -7,9 +7,9 @@
 
 .at-teamHero,
 .at-teamCard {
-    border: 1px solid #d9e4f5;
+    border: 1px solid var(--at-border);
     border-radius: 14px;
-    background: #fff
+    background: var(--at-surface)
 }
 
 .at-teamHero {
@@ -18,7 +18,7 @@
     justify-content: space-between;
     gap: 16px;
     padding: 20px 22px;
-    background: #fbfdff
+    background: var(--at-surface-subtle)
 }
 
 .at-teamHero span,
@@ -35,7 +35,7 @@
 
 .at-teamHero p {
     margin: 0;
-    color: #5b7197
+    color: var(--at-muted)
 }
 
 .at-teamGrid {
@@ -57,7 +57,7 @@
 
 .at-teamHead small,
 .at-teamRow small {
-    color: #7789a3;
+    color: var(--at-muted);
     font-size: .72rem
 }
 
@@ -116,7 +116,7 @@
     min-height: 120px;
     display: grid;
     place-items: center;
-    color: #7789a3;
+    color: var(--at-muted);
     text-align: center
 }
 
@@ -127,7 +127,7 @@
 .at-teamLoading {
     padding: 50px;
     text-align: center;
-    color: #7789a3
+    color: var(--at-muted)
 }
 
 @media(max-width:700px) {

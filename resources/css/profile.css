@@ -1,10 +1,10 @@
 .at-profilePage { max-width: 1120px; margin: 0 auto; padding: 20px; color: #1b3155; }
-.at-profileHero { display: flex; align-items: center; min-height: 96px; margin-bottom: 14px; padding: 18px 22px; border: 1px solid #d9e5f7; border-radius: 14px; background: #fbfdff; }
-.at-profileHero h2, .at-profileCard h3 { margin: 3px 0; color: #203a63; }.at-profileHero p, .at-profileCard p { margin: 0; color: #5b7197; line-height: 1.45; }
+.at-profileHero { display: flex; align-items: center; min-height: 96px; margin-bottom: 14px; padding: 18px 22px; border: 1px solid #d9e5f7; border-radius: 14px; background: var(--at-surface-subtle); }
+.at-profileHero h2, .at-profileCard h3 { margin: 3px 0; color: #203a63; }.at-profileHero p, .at-profileCard p { margin: 0; color: var(--at-muted); line-height: 1.45; }
 .at-profileEyebrow, .at-profileCardHead > div > span { display: block; color: #2d6bca; font-size: .71rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .at-profileGrid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(300px, .85fr); gap: 14px; align-items: start; }
 /* Spread the secondary cards through the grid instead of creating a tall sidebar. */
-.at-profileSide { display: contents; }.at-profileCard { padding: 20px; border: 1px solid #d9e4f5; border-radius: 14px; background: #fff; box-shadow: 0 4px 18px rgba(31, 59, 104, .035); }
+.at-profileSide { display: contents; }.at-profileCard { padding: 20px; border: 1px solid var(--at-border); border-radius: 14px; background: var(--at-surface); box-shadow: 0 4px 18px rgba(31, 59, 104, .035); }
 .at-profileDetails { grid-column: 1; grid-row: 1; }.at-profileSide > :nth-child(1) { grid-column: 2; grid-row: 1; }.at-profileSide > :nth-child(2) { grid-column: 1; grid-row: 2; }.at-profileSide > :nth-child(3) { grid-column: 2; grid-row: 2; }
 .at-profileCardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }.at-profileCardHead > .material-icons { color: #6780a5; }
 .at-profileFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }.at-profileFields .cms-form-field { margin: 0; }

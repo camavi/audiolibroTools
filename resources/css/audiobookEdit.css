@@ -2,14 +2,14 @@
     max-width: 1540px;
     margin: 0 auto;
     padding: clamp(.5rem, 1vw, .75rem);
-    color: #182033
+    color: var(--at-text)
 }
 
 .at-audiobookTopbar,
 .at-audiobookWorkspace,
 .at-audioTimelineCard {
-    border: 1px solid #dbe3ee;
-    background: #f8fafc;
+    border: 1px solid var(--at-border);
+    background: var(--at-surface-subtle);
     box-shadow: 0 14px 32px rgb(15 23 42 / 7%)
 }
 
@@ -30,7 +30,7 @@
     min-width: 0;
     padding: .8rem 1rem;
     border-radius: .55rem;
-    background: #eff6ff;
+    background: var(--at-surface-subtle);
     color: #36527a;
 }
 
@@ -56,9 +56,9 @@
     gap: 1rem;
     min-width: 0;
     padding: .7rem .85rem;
-    border: 1px solid #dbe3ee;
+    border: 1px solid var(--at-border);
     border-radius: .55rem;
-    background: #f8fafc;
+    background: var(--at-surface-subtle);
 }
 
 .at-audioPublishRow div {
@@ -122,7 +122,7 @@
 
 .at-bookAudioGenerateNote {
     margin-top: -.5rem;
-    color: #64748b;
+    color: var(--at-muted);
     font-size: .73rem;
 }
 
@@ -130,9 +130,9 @@
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     overflow: hidden;
-    border: 1px solid #dbe3ee;
+    border: 1px solid var(--at-border);
     border-radius: .65rem;
-    background: #f8fafc;
+    background: var(--at-surface-subtle);
 }
 
 .at-bookAudioMetrics>div {
@@ -143,18 +143,18 @@
 }
 
 .at-bookAudioMetrics>div+div {
-    border-left: 1px solid #dbe3ee;
+    border-left: 1px solid var(--at-border);
 }
 
 .at-bookAudioMetrics span {
-    color: #64748b;
+    color: var(--at-muted);
     font-size: .65rem;
     font-weight: 700;
     text-transform: uppercase;
 }
 
 .at-bookAudioMetrics strong {
-    color: #1e293b;
+    color: var(--at-text);
     font-size: .84rem;
     white-space: nowrap;
 }
@@ -176,16 +176,16 @@
 .at-audioEditorCard,
 .at-audioPreviewCard {
     min-width: 0;
-    border: 1px solid #dbe3ee;
+    border: 1px solid var(--at-border);
     border-radius: .8rem;
-    background: #fff;
+    background: var(--at-surface);
     overflow: hidden
 }
 
 .at-audioTabs {
     display: flex;
-    border-bottom: 1px solid #dbe3ee;
-    background: #f8fafc
+    border-bottom: 1px solid var(--at-border);
+    background: var(--at-surface-subtle)
 }
 
 .at-audioTabs button {
@@ -193,7 +193,7 @@
     border: 0;
     border-bottom: 2px solid transparent;
     background: transparent;
-    color: #64748b;
+    color: var(--at-muted);
     font: inherit;
     font-size: .8rem;
     cursor: pointer
@@ -201,9 +201,9 @@
 
 .at-audioTabs button.is-active {
     border-bottom-color: #2563eb;
-    color: #1e293b;
+    color: var(--at-text);
     font-weight: 750;
-    background: #fff
+    background: var(--at-surface)
 }
 
 .at-audioEditorBody {
@@ -214,12 +214,12 @@
     display: flex;
     justify-content: space-between;
     margin-bottom: 1rem;
-    color: #64748b;
+    color: var(--at-muted);
     font-size: .75rem
 }
 
 .at-audioBlockMeta strong {
-    color: #1e293b
+    color: var(--at-text)
 }
 
 .at-audioForm {
@@ -238,8 +238,8 @@
 .at-audioHint {
     padding: .75rem;
     border-radius: .5rem;
-    background: #eff6ff;
-    color: #475569;
+    background: var(--at-surface-subtle);
+    color: var(--at-muted);
     font-size: .78rem;
     line-height: 1.45
 }
@@ -266,7 +266,7 @@
     justify-content: space-between;
     gap: 1rem;
     padding-bottom: .85rem;
-    border-bottom: 1px solid #e2eaf5
+    border-bottom: 1px solid var(--at-border)
 }
 
 .at-bookStyleEditorHead>div,
@@ -277,7 +277,7 @@
 
 .at-bookStyleEditorHead small,
 .at-bookStyleInspectorHead small {
-    color: #64748b;
+    color: var(--at-muted);
     font-size: .78rem;
     line-height: 1.45
 }
@@ -294,14 +294,14 @@
     align-content: start;
     gap: .42rem;
     padding: .7rem;
-    border: 1px solid #dce6f4;
+    border: 1px solid var(--at-border);
     border-radius: .75rem;
-    background: #f8fbff
+    background: var(--at-surface-subtle)
 }
 
 .at-bookStyleListLabel {
     padding: .15rem .22rem .45rem;
-    color: #64748b;
+    color: var(--at-muted);
     font-size: .68rem;
     font-weight: 800;
     letter-spacing: .08em;
@@ -316,18 +316,18 @@
     border: 1px solid transparent;
     border-radius: .55rem;
     background: transparent;
-    color: #334155;
+    color: var(--at-text);
     cursor: pointer;
     text-align: left
 }
 
 .at-bookStyleOption:hover {
-    background: #fff
+    background: var(--at-surface)
 }
 
 .at-bookStyleOption.is-selected {
     border-color: #a9c7fb;
-    background: #fff;
+    background: var(--at-surface);
     box-shadow: 0 3px 10px rgb(37 99 235 / 9%)
 }
 
@@ -337,7 +337,7 @@
 }
 
 .at-bookStyleOption small {
-    color: #71819a;
+    color: var(--at-muted);
     font-size: .69rem;
     line-height: 1.35
 }
@@ -347,9 +347,9 @@
     gap: 1rem;
     min-width: 0;
     padding: .85rem;
-    border: 1px solid #dce6f4;
+    border: 1px solid var(--at-border);
     border-radius: .75rem;
-    background: #fff
+    background: var(--at-surface)
 }
 
 .at-bookStyleInspectorHead {
@@ -415,9 +415,9 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: .8rem;
     padding: .8rem;
-    border: 1px solid #dce6f4;
+    border: 1px solid var(--at-border);
     border-radius: .8rem;
-    background: linear-gradient(135deg, #f8fbff 0%, #f3f7fc 100%)
+    background: linear-gradient(135deg, var(--at-surface-subtle) 0%, #f3f7fc 100%)
 }
 
 .at-audioGeneratorOriginal {
@@ -466,7 +466,7 @@
     padding: .85rem .9rem !important;
     border-color: #9dbcf4 !important;
     border-radius: .6rem !important;
-    background: #fff !important;
+    background: var(--at-surface) !important;
     box-shadow: 0 3px 12px rgb(37 99 235 / 8%)
 }
 
@@ -480,9 +480,9 @@
     display: grid;
     gap: .8rem;
     padding: .9rem;
-    border: 1px solid #dce6f4;
+    border: 1px solid var(--at-border);
     border-radius: .8rem;
-    background: linear-gradient(135deg, #f8fbff 0%, #fff 100%)
+    background: linear-gradient(135deg, var(--at-surface-subtle) 0%, var(--at-surface) 100%)
 }
 
 .at-audioGeneratorSplitRulesHead {
@@ -503,7 +503,7 @@
 }
 
 .at-audioGeneratorSplitRulesHead small {
-    color: #64748b;
+    color: var(--at-muted);
     font-size: .76rem
 }
 
@@ -576,9 +576,9 @@
     display: grid;
     gap: .55rem;
     padding: .9rem;
-    border: 1px solid #dce6f4;
+    border: 1px solid var(--at-border);
     border-radius: .8rem;
-    background: #fff
+    background: var(--at-surface)
 }
 
 .at-audioGeneratorSplitsHead,
@@ -600,7 +600,7 @@
 
 .at-audioGeneratorSplitsHead small,
 .at-audioGeneratorSplitCopy small {
-    color: #64748b
+    color: var(--at-muted)
 }
 
 .at-audioGeneratorSplit {
@@ -610,7 +610,7 @@
     border: 1px solid #e0e9f5;
     border-left: 3px solid #8eb4fa;
     border-radius: .6rem;
-    background: #fbfdff;
+    background: var(--at-surface-subtle);
     transition: border-color .16s ease, box-shadow .16s ease
 }
 
@@ -627,7 +627,7 @@
 }
 
 .at-audioGeneratorSplitCopy span {
-    color: #334155;
+    color: var(--at-text);
     font-size: .87rem;
     line-height: 1.48
 }
@@ -681,14 +681,14 @@
 .at-audioMetric {
     min-width: 0;
     padding: .7rem .75rem;
-    border: 1px solid #e1e8f2;
+    border: 1px solid var(--at-border);
     border-radius: .5rem;
     background: #fbfcfe
 }
 
 .at-audioCostGrid span {
     display: block;
-    color: #71819a;
+    color: var(--at-muted);
     font-size: .65rem;
     font-weight: 700;
     letter-spacing: .025em
@@ -710,7 +710,7 @@
     display: grid;
     gap: .45rem;
     padding: .7rem;
-    border: 1px solid #e0e7f0;
+    border: 1px solid var(--at-border);
     border-radius: .65rem;
     background: #fbfcfe;
     font-size: .78rem
@@ -727,7 +727,7 @@
     padding: .7rem .8rem;
     border: 1px solid #d9e4f4;
     border-radius: .65rem;
-    background: #f7faff;
+    background: var(--at-surface-subtle);
 }
 
 .at-audioInsertPositionHead {
@@ -759,7 +759,7 @@
 .at-audioInsertPositionHead small {
     max-width: 28rem;
     overflow: hidden;
-    color: #64748b;
+    color: var(--at-muted);
     font-size: .7rem;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -793,7 +793,7 @@
     min-height: 8rem;
     border: 1px dashed #cfd9e7;
     border-radius: .6rem;
-    color: #71819a;
+    color: var(--at-muted);
     font-size: .78rem
 }
 
@@ -811,16 +811,16 @@
 
 .at-audioGeneratedGroupsHeader small,
 .at-audioGeneratedMasterInfo small {
-    color: #71819a
+    color: var(--at-muted)
 }
 
 .at-audioGeneratedGroup {
     display: block;
     overflow: hidden;
-    border: 1px solid #e0e7f0;
+    border: 1px solid var(--at-border);
     border-radius: .5rem;
-    background: #fff;
-    color: #475569
+    background: var(--at-surface);
+    color: var(--at-muted)
 }
 
 .at-audioGeneratedMaster {
@@ -844,7 +844,7 @@
 }
 
 .at-audioGroupToggle:hover {
-    background: #edf4ff;
+    background: var(--at-surface-subtle);
     color: #2563eb
 }
 
@@ -883,8 +883,8 @@
 
 .at-audioGeneratedChildren {
     display: grid;
-    border-top: 1px solid #e2e8f0;
-    background: #f8fafc
+    border-top: 1px solid var(--at-border);
+    background: var(--at-surface-subtle)
 }
 
 .at-audioGeneratedChild {
@@ -893,7 +893,7 @@
     gap: .75rem;
     padding: .45rem .8rem .45rem 3.15rem;
     border-top: 1px solid #edf2f7;
-    color: #64748b;
+    color: var(--at-muted);
     font-size: .72rem
 }
 
@@ -908,7 +908,7 @@
 
 .at-audioDeleteConfirm p {
     margin: 0;
-    color: #475569
+    color: var(--at-muted)
 }
 
 .at-audioDeleteConfirmActions {
@@ -925,7 +925,7 @@
     padding: .8rem .85rem;
     border: 1px solid #cdddfb;
     border-radius: .65rem;
-    background: linear-gradient(135deg, #f7faff, #f0f5ff)
+    background: linear-gradient(135deg, var(--at-surface-subtle), #f0f5ff)
 }
 
 .at-audioVoiceSelectCopy {
@@ -993,12 +993,12 @@
 
 .at-audioCharacterDialogHeader h3 {
     margin: 0;
-    color: #182033;
+    color: var(--at-text);
     font-size: 1.1rem
 }
 
 .at-audioCharacterDialogHeader span {
-    color: #64748b;
+    color: var(--at-muted);
     font-size: .75rem
 }
 
@@ -1015,7 +1015,7 @@
     align-items: center;
     gap: .8rem;
     padding: .65rem .7rem;
-    border: 1px solid #e0e7f0;
+    border: 1px solid var(--at-border);
     border-radius: .55rem;
     background: #fbfcfe
 }
@@ -1048,7 +1048,7 @@
 }
 
 .at-audioCharacterIdentity span {
-    color: #71819a;
+    color: var(--at-muted);
 }
 
 .at-audioCharacterVoice {
@@ -1056,7 +1056,7 @@
     min-width: 0;
     gap: .1rem;
     padding-left: .7rem;
-    border-left: 1px solid #e0e7f0
+    border-left: 1px solid var(--at-border)
 }
 
 .at-audioCharacterVoice>span {
@@ -1073,7 +1073,7 @@
 }
 
 .at-audioCharacterVoice small {
-    color: #71819a;
+    color: var(--at-muted);
     font-size: .66rem
 }
 
@@ -1128,15 +1128,15 @@
     align-items: center;
     gap: 1rem;
     padding: .7rem .85rem;
-    border: 1px solid #dbe3ee;
+    border: 1px solid var(--at-border);
     border-radius: .6rem;
-    background: #f8fafc;
-    color: #182033
+    background: var(--at-surface-subtle);
+    color: var(--at-text)
 }
 
 .at-libraryVoiceResult:hover {
     border-color: #2563eb;
-    background: #eff6ff
+    background: var(--at-surface-subtle)
 }
 
 .at-libraryVoiceResultCopy {
@@ -1158,7 +1158,7 @@
 
 .at-libraryVoiceResultHead span,
 .at-libraryVoiceResult small {
-    color: #64748b;
+    color: var(--at-muted);
     font-size: .72rem
 }
 
@@ -1170,21 +1170,21 @@
 
 .at-libraryVoiceToneChips span {
     padding: .16rem .36rem;
-    border: 1px solid color-mix(in srgb, var(--at-tone-color) 40%, #dbe3ee);
+    border: 1px solid color-mix(in srgb, var(--at-tone-color) 40%, var(--at-border));
     border-radius: 999px;
-    color: #475569;
+    color: var(--at-muted);
     font-size: .66rem
 }
 
 .at-libraryVoiceToneChips .at-libraryVoiceSampleName {
-    border-color: #dbe3ee;
-    color: #475569;
-    background: #fff;
+    border-color: var(--at-border);
+    color: var(--at-muted);
+    background: var(--at-surface);
 }
 
 .at-libraryVoiceEmpty {
     padding: 2.5rem 1rem;
-    color: #64748b;
+    color: var(--at-muted);
     text-align: center
 }
 
@@ -1205,7 +1205,7 @@
 }
 
 .at-audioPreviewCard {
-    background: #fff
+    background: var(--at-surface)
 }
 
 .at-audioReading {
@@ -1235,12 +1235,12 @@
 }
 
 .at-audioReadingBlock:hover {
-    background: #f1f5f9
+    background: var(--at-surface-subtle)
 }
 
 .at-audioReadingBlock.is-selected {
     border-left-color: #2563eb;
-    background: #eff6ff
+    background: var(--at-surface-subtle)
 }
 
 .at-audioReadingBlock.is-heading {
@@ -1251,7 +1251,7 @@
 }
 
 .at-audioReadingEmpty {
-    color: #64748b
+    color: var(--at-muted)
 }
 
 .at-audioTimelineCard {
@@ -1318,7 +1318,7 @@
 
 .at-audioTimelineCard .cms-state-secondary.cms-clickable:hover .cms-btn {
     background: #344866;
-    color: #fff
+    color: var(--at-surface)
 }
 
 .at-audioTimelineCard .cms-btn:disabled {
@@ -1364,7 +1364,7 @@
 
 .at-audioInspectorLabel {
     margin-right: .15rem;
-    color: #edf4ff;
+    color: var(--at-surface-subtle);
     font-weight: 750
 }
 
@@ -1436,14 +1436,14 @@
     display: block;
     height: 330px;
     cursor: crosshair;
-    background: #0f172a
+    background: var(--at-text)
 }
 
 .at-audioTimelineFrame {
     display: flex;
     height: min(48vh, 360px);
     overflow: hidden;
-    background: #0f172a
+    background: var(--at-text)
 }
 
 .at-audioTimelineChannelViewport {
@@ -1485,9 +1485,9 @@
     align-items: center;
     gap: .8rem;
     padding: .7rem .8rem;
-    border: 1px solid #dbe3ee;
+    border: 1px solid var(--at-border);
     border-radius: .6rem;
-    background: #f8fafc
+    background: var(--at-surface-subtle)
 }
 
 .at-timelineMediaCopy {
@@ -1500,13 +1500,13 @@
 .at-timelineMediaCopy span,
 .at-timelineMediaCopy small {
     overflow: hidden;
-    color: #475569;
+    color: var(--at-muted);
     text-overflow: ellipsis;
     white-space: nowrap
 }
 
 .at-timelineMediaCopy strong {
-    color: #1e293b
+    color: var(--at-text)
 }
 
 .at-timelineMediaTags {
@@ -1538,8 +1538,8 @@
     overflow-x: auto;
     overflow-y: auto;
     overscroll-behavior: contain;
-    background: #0f172a;
-    scrollbar-color: #475569 #111827;
+    background: var(--at-text);
+    scrollbar-color: var(--at-muted) var(--at-text);
     scrollbar-width: thin
 }
 
@@ -1548,13 +1548,13 @@
 }
 
 .at-audioTimelineScroller::-webkit-scrollbar-track {
-    background: #111827
+    background: var(--at-text)
 }
 
 .at-audioTimelineScroller::-webkit-scrollbar-thumb {
-    border: 2px solid #111827;
+    border: 2px solid var(--at-text);
     border-radius: .8rem;
-    background: #475569
+    background: var(--at-muted)
 }
 
 .at-audioReadingWord {
@@ -1562,7 +1562,7 @@
     background: #fde68a;
     box-decoration-break: clone;
     box-shadow: 0 0 0 .08rem rgba(245, 158, 11, .35);
-    color: #0f172a;
+    color: var(--at-text);
 }
 
 
@@ -1644,11 +1644,11 @@
 
     .at-bookAudioMetrics>div:nth-child(3) {
         border-left: 0;
-        border-top: 1px solid #dbe3ee;
+        border-top: 1px solid var(--at-border);
     }
 
     .at-bookAudioMetrics>div:nth-child(4) {
-        border-top: 1px solid #dbe3ee;
+        border-top: 1px solid var(--at-border);
     }
 }
 

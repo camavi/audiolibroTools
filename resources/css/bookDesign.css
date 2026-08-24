@@ -8,9 +8,9 @@
 
 .at-bookDesignHeader {
     padding: 1.1rem 1.25rem;
-    border: 1px solid #dce6f4;
+    border: 1px solid var(--at-border);
     border-radius: .9rem;
-    background: linear-gradient(115deg, #fbfdff, #f1f6ff);
+    background: linear-gradient(115deg, var(--at-surface-subtle), var(--at-surface-subtle));
 }
 
 .at-bookDesignHeader span,
@@ -29,7 +29,7 @@
 
 .at-bookDesignHeader p {
     margin: 0;
-    color: #61738e;
+    color: var(--at-muted);
     font-size: .82rem;
 }
 
@@ -45,9 +45,9 @@
     display: grid;
     gap: .85rem;
     padding: 1rem;
-    border: 1px solid #dce6f4;
+    border: 1px solid var(--at-border);
     border-radius: .85rem;
-    background: #fff;
+    background: var(--at-surface);
 }
 
 .at-bookDesignSectionHead {
@@ -69,7 +69,7 @@
 }
 
 .at-bookDesignSectionHead small {
-    color: #73839a;
+    color: var(--at-muted);
     font-size: .72rem;
 }
 
@@ -82,7 +82,7 @@
 
 .at-bookDesignLibraryActions .cms-btn {
     min-height: 2.1rem;
-    color: #fff !important;
+    color: #f8fafc !important;
     font-size: .72rem;
 }
 
@@ -104,7 +104,7 @@
 }
 
 .at-bookDesignDialogActions .cms-btn {
-    color: #fff !important;
+    color: #f8fafc !important;
 }
 
 .at-bookDesignCoverStage {
@@ -129,7 +129,7 @@
     display: grid;
     place-items: center;
     gap: .5rem;
-    color: #71829a;
+    color: var(--at-muted);
     font-size: .78rem;
     text-align: center;
 }
@@ -149,7 +149,7 @@
     grid-column: 1 / -1;
     width: 100%;
     min-height: 2.25rem;
-    color: #fff !important;
+    color: #f8fafc !important;
 }
 
 .at-bookDesignAssetGrid {
@@ -161,7 +161,7 @@
 .at-bookDesignAsset {
     display: grid;
     overflow: hidden;
-    border: 1px solid #e1e8f2;
+    border: 1px solid var(--at-border);
     border-radius: .6rem;
     background: #fbfcfe;
 }
@@ -225,7 +225,7 @@
     align-content: center;
     gap: .45rem;
     padding: 1rem;
-    color: #71829a;
+    color: var(--at-muted);
     border: 1px dashed #cbd8ea;
     border-radius: .65rem;
     text-align: center;

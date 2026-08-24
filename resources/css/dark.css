@@ -1,0 +1,1316 @@
+/*
+ * Audiobook Tools dark theme
+ * CMSwift provides the base theme tokens. These tokens cover the custom
+ * dashboard layouts that predate the global theme switcher.
+ */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --at-page-bg: #0b1020;
+    --at-surface: #101827;
+    --at-surface-subtle: #16213f;
+    --at-surface-raised: #1b2945;
+    --at-text: #e5e7eb;
+    --at-muted: #a8b5c7;
+    --at-border: rgba(148, 163, 184, .28);
+    --at-border-strong: rgba(148, 163, 184, .42);
+    --at-accent-soft: rgba(96, 165, 250, .14);
+    --at-success-soft: rgba(74, 222, 128, .14);
+    --at-warning-soft: rgba(251, 191, 36, .14);
+    --at-danger-soft: rgba(248, 113, 113, .14);
+}
+
+:root[data-theme="dark"] body,
+:root[data-theme="dark"] #dashboard-root {
+    background: var(--at-page-bg);
+    color: var(--at-text);
+}
+
+/* Shared dashboard chrome and CMSwift overlay surfaces. */
+:root[data-theme="dark"] .at-dashboardPageActions {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-dashboardGlobalControls {
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .cms-dialog,
+:root[data-theme="dark"] .cms-menu,
+:root[data-theme="dark"] .cms-select-menu,
+:root[data-theme="dark"] .cms-singularity-menu-select,
+:root[data-theme="dark"] .cms-popover,
+:root[data-theme="dark"] .cms-tooltip {
+    border-color: var(--at-border);
+}
+
+/* Legacy custom headings and secondary copy still use fixed light colors. */
+:root[data-theme="dark"] [class*="at-"] :is(h1, h2, h3, h4, h5, h6),
+:root[data-theme="dark"] [class*="at-"] :is(strong, b) {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] [class*="at-"] :is(p, small),
+:root[data-theme="dark"] [class*="at-"] .text-muted {
+    color: var(--at-muted);
+}
+
+/* Native controls, previews and scrollable editor panes. */
+:root[data-theme="dark"] [class*="at-"] :is(input, textarea, select) {
+    background-color: var(--at-surface);
+    border-color: var(--at-border);
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] [class*="at-"] :is(input, textarea)::placeholder {
+    color: var(--at-muted);
+    opacity: .8;
+}
+
+:root[data-theme="dark"] [class*="at-"] ::selection {
+    background: rgba(96, 165, 250, .34);
+    color: #fff;
+}
+
+:root[data-theme="dark"] [class*="at-"] :is(audio, video) {
+    color-scheme: dark;
+}
+
+:root[data-theme="dark"] [class*="at-"]::-webkit-scrollbar-track {
+    background: var(--at-surface-subtle);
+}
+
+:root[data-theme="dark"] [class*="at-"]::-webkit-scrollbar-thumb {
+    background: var(--at-border-strong);
+}
+
+/* Dashboard home */
+:root[data-theme="dark"] .at-homePage {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-homeHero::after {
+    border-color: rgba(191, 219, 254, .92);
+}
+
+:root[data-theme="dark"] .at-homeHero :is(h2, p),
+:root[data-theme="dark"] .at-homeSectionHead h3,
+:root[data-theme="dark"] .at-homeStart :is(h3, p) {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-homeHero p,
+:root[data-theme="dark"] .at-homeStart p,
+:root[data-theme="dark"] .at-homeLoading,
+:root[data-theme="dark"] .at-homeStats span,
+:root[data-theme="dark"] .at-homeAction span,
+:root[data-theme="dark"] .at-homeBook :is(span, small) {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-homeBook {
+    background: var(--at-surface-raised);
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-homeBookCover {
+    background: var(--at-accent-soft);
+    color: #93c5fd;
+}
+
+:root[data-theme="dark"] .at-homeBook strong,
+:root[data-theme="dark"] .at-homeAction strong {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-homeStartIcon {
+    background: var(--at-accent-soft);
+    color: #60a5fa;
+}
+
+:root[data-theme="dark"] .at-homeSteps span {
+    background: rgba(148, 163, 184, .14);
+    color: var(--at-muted) !important;
+}
+
+:root[data-theme="dark"] .at-homeAction:hover {
+    border-color: #60a5fa;
+    background: var(--at-surface-raised);
+}
+
+:root[data-theme="dark"] .at-homeAction > .material-icons:first-child,
+:root[data-theme="dark"] .at-homeStats .material-icons {
+    color: #60a5fa;
+}
+
+:root[data-theme="dark"] .at-homeAction > .material-icons:last-child {
+    color: var(--at-muted);
+}
+
+/* Books library */
+:root[data-theme="dark"] .at-libraryPage {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-libraryHeader {
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-libraryHeader p,
+:root[data-theme="dark"] .at-libraryBookDescription,
+:root[data-theme="dark"] .at-libraryBookDetails,
+:root[data-theme="dark"] .at-libraryEmpty p,
+:root[data-theme="dark"] .at-libraryNotice {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-libraryEmpty,
+:root[data-theme="dark"] .at-libraryNotice {
+    border-color: var(--at-border-strong);
+    background: color-mix(in srgb, var(--at-surface) 78%, transparent);
+}
+
+:root[data-theme="dark"] .at-libraryBookCover {
+    box-shadow: 0 12px 20px rgb(0 0 0 / 32%);
+}
+
+:root[data-theme="dark"] .at-libraryBookCover:hover,
+:root[data-theme="dark"] .at-libraryBookCover:focus-visible {
+    box-shadow: 0 18px 28px rgb(0 0 0 / 48%);
+}
+
+/* Generated book covers are artwork, not dashboard surfaces. Keep their
+   contrast independent from --at-text, which is intentionally light in dark mode. */
+:root[data-theme="dark"] .at-bookCover {
+    color: #f8fafc;
+    background: linear-gradient(155deg, #172554, #0f172a);
+}
+
+:root[data-theme="dark"] .at-bookCover--2 { background: linear-gradient(155deg, #7c2d12, #2b1207); }
+:root[data-theme="dark"] .at-bookCover--3 { background: linear-gradient(155deg, #14532d, #052e16); }
+:root[data-theme="dark"] .at-bookCover--4 { background: linear-gradient(155deg, #581c87, #24103d); }
+:root[data-theme="dark"] .at-bookCover--5 { background: linear-gradient(155deg, #155e75, #083344); }
+:root[data-theme="dark"] .at-bookCover--6 { background: linear-gradient(155deg, #9f1239, #4c0519); }
+
+:root[data-theme="dark"] .at-bookCover :is(.at-bookCoverKicker, .at-bookCoverTitle, .at-bookCoverMark) {
+    color: inherit;
+}
+
+/* Activity analytics */
+:root[data-theme="dark"] .at-activityPage {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-activityHero {
+    background: linear-gradient(115deg, #172447 0%, var(--at-surface) 100%);
+}
+
+:root[data-theme="dark"] .at-activityFilters,
+:root[data-theme="dark"] .at-activityTrend,
+:root[data-theme="dark"] .at-activityBooks {
+    background: var(--at-surface);
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-activityStat {
+    background: #14203d;
+    border-color: rgba(148, 163, 184, .42);
+}
+
+:root[data-theme="dark"] .at-activityStat :is(strong, span, small),
+:root[data-theme="dark"] .at-activityCardHead h3,
+:root[data-theme="dark"] .at-activityBook {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-activityHero p,
+:root[data-theme="dark"] .at-activityStat :is(span, small),
+:root[data-theme="dark"] .at-activityCardHead small,
+:root[data-theme="dark"] .at-activityChartLabels,
+:root[data-theme="dark"] .at-activityRow {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-activityStat .material-icons {
+    color: #60a5fa;
+}
+
+:root[data-theme="dark"] .at-activityChart {
+    border-bottom-color: var(--at-border-strong);
+    background-image: linear-gradient(to top, rgba(96, 165, 250, .12) 1px, transparent 1px);
+}
+
+:root[data-theme="dark"] .at-activityBar i {
+    background: #60a5fa;
+    box-shadow: 0 0 10px rgb(96 165 250 / 20%);
+}
+
+:root[data-theme="dark"] .at-activityRow {
+    border-top-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-activityCover {
+    background: var(--at-accent-soft);
+    color: #93c5fd;
+}
+
+/* Financial statistics */
+:root[data-theme="dark"] .at-statPage {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-statHero {
+    background: linear-gradient(115deg, #172447 0%, var(--at-surface) 100%);
+}
+
+:root[data-theme="dark"] .at-statFilters,
+:root[data-theme="dark"] .at-statBooks,
+:root[data-theme="dark"] .at-statPayouts {
+    background: var(--at-surface);
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-statMoney {
+    background: #14203d;
+    border-color: rgba(148, 163, 184, .34);
+}
+
+:root[data-theme="dark"] .at-statHero :is(h2, p),
+:root[data-theme="dark"] .at-statHead h3,
+:root[data-theme="dark"] .at-statMoney strong,
+:root[data-theme="dark"] .at-statBook {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-statHero p,
+:root[data-theme="dark"] .at-statFilters small,
+:root[data-theme="dark"] .at-statMoney :is(span, small),
+:root[data-theme="dark"] .at-statHead small,
+:root[data-theme="dark"] .at-statRow,
+:root[data-theme="dark"] .at-statDialog {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-statMoney .material-icons,
+:root[data-theme="dark"] .at-statRow > strong {
+    color: #34d399;
+}
+
+:root[data-theme="dark"] .at-statRow {
+    border-top-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-statBook > .material-icons {
+    background: var(--at-accent-soft);
+    color: #93c5fd;
+}
+
+:root[data-theme="dark"] .at-statEmpty .material-icons,
+:root[data-theme="dark"] .at-statDialog .material-icons {
+    color: #93c5fd;
+}
+
+/* Token wallet */
+:root[data-theme="dark"] .at-tokensPage {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-tokensHero {
+    border-color: var(--at-border);
+    background: linear-gradient(115deg, #172447 0%, var(--at-surface) 100%);
+}
+
+:root[data-theme="dark"] .at-tokensBalanceCard,
+:root[data-theme="dark"] .at-tokensAutoCard,
+:root[data-theme="dark"] .at-tokensHistoryCard {
+    background: var(--at-surface);
+    border-color: var(--at-border);
+    box-shadow: 0 10px 24px rgb(0 0 0 / 18%);
+}
+
+:root[data-theme="dark"] .at-tokensStat {
+    background: #14203d;
+    border: 1px solid rgba(148, 163, 184, .24);
+}
+
+:root[data-theme="dark"] .at-tokensHero :is(h2, p),
+:root[data-theme="dark"] .at-tokensCardHead h3,
+:root[data-theme="dark"] .at-tokensStat strong,
+:root[data-theme="dark"] .at-tokensHistoryRow strong {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-tokensHero p,
+:root[data-theme="dark"] .at-tokensBalanceCard > p,
+:root[data-theme="dark"] .at-tokensAutoCard > p,
+:root[data-theme="dark"] .at-tokensCardHead > small,
+:root[data-theme="dark"] .at-tokensStat :is(span, small),
+:root[data-theme="dark"] .at-tokensHistoryRow small,
+:root[data-theme="dark"] .at-tokensEmpty,
+:root[data-theme="dark"] .at-tokensLoading {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-tokensStat .material-icons,
+:root[data-theme="dark"] .at-tokensCardHead > .material-icons,
+:root[data-theme="dark"] .at-tokensHistoryRow .material-icons,
+:root[data-theme="dark"] .at-tokensEmpty .material-icons {
+    color: #60a5fa;
+}
+
+:root[data-theme="dark"] .at-tokensHistoryRow {
+    border-top-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-tokensHistoryAmount {
+    color: #34d399;
+}
+
+:root[data-theme="dark"] .at-tokensHistoryAmount.is-negative {
+    color: #f87171;
+}
+
+:root[data-theme="dark"] .at-tokensPaymentNotice {
+    border-color: rgba(251, 191, 36, .42);
+    background: var(--at-warning-soft);
+    color: #fde68a;
+}
+
+/* Team collaboration */
+:root[data-theme="dark"] .at-teamPage {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-teamHero {
+    background: linear-gradient(115deg, #172447 0%, var(--at-surface) 100%);
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-teamCard {
+    background: var(--at-surface);
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-teamHero :is(h2, p),
+:root[data-theme="dark"] .at-teamHead h3,
+:root[data-theme="dark"] .at-teamRow strong {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-teamHero p,
+:root[data-theme="dark"] .at-teamHead small,
+:root[data-theme="dark"] .at-teamRow small,
+:root[data-theme="dark"] .at-teamEmpty,
+:root[data-theme="dark"] .at-teamLoading {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-teamRow {
+    border-top-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-teamEmpty .material-icons {
+    color: #93c5fd;
+}
+
+:root[data-theme="dark"] .at-teamRow .is-pending { color: #fbbf24; }
+:root[data-theme="dark"] .at-teamRow .is-accepted { color: #34d399; }
+:root[data-theme="dark"] .at-teamRow .is-declined { color: #f87171; }
+
+/* Profile and security */
+:root[data-theme="dark"] .at-profilePage {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-profileHero {
+    border-color: var(--at-border);
+    background: linear-gradient(115deg, #172447 0%, var(--at-surface) 100%);
+}
+
+:root[data-theme="dark"] .at-profileCard {
+    background: var(--at-surface);
+    border-color: var(--at-border);
+    box-shadow: 0 10px 24px rgb(0 0 0 / 18%);
+}
+
+:root[data-theme="dark"] .at-profileHero :is(h2, p),
+:root[data-theme="dark"] .at-profileCard h3,
+:root[data-theme="dark"] .at-profileEmail strong,
+:root[data-theme="dark"] .at-profileSummaryItem strong,
+:root[data-theme="dark"] .at-profileEmpty h3 {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-profileHero p,
+:root[data-theme="dark"] .at-profileCard p,
+:root[data-theme="dark"] .at-profileEmail :is(span, small),
+:root[data-theme="dark"] .at-profileCardActions small,
+:root[data-theme="dark"] .at-profileSummaryItem span,
+:root[data-theme="dark"] .at-profileLoading,
+:root[data-theme="dark"] .at-profileEmpty {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-profileCardHead > .material-icons,
+:root[data-theme="dark"] .at-profileSummaryItem .material-icons,
+:root[data-theme="dark"] .at-profileEmpty .material-icons {
+    color: #60a5fa;
+}
+
+:root[data-theme="dark"] .at-profileEmail,
+:root[data-theme="dark"] .at-profileSummaryItem {
+    border-color: var(--at-border);
+    background: #14203d;
+}
+
+:root[data-theme="dark"] .at-profileDangerCard {
+    border-color: rgba(248, 113, 113, .42);
+    background: var(--at-danger-soft);
+}
+
+:root[data-theme="dark"] .at-profileDangerCard .at-profileCardHead > div > span,
+:root[data-theme="dark"] .at-profileDangerCard .material-icons,
+:root[data-theme="dark"] .at-profileDangerDialogHead .at-profileEyebrow {
+    color: #f87171;
+}
+
+/* Support centre and administration */
+:root[data-theme="dark"] .at-supportPage {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-supportHero {
+    border-color: var(--at-border);
+    background: linear-gradient(115deg, #172447 0%, var(--at-surface) 100%);
+}
+
+:root[data-theme="dark"] .at-supportCard,
+:root[data-theme="dark"] .at-supportTicket {
+    background: var(--at-surface);
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-supportTicket:hover {
+    border-color: #60a5fa;
+    background: var(--at-surface-raised);
+}
+
+:root[data-theme="dark"] .at-supportHero :is(h2, p),
+:root[data-theme="dark"] .at-supportHead h3,
+:root[data-theme="dark"] .at-supportTicket strong,
+:root[data-theme="dark"] .at-supportThread article strong {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-supportHero p,
+:root[data-theme="dark"] .at-supportTicket small,
+:root[data-theme="dark"] .at-supportUsers small,
+:root[data-theme="dark"] .at-supportThread small,
+:root[data-theme="dark"] .at-supportLoading {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-supportThread article {
+    background: var(--at-surface-raised);
+    border: 1px solid var(--at-border);
+}
+
+:root[data-theme="dark"] .at-supportThread article.is-internal {
+    border-left-color: #fb923c;
+    background: rgba(154, 52, 18, .24);
+}
+
+:root[data-theme="dark"] .at-supportUsers > div {
+    border-bottom-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-supportTicketMeta .is-open { color: #60a5fa; }
+:root[data-theme="dark"] .at-supportTicketMeta .is-pending { color: #fbbf24; }
+:root[data-theme="dark"] .at-supportTicketMeta :is(.is-resolved, .is-closed) { color: #34d399; }
+
+/* Administration users table */
+:root[data-theme="dark"] .at-adminUsersTable,
+:root[data-theme="dark"] .at-adminUsersTable .cms-table {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-adminUsersTable.cms-table-shell .cms-table-wrap,
+:root[data-theme="dark"] .at-adminUsersTable .cms-table-wrap {
+    --set-background-color: var(--at-surface);
+    --set-border-color: var(--at-border);
+    --set-color: var(--at-text);
+    --set-color-1: #1b2945;
+    --set-hover: var(--at-surface-raised);
+    background: var(--at-surface);
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-adminUsersTable .cms-table thead th {
+    background: #1b2945;
+    border-bottom-color: var(--at-border-strong);
+    color: #dbeafe;
+}
+
+:root[data-theme="dark"] .at-adminUsersTable .cms-table td {
+    border-bottom-color: var(--at-border);
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-adminUsersTable .cms-table tbody tr:hover {
+    background: var(--at-surface-raised);
+}
+
+:root[data-theme="dark"] .at-adminUsersTable .cms-table-search {
+    --set-background-color: #14203d;
+    --set-border-color: var(--at-border);
+    --set-color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-adminUsersTable .cms-table-chip,
+:root[data-theme="dark"] .at-adminUsersTable .cms-table-state {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-adminRole,
+:root[data-theme="dark"] .at-adminStatus {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.7rem;
+    padding: 0 .55rem;
+    border: 1px solid var(--at-border);
+    border-radius: 999px;
+    background: var(--at-surface-raised);
+    color: var(--at-text);
+    font-size: .75rem;
+    text-transform: capitalize;
+}
+
+:root[data-theme="dark"] .at-adminStatus.is-active { color: #34d399; }
+:root[data-theme="dark"] .at-adminStatus:is(.is-suspended, .is-blocked) { color: #f87171; }
+
+/* Audio-library dialogs */
+:root[data-theme="dark"] .at-uploadAudioDialog,
+:root[data-theme="dark"] .at-uploadAudioSample,
+:root[data-theme="dark"] .at-uploadAudioVoiceRow {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-uploadAudioSample,
+:root[data-theme="dark"] .at-uploadAudioVoiceRow {
+    background: var(--at-surface-raised);
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-uploadAudioSamplesHead,
+:root[data-theme="dark"] .at-uploadAudioToneRow + .at-uploadAudioToneRow {
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-uploadAudioFile {
+    background: #0f172a;
+    border-color: var(--at-border-strong);
+    color: var(--at-muted);
+    color-scheme: dark;
+}
+
+:root[data-theme="dark"] .at-uploadAudioToneHint {
+    background: var(--at-accent-soft);
+    border: 1px solid rgba(96, 165, 250, .28);
+    color: #bfdbfe;
+}
+
+:root[data-theme="dark"] .at-uploadAudioToneHint .material-icons {
+    color: #60a5fa;
+}
+
+:root[data-theme="dark"] .at-uploadAudioSample :is(audio, input[type="file"]) {
+    color-scheme: dark;
+}
+
+/* Book workspace panel */
+:root[data-theme="dark"] .at-bookPanelPage {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-bookPanelHero {
+    border-color: var(--at-border-strong);
+    background: linear-gradient(135deg, #172447 0%, var(--at-surface) 100%);
+}
+
+:root[data-theme="dark"] .at-bookPanelHero::after {
+    border-color: rgba(96, 165, 250, .18);
+    box-shadow: 0 0 0 2.5rem rgba(59, 130, 246, .06), 0 0 0 5rem rgba(59, 130, 246, .035);
+}
+
+:root[data-theme="dark"] .at-bookPanelArtworkPlaceholder {
+    color: #f8fafc;
+    background: linear-gradient(155deg, #312e81, #0f172a);
+}
+
+:root[data-theme="dark"] .at-bookPanelHeroArtwork {
+    box-shadow: 0 14px 24px rgb(0 0 0 / 38%);
+}
+
+:root[data-theme="dark"] .at-bookPanelHero p,
+:root[data-theme="dark"] .at-bookPanelMeta,
+:root[data-theme="dark"] .at-bookPanelAreaContent small,
+:root[data-theme="dark"] .at-bookPanelAreaSoon,
+:root[data-theme="dark"] .at-bookPanelNotice {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-bookPanelArea {
+    background: var(--at-surface);
+    border-color: var(--at-border-strong);
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-bookPanelArea.is-available:hover,
+:root[data-theme="dark"] .at-bookPanelArea.is-available:focus-visible {
+    border-color: #60a5fa;
+    background: var(--at-surface-raised);
+    box-shadow: 0 10px 20px rgb(0 0 0 / 28%);
+}
+
+:root[data-theme="dark"] .at-bookPanelAreaIcon {
+    color: #60a5fa;
+    background: var(--at-accent-soft);
+}
+
+:root[data-theme="dark"] .at-bookPanelAreaAction,
+:root[data-theme="dark"] .at-bookPanelEyebrow {
+    color: #60a5fa;
+}
+
+:root[data-theme="dark"] .at-bookPanelNotice {
+    border-color: var(--at-border-strong);
+    background: var(--at-surface);
+}
+
+/* Manuscript editor workspace */
+:root[data-theme="dark"] .at-page-bookEditor .at-content-editor > div {
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-content-editor :is(.at-indexBook, .at-navCommand, .at-rightWorkspace),
+:root[data-theme="dark"] .at-editorWorkspaceHeader,
+:root[data-theme="dark"] .at-rightWorkspace-header {
+    background: var(--at-surface);
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-editorWorkspaceHeader-title strong,
+:root[data-theme="dark"] .at-indexBook-header,
+:root[data-theme="dark"] .at-indexBook-main,
+:root[data-theme="dark"] .at-rightWorkspace-title {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-indexBook-header,
+:root[data-theme="dark"] .at-rightWorkspace-rail,
+:root[data-theme="dark"] .at-rightWorkspace-header,
+:root[data-theme="dark"] .at-rightWorkspace-summary {
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-rightWorkspace-rail,
+:root[data-theme="dark"] .at-editorStatus,
+:root[data-theme="dark"] .at-bottomBar {
+    background: var(--at-surface-subtle);
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-editorToolbar {
+    background: #0f172a;
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-editorToolbar-group {
+    background: var(--at-surface);
+    border-color: var(--at-border);
+    box-shadow: none;
+}
+
+:root[data-theme="dark"] .at-editorToolbar .at-editorToolbar-btn:hover:not(:disabled),
+:root[data-theme="dark"] .at-editorToolbar .at-editorToolbar-btn.cms-btn:hover:not(:disabled),
+:root[data-theme="dark"] .at-editorToolbar-btn.is-active {
+    background: var(--at-surface-raised) !important;
+    color: #60a5fa !important;
+}
+
+:root[data-theme="dark"] .at-editorHeader-icon {
+    border-color: transparent;
+    background: transparent;
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-editorHeader-icon:hover,
+:root[data-theme="dark"] .at-editorHeader-icon.is-active {
+    border-color: #3b82f6;
+    background: var(--at-accent-soft);
+    color: #60a5fa;
+}
+
+:root[data-theme="dark"] .at-tiptap-editor {
+    background: #0b1020;
+}
+
+:root[data-theme="dark"] .at-tiptap-editor .tiptap {
+    background: #101827;
+    border-color: var(--at-border-strong);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 34%);
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-tiptap-editor .tiptap hr[data-page-break="true"]::after {
+    background: #101827;
+}
+
+:root[data-theme="dark"] .at-rightWorkspace-note.warning,
+:root[data-theme="dark"] .at-correctionProvider.has-warning {
+    background: var(--at-warning-soft);
+    color: #fde68a;
+}
+
+:root[data-theme="dark"] .at-editorStatus.danger,
+:root[data-theme="dark"] .at-chatError {
+    background: var(--at-danger-soft);
+    border-color: rgba(248, 113, 113, .36);
+    color: #fecaca;
+}
+
+:root[data-theme="dark"] .at-indexBook-commentBadge.has-open,
+:root[data-theme="dark"] .at-rightWorkspace-action.is-primary:not(:disabled) {
+    background: var(--at-accent-soft);
+    color: #93c5fd;
+}
+
+:root[data-theme="dark"] .at-rightWorkspace-action.is-primary:not(:disabled):hover {
+    background: rgba(96, 165, 250, .24);
+}
+
+/* AI settings dialogs in the editor */
+:root[data-theme="dark"] .at-aiSettingsDialog,
+:root[data-theme="dark"] .at-aiSettings {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-aiSettings-providerCard {
+    background: #14203d;
+    border-color: rgba(96, 165, 250, .34);
+}
+
+:root[data-theme="dark"] .at-aiSettings-providerCard strong {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-aiSettings-providerCard :is(span, small) {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-aiSettings-promptBtn {
+    background: var(--at-surface);
+    border-color: var(--at-border);
+    color: #93c5fd;
+}
+
+:root[data-theme="dark"] .at-aiSettings-promptBtn:hover {
+    background: var(--at-accent-soft);
+    border-color: #60a5fa;
+    color: #bfdbfe;
+}
+
+:root[data-theme="dark"] .at-rightWorkspace-action {
+    background: var(--at-surface);
+    border-color: var(--at-border-strong);
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-rightWorkspace-action:not(:disabled):hover {
+    background: var(--at-surface-raised);
+    border-color: #60a5fa;
+}
+
+:root[data-theme="dark"] .at-rightWorkspace-action:disabled {
+    background: var(--at-surface-subtle);
+    border-color: var(--at-border);
+    color: var(--at-muted);
+}
+
+/* Activity review queue in the editor workspace */
+:root[data-theme="dark"] .at-page-bookEditor .at-activityStats > div {
+    background: #14203d;
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activityStats span,
+:root[data-theme="dark"] .at-page-bookEditor .at-activityItemMeta,
+:root[data-theme="dark"] .at-page-bookEditor .at-activityItemBody,
+:root[data-theme="dark"] .at-page-bookEditor .at-activityItemPreview {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activityNav {
+    border-color: var(--at-border);
+    background: linear-gradient(180deg, rgb(16 24 39 / 94%), var(--at-surface) 42%);
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activityNavBtn {
+    border-color: var(--at-border-strong);
+    background: var(--at-surface);
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activityNavBtn:not(:disabled):hover {
+    border-color: #60a5fa;
+    background: var(--at-surface-raised);
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activityItem {
+    background: var(--at-surface-raised);
+    border-color: var(--at-border);
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activityItem:hover {
+    border-color: #60a5fa;
+    background: #1f3155;
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activityItemIcon {
+    border-color: var(--at-border-strong);
+    background: var(--at-surface);
+    color: #93c5fd;
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activitySourceBadge.source-correct {
+    background: rgb(34 211 238 / 14%);
+    color: #67e8f9;
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activitySourceBadge.source-comments {
+    background: var(--at-accent-soft);
+    color: #93c5fd;
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activitySourceBadge.source-translate {
+    background: rgb(167 139 250 / 14%);
+    color: #c4b5fd;
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activitySourceBadge.source-audio {
+    background: var(--at-success-soft);
+    color: #86efac;
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activitySourceBadge.source-versions {
+    background: var(--at-warning-soft);
+    color: #fdba74;
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activityItemTitle em {
+    background: var(--at-accent-soft);
+    color: #bfdbfe;
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activityFeedback {
+    background: var(--at-success-soft);
+    color: #86efac;
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activityFeedback.is-error {
+    background: var(--at-danger-soft);
+    color: #fca5a5;
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activityItemAction {
+    border-color: var(--at-border-strong);
+    background: var(--at-surface);
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activityItemAction.is-primary,
+:root[data-theme="dark"] .at-page-bookEditor .at-activityItemAction:not(:disabled):hover {
+    border-color: #60a5fa;
+    background: var(--at-accent-soft);
+    color: #bfdbfe;
+}
+
+:root[data-theme="dark"] .at-page-bookEditor .at-activityItemAction:disabled {
+    background: var(--at-surface-subtle);
+    border-color: var(--at-border);
+    color: var(--at-muted);
+}
+
+/* Translation workspace */
+:root[data-theme="dark"] .at-translateRoute {
+    --at-translate-ink: var(--at-text);
+    --at-translate-muted: var(--at-muted);
+    --at-translate-canvas: #0d1730;
+    --at-translate-line: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-translateTopbar,
+:root[data-theme="dark"] .at-translateBottomBar {
+    background: rgb(16 24 39 / 96%);
+    box-shadow: none;
+}
+
+:root[data-theme="dark"] .at-translateWorkspace {
+    background: var(--at-translate-canvas);
+    box-shadow: 0 16px 38px rgb(0 0 0 / 28%);
+}
+
+:root[data-theme="dark"] .at-translateNavigator {
+    background: rgb(16 24 39 / 88%);
+}
+
+:root[data-theme="dark"] .at-translateBlock:hover {
+    background: rgb(148 163 184 / 14%);
+}
+
+:root[data-theme="dark"] .at-translateBlock.is-active {
+    background: var(--at-accent-soft);
+}
+
+:root[data-theme="dark"] .at-translateBlockStatus {
+    background: rgb(148 163 184 / 14%);
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-translateBlockStatus.status-draft,
+:root[data-theme="dark"] .at-translateStatus.status-draft {
+    background: var(--at-warning-soft);
+    color: #fde68a;
+}
+
+:root[data-theme="dark"] .at-translateBlockStatus.status-approved,
+:root[data-theme="dark"] .at-translateStatus.status-approved,
+:root[data-theme="dark"] .at-translateJobStatus.status-completed {
+    background: var(--at-success-soft);
+    color: #86efac;
+}
+
+:root[data-theme="dark"] .at-translateBlockStatus.status-rejected,
+:root[data-theme="dark"] .at-translateBottomBar .at-translateStatus.status-rejected,
+:root[data-theme="dark"] .at-translateJobStatus.status-completed_with_errors,
+:root[data-theme="dark"] .at-translateJobStatus.status-failed {
+    background: var(--at-danger-soft);
+    color: #fca5a5;
+}
+
+:root[data-theme="dark"] .at-translatePane {
+    background: rgb(16 24 39 / 78%);
+}
+
+:root[data-theme="dark"] .at-translatePane--target {
+    border-color: rgb(96 165 250 / 42%);
+    background: #16213f;
+}
+
+:root[data-theme="dark"] .at-translateTextarea .cms-textarea,
+:root[data-theme="dark"] .at-translateTextarea textarea {
+    border-color: var(--at-border-strong);
+    background: #101827;
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-translateTextarea textarea:focus {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgb(96 165 250 / 18%);
+}
+
+:root[data-theme="dark"] .at-translatePaneFooter {
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-translateBottomBar .at-translateStatus.status-missing,
+:root[data-theme="dark"] .at-translateCount,
+:root[data-theme="dark"] .at-translateStatus {
+    background: rgb(148 163 184 / 14%);
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-translateJobStatus {
+    background: var(--at-accent-soft);
+    color: #93c5fd;
+}
+
+:root[data-theme="dark"] .at-translateFeedback.is-success { color: #86efac; }
+:root[data-theme="dark"] .at-translateFeedback.is-warning { color: #fde68a; }
+:root[data-theme="dark"] .at-translateFeedback.is-danger { color: #fca5a5; }
+
+:root[data-theme="dark"] .at-translateProviderCatalog,
+:root[data-theme="dark"] .at-managedBatchSummary {
+    background: var(--at-surface-subtle);
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-translateProviderCatalogItem {
+    background: var(--at-surface);
+    border-color: rgb(96 165 250 / 28%);
+}
+
+/* Audiobook studio and its dialogs */
+:root[data-theme="dark"] .at-audiobookTopbar,
+:root[data-theme="dark"] .at-audiobookWorkspace {
+    background: #16213f;
+    border-color: var(--at-border);
+    box-shadow: none;
+}
+
+:root[data-theme="dark"] .at-audioEditorCard,
+:root[data-theme="dark"] .at-audioPreviewCard {
+    background: var(--at-surface);
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-audioTabs,
+:root[data-theme="dark"] .at-audioHint,
+:root[data-theme="dark"] .at-bookStyleList,
+:root[data-theme="dark"] .at-bookAudioMetrics,
+:root[data-theme="dark"] .at-audioPublishNotice,
+:root[data-theme="dark"] .at-audioPublishProgress,
+:root[data-theme="dark"] .at-audioGeneratedGroups,
+:root[data-theme="dark"] .at-audioGeneratedChildren,
+:root[data-theme="dark"] .at-audioInsertPosition,
+:root[data-theme="dark"] .at-libraryVoiceResult,
+:root[data-theme="dark"] .at-audioGeneratorSplit {
+    background: var(--at-surface-subtle);
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-audioTabs button.is-active,
+:root[data-theme="dark"] .at-bookStyleOption.is-selected,
+:root[data-theme="dark"] .at-bookStyleInspector,
+:root[data-theme="dark"] .at-audioPublishRow,
+:root[data-theme="dark"] .at-audioGeneratedGroup,
+:root[data-theme="dark"] .at-audioCharacterAssignRow {
+    background: var(--at-surface);
+    border-color: var(--at-border);
+    box-shadow: none;
+}
+
+:root[data-theme="dark"] .at-audioMetric {
+    background: #14203d;
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-audioVoiceSelect {
+    border-color: rgb(96 165 250 / 36%);
+    background: linear-gradient(135deg, #172554, #1e293b);
+}
+
+:root[data-theme="dark"] .at-audioVoiceSelectCopy strong,
+:root[data-theme="dark"] .at-bookStyleOption strong,
+:root[data-theme="dark"] .at-bookStyleInspectorHead strong,
+:root[data-theme="dark"] .at-bookStyleSection > strong,
+:root[data-theme="dark"] .at-audioGeneratorOriginal > strong,
+:root[data-theme="dark"] .at-audioGeneratorEditable > strong,
+:root[data-theme="dark"] .at-audioGeneratorSplitRulesHead strong,
+:root[data-theme="dark"] .at-audioGeneratorRuleSectionHead strong,
+:root[data-theme="dark"] .at-audioGeneratorSplitsHead strong,
+:root[data-theme="dark"] .at-audioInsertPositionHead strong,
+:root[data-theme="dark"] .at-audioCharacterIdentity strong,
+:root[data-theme="dark"] .at-audioCharacterVoice strong {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-audioGeneratorTexts,
+:root[data-theme="dark"] .at-audioGeneratorSplitRules {
+    background: linear-gradient(135deg, #14203d, var(--at-surface));
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-audioGeneratorText {
+    border-color: var(--at-border-strong);
+    background: #101827;
+    box-shadow: none;
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-audioGeneratorTexts textarea {
+    border-color: #3b82f6 !important;
+    background: var(--at-surface) !important;
+    box-shadow: none;
+}
+
+:root[data-theme="dark"] .at-audioGeneratorRuleSection--advanced,
+:root[data-theme="dark"] .at-audioGeneratedChild {
+    border-color: var(--at-border);
+}
+
+:root[data-theme="dark"] .at-audioGeneratorSplit:hover,
+:root[data-theme="dark"] .at-libraryVoiceResult:hover {
+    border-color: #60a5fa;
+    box-shadow: none;
+}
+
+:root[data-theme="dark"] .at-audioGroupUsed {
+    background: var(--at-success-soft);
+    color: #86efac;
+}
+
+:root[data-theme="dark"] .at-characterIcon {
+    background: var(--at-accent-soft);
+    color: #93c5fd;
+}
+
+:root[data-theme="dark"] .at-audioReadingBlock:hover,
+:root[data-theme="dark"] .at-audioReadingBlock.is-selected {
+    background: var(--at-accent-soft);
+}
+
+:root[data-theme="dark"] :is(.at-audioPublishDialog, .at-audioListDialog, .at-characterDialog, .at-paragraphCharacterDialog, .at-libraryVoiceDialog, .at-audioGeneratorDialog) :is(small, .text-muted) {
+    color: var(--at-muted);
+}
+
+/* Book design workspace and image-generation dialog */
+:root[data-theme="dark"] .at-bookDesignHeader {
+    border-color: var(--at-border);
+    background: linear-gradient(115deg, #172554, #14203d);
+}
+
+:root[data-theme="dark"] .at-bookDesignHeader h2,
+:root[data-theme="dark"] .at-bookDesignSectionHead h3,
+:root[data-theme="dark"] .at-bookDesignAssetMeta strong,
+:root[data-theme="dark"] .at-bookDesignLibraryEmpty strong {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-bookDesignCover,
+:root[data-theme="dark"] .at-bookDesignLibrary,
+:root[data-theme="dark"] .at-bookDesignAsset {
+    border-color: var(--at-border);
+    background: var(--at-surface);
+}
+
+:root[data-theme="dark"] .at-bookDesignCoverStage {
+    background: #14203d;
+}
+
+:root[data-theme="dark"] .at-bookDesignAsset > img {
+    background: var(--at-surface-subtle);
+}
+
+:root[data-theme="dark"] .at-bookDesignAsset.is-cover {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 2px rgb(96 165 250 / 18%);
+}
+
+:root[data-theme="dark"] .at-bookDesignAssetActions > span {
+    color: #86efac;
+}
+
+:root[data-theme="dark"] .at-bookDesignLibraryEmpty,
+:root[data-theme="dark"] .at-bookDesignLoading {
+    border-color: var(--at-border-strong);
+    background: rgb(16 24 39 / 52%);
+}
+
+:root[data-theme="dark"] .at-bookDesignGenerateNote {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-bookDesignLibraryActions .cms-state-secondary > .cms-btn,
+:root[data-theme="dark"] .at-bookDesignDialogActions .cms-state-secondary > .cms-btn {
+    color: var(--at-text) !important;
+}
+
+:root[data-theme="dark"] .at-bookDesignLibraryActions .cms-state-primary > .cms-btn,
+:root[data-theme="dark"] .at-bookDesignDialogActions .cms-state-primary > .cms-btn,
+:root[data-theme="dark"] .at-bookDesignFormat .cms-state-primary > .cms-btn {
+    color: #eff6ff !important;
+}
+
+/* ePub and PDF studios */
+:root[data-theme="dark"] :is(.at-bookEpubHeader, .at-bookPdfHeader) {
+    border-color: var(--at-border);
+    background: linear-gradient(115deg, #172554, #14203d);
+}
+
+:root[data-theme="dark"] :is(.at-bookEpubHeader h2, .at-bookPdfHeader h2, .at-bookEpubCardHead h3, .at-bookPdfCardHead h3) {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] :is(.at-bookEpubCard, .at-bookPdfCard) {
+    border-color: var(--at-border);
+    background: var(--at-surface);
+}
+
+:root[data-theme="dark"] :is(.at-bookEpubChecks > div, .at-bookPdfChecks > div) {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-bookEpubLoading,
+:root[data-theme="dark"] .at-bookPdfLoading {
+    border-color: var(--at-border-strong);
+    background: rgb(16 24 39 / 52%);
+}
+
+:root[data-theme="dark"] :is(.at-bookEpubHeader, .at-bookEpubActions, .at-bookEpubDownload, .at-bookPdfHeader, .at-bookPdfActions, .at-bookPdfDownload) .cms-state-secondary > .cms-btn {
+    color: var(--at-text) !important;
+}
+
+:root[data-theme="dark"] :is(.at-bookEpubHeader, .at-bookEpubActions, .at-bookEpubDownload, .at-bookPdfHeader, .at-bookPdfActions, .at-bookPdfDownload) .cms-state-primary > .cms-btn {
+    color: #eff6ff !important;
+}
+
+/* Distribution workspace and provider connection dialog */
+:root[data-theme="dark"] .at-distributionHeader {
+    border-color: var(--at-border);
+    background: linear-gradient(115deg, #172554, #14203d);
+}
+
+:root[data-theme="dark"] .at-distributionHeader h2,
+:root[data-theme="dark"] .at-distributionReadiness h3,
+:root[data-theme="dark"] .at-distributionChannels h3,
+:root[data-theme="dark"] .at-distributionProviderHead strong {
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-distributionReadiness,
+:root[data-theme="dark"] .at-distributionChannels,
+:root[data-theme="dark"] .at-distributionProvider {
+    border-color: var(--at-border);
+    background: var(--at-surface);
+}
+
+:root[data-theme="dark"] .at-distributionReadinessItems > div {
+    border-color: var(--at-border);
+    background: var(--at-surface-subtle);
+}
+
+:root[data-theme="dark"] .at-distributionProvider.is-connected {
+    border-color: rgb(74 222 128 / 44%);
+    background: rgb(74 222 128 / 7%);
+}
+
+:root[data-theme="dark"] .at-distributionProviderIcon {
+    background: var(--at-success-soft);
+    color: #86efac;
+}
+
+:root[data-theme="dark"] .at-distributionProviderHead small,
+:root[data-theme="dark"] .at-distributionProvider p,
+:root[data-theme="dark"] .at-distributionState.not_connected {
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] :is(.at-distributionReadinessItems .is-ready .cms-icon, .at-distributionReadinessItems .is-ready small, .at-distributionState.manual_ready, .at-distributionState.connected) {
+    color: #86efac;
+}
+
+:root[data-theme="dark"] :is(.at-distributionReadinessItems .is-missing .cms-icon, .at-distributionReadinessItems .is-missing small) {
+    color: #fde68a;
+}
+
+:root[data-theme="dark"] .at-distributionManual {
+    background: var(--at-surface-subtle);
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-distributionLoading {
+    border-color: var(--at-border-strong);
+    background: rgb(16 24 39 / 52%);
+}

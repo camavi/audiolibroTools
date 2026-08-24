@@ -9,9 +9,9 @@
 .at-statFilters,
 .at-statBooks,
 .at-statPayouts {
-    border: 1px solid #d9e4f5;
+    border: 1px solid var(--at-border);
     border-radius: 14px;
-    background: #fff
+    background: var(--at-surface)
 }
 
 .at-statHero {
@@ -20,7 +20,7 @@
     align-items: center;
     gap: 16px;
     padding: 20px 22px;
-    background: #fbfdff
+    background: var(--at-surface-subtle)
 }
 
 .at-statHero span,
@@ -38,7 +38,7 @@
 
 .at-statHero p {
     margin: 0;
-    color: #5b7197
+    color: var(--at-muted)
 }
 
 .at-statWorkspace {
@@ -74,9 +74,9 @@
     display: flex;
     gap: 9px;
     padding: 14px;
-    border: 1px solid #e0e8f4;
+    border: 1px solid var(--at-border);
     border-radius: 11px;
-    background: #fff
+    background: var(--at-surface)
 }
 
 .at-statMoney .material-icons {
@@ -115,7 +115,7 @@
 }
 
 .at-statHead small {
-    color: #7588a3;
+    color: var(--at-muted);
     font-size: .72rem
 }
 
@@ -168,7 +168,7 @@
     align-items: center;
     justify-content: center;
     gap: 9px;
-    color: #7588a3
+    color: var(--at-muted)
 }
 
 .at-statEmpty strong,
@@ -192,7 +192,7 @@
 .at-statLoading {
     padding: 50px;
     text-align: center;
-    color: #7487a3
+    color: var(--at-muted)
 }
 
 @media(max-width:760px) {

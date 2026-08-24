@@ -14,9 +14,9 @@
 .at-homeSection,
 .at-homeStart,
 .at-homeStats {
-    border: 1px solid #d9e4f5;
+    border: 1px solid var(--at-border);
     border-radius: 16px;
-    background: #fff
+    background: var(--at-surface)
 }
 
 .at-homeHero {
@@ -28,7 +28,7 @@
     min-height: 130px;
     padding: 28px 30px;
     overflow: hidden;
-    background: linear-gradient(115deg, #fff 0%, #f2f7ff 100%)
+    background: linear-gradient(115deg, var(--at-surface) 0%, var(--at-surface-subtle) 100%)
 }
 
 .at-homeHero:after {
@@ -50,7 +50,7 @@
 
 .at-homeHero .cms-btn,
 .at-homeStart .cms-btn {
-    color: #fff !important
+    color: var(--at-surface) !important
 }
 
 .at-homeHero span,
@@ -100,7 +100,7 @@
     gap: 9px;
     text-align: left;
     padding: 10px;
-    border: 1px solid #e2eaf5;
+    border: 1px solid var(--at-border);
     border-radius: 10px;
     background: #fbfcff
 }
@@ -192,15 +192,15 @@
     gap: 5px 9px;
     align-items: center;
     padding: 13px;
-    border: 1px solid #e0e8f4;
+    border: 1px solid var(--at-border);
     border-radius: 10px;
-    background: #fbfdff;
+    background: var(--at-surface-subtle);
     text-align: left
 }
 
 .at-homeAction:hover {
     border-color: #a9c6ef;
-    background: #f7faff
+    background: var(--at-surface-subtle)
 }
 
 .at-homeAction>.material-icons:first-child {
@@ -239,7 +239,7 @@
     align-items: center;
     gap: 9px;
     padding: 14px;
-    border-left: 1px solid #e3eaf4
+    border-left: 1px solid var(--at-border)
 }
 
 .at-homeStats>div:first-child {
@@ -298,7 +298,7 @@
 
     .at-homeStats>div {
         border-left: 0;
-        border-top: 1px solid #e3eaf4
+        border-top: 1px solid var(--at-border)
     }
 
     .at-homeStats>div:first-child {

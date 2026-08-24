@@ -1,10 +1,13 @@
 @import 'cmswift/css/base.css';
 @import 'cmswift/css/ui.css';
 @import 'cmswift/css/responsive.css';
+@import './dark.css';
 
 body {
     padding: 0;
     margin: 0;
+    background: var(--cms-bg);
+    color: var(--cms-text);
 }
 
 .at-dashboardPageActions {
@@ -14,8 +17,39 @@ body {
     gap: .5rem;
 }
 
+.at-dashboardGlobalControls {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding-left: .5rem;
+    border-left: 1px solid var(--cms-border-color);
+}
+
+.at-dashboardLocaleSelect {
+    min-width: 8.5rem;
+}
+
+.at-dashboardThemeToggle {
+    min-width: 2.5rem;
+}
+
+/* Dashboard pages created before theming use a small shared set of neutral colors. */
+:root {
+    --at-page-bg: #f8fafc;
+    --at-surface: #ffffff;
+    --at-surface-subtle: #f8fafc;
+    --at-text: #334155;
+    --at-muted: #64748b;
+    --at-border: #dbe3ee;
+}
+
 @media (max-width: 640px) {
     .at-dashboardPageActions {
         flex-wrap: wrap;
+    }
+
+    .at-dashboardGlobalControls {
+        padding-left: 0;
+        border-left: 0;
     }
 }

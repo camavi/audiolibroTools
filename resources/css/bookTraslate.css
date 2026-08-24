@@ -1,9 +1,9 @@
 .at-translateRoute {
     --at-translate-accent: #2563eb;
-    --at-translate-ink: #1e293b;
-    --at-translate-muted: #64748b;
-    --at-translate-canvas: #f1f5f9;
-    --at-translate-line: #dbe3ee;
+    --at-translate-ink: var(--at-text);
+    --at-translate-muted: var(--at-muted);
+    --at-translate-canvas: var(--at-surface-subtle);
+    --at-translate-line: var(--at-border);
 }
 
 .at-translatePage {
@@ -290,7 +290,7 @@
     flex: 1;
     padding: 1.5rem 1.25rem;
     overflow: auto;
-    color: #334155;
+    color: var(--at-text);
     white-space: pre-wrap;
     font-family: Georgia, 'Times New Roman', serif;
     font-size: clamp(1rem, 1.35vw, 1.13rem);
@@ -306,9 +306,9 @@
 .at-translateTextarea textarea {
     height: 100%;
     min-height: 295px;
-    border-color: #cbd5e1;
+    border-color: var(--at-border);
     border-radius: .4rem;
-    color: #334155;
+    color: var(--at-text);
     font-family: Georgia, 'Times New Roman', serif;
     font-size: 1rem;
     line-height: 1.62;
@@ -393,7 +393,7 @@
 }
 
 .at-translateBottomBar .at-translateStatus.status-missing {
-    color: #64748b;
+    color: var(--at-muted);
     background: rgb(100 116 139 / 10%);
 }
 
@@ -478,7 +478,7 @@
 
 .at-glossaryIntro {
     margin: 0 0 1rem;
-    color: var(--at-translate-muted, #64748b);
+    color: var(--at-translate-muted, var(--at-muted));
     line-height: 1.45;
 }
 
@@ -496,7 +496,7 @@
     gap: .65rem;
     align-items: center;
     padding: .65rem .75rem;
-    border: 1px solid var(--at-translate-line, #dbe3ee);
+    border: 1px solid var(--at-translate-line, var(--at-border));
     border-radius: .5rem;
 }
 
@@ -512,7 +512,7 @@
 
 .at-glossaryTerm small {
     grid-column: 1 / -1;
-    color: var(--at-translate-muted, #64748b);
+    color: var(--at-translate-muted, var(--at-muted));
 }
 
 .at-translateProviderCatalog {
@@ -543,7 +543,7 @@
     padding: .65rem .7rem;
     border: 1px solid rgb(37 99 235 / 18%);
     border-radius: .5rem;
-    background: #fff;
+    background: var(--at-surface);
 }
 
 .at-translateProviderCatalogItem div {

@@ -9,6 +9,10 @@
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
         <script>
+            (() => {
+                const savedTheme = localStorage.getItem('audiobook-tools:theme');
+                document.documentElement.dataset.theme = savedTheme === 'dark' ? 'dark' : 'light';
+            })();
 
             window.CMSwift_setting = {
                 modeDev: @js((bool) config('app.debug')),
@@ -32,6 +36,12 @@
             };
             window.AudiobookToolsBootstrap = {
                 role: @js(auth()->user()?->role ?? 'user'),
+                locale: @js(app()->getLocale()),
+                locales: @js(collect(config('audiobook.locales'))->map(fn (array $locale, string $code) => [
+                    'value' => $code,
+                    'label' => strtoupper($code) . ' · ' . $locale['name'],
+                    'direction' => $locale['direction'] ?? 'ltr',
+                ])->values()),
             };
         </script>
         @vite(['resources/css/dashboard.css', 'resources/css/bookEditor.css', 'resources/js/dashboard.js'])

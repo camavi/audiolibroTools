@@ -239,8 +239,8 @@ function translationTopbar(keyBook) {
                 : usesManagedTranslationBatch()
                     ? 'Start background batch'
                     : batchStatus.value === 'translating'
-                ? `Translating ${batchProgress.value.completed}/${batchProgress.value.total}`
-                : 'Translate all'),
+                        ? `Translating ${batchProgress.value.completed}/${batchProgress.value.total}`
+                        : 'Translate all'),
             _.Btn({
                 color: 'primary',
                 outline: true,
@@ -482,9 +482,9 @@ function aiSettingsDialogContent(keyBook, close) {
                         ? 'Mock is useful for testing only; it does not create a real translation.'
                         : provider.connection_mode === 'local'
                             ? `Local server · ${provider.base_url || 'Provider default endpoint'}`
-                        : provider.has_api_key
-                            ? `API key saved · ${provider.base_url || 'Provider default endpoint'}`
-                            : `An API key is required · ${provider.base_url || 'Provider default endpoint'}`,
+                            : provider.has_api_key
+                                ? `API key saved · ${provider.base_url || 'Provider default endpoint'}`
+                                : `An API key is required · ${provider.base_url || 'Provider default endpoint'}`,
             })) : null,
             _.div({ class: 'cms-col-24 at-translateProviderCatalog' },
                 _.strong('Audiobook Tools providers'),
@@ -497,16 +497,6 @@ function aiSettingsDialogContent(keyBook, close) {
                     )),
             ),
             () => aiSettingStatus.value ? _.div({ class: 'cms-col-24' }, _.Alert(aiSettingStatus.value)) : null,
-            _.div({ class: 'cms-col-24', align: 'right' },
-                _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Cancel'),
-                _.Btn({
-                    type: 'submit',
-                    class: 'cms-m-l-sm',
-                    color: 'primary',
-                    loading: savingAiSetting,
-                    disabled: () => !aiProviderKey.value || !aiProviderModel.value || selectedAiProvider()?.is_selectable === false,
-                }, 'Save AI settings'),
-            ),
         ),
     );
 }
@@ -554,6 +544,17 @@ function openAiSettingsDialog(keyBook) {
                 _.span({ class: 'text-muted' }, 'These settings override the global provider only for this book.'),
             ),
             content: ({ close }) => _.div({ class: 'at-translationAiSettingsDialog' }, () => aiSettingsDialogContent(keyBook, close)),
+            actions: ({ close }) => _.div({ class: 'at-translationAiSettingsActions' },
+                _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Cancel'),
+                _.Btn({
+                    class: 'cms-m-l-sm',
+                    type: 'button',
+                    color: 'primary',
+                    loading: savingAiSetting,
+                    disabled: () => !aiProviderKey.value || !aiProviderModel.value || selectedAiProvider()?.is_selectable === false,
+                    onClick: () => saveTranslationAiSetting(keyBook, close),
+                }, 'Save AI settings'),
+            ),
         },
     }).open();
 }
@@ -941,19 +942,21 @@ function openApproveAllDialog(keyBook) {
             ),
             actions: ({ close }) => [
                 _.Btn({ color: 'secondary', onClick: close }, 'Cancel'),
-                _.Btn({ color: 'primary', icon: 'check', loading: approveAllRunning, onClick: async () => {
-                    approveAllRunning.value = true;
-                    try {
-                        const payload = translationData(await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/translations/approve-all`, { target_locale: targetLocale.value }));
-                        await Promise.all([loadTranslations(keyBook), loadTranslationProgress(keyBook)]);
-                        setFeedback(`${payload.approved_count || 0} translation${Number(payload.approved_count || 0) === 1 ? '' : 's'} approved.`);
-                        close();
-                    } catch (error) {
-                        setFeedback(error.message || 'Unable to approve all translations.', 'danger');
-                    } finally {
-                        approveAllRunning.value = false;
+                _.Btn({
+                    color: 'primary', icon: 'check', loading: approveAllRunning, onClick: async () => {
+                        approveAllRunning.value = true;
+                        try {
+                            const payload = translationData(await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/translations/approve-all`, { target_locale: targetLocale.value }));
+                            await Promise.all([loadTranslations(keyBook), loadTranslationProgress(keyBook)]);
+                            setFeedback(`${payload.approved_count || 0} translation${Number(payload.approved_count || 0) === 1 ? '' : 's'} approved.`);
+                            close();
+                        } catch (error) {
+                            setFeedback(error.message || 'Unable to approve all translations.', 'danger');
+                        } finally {
+                            approveAllRunning.value = false;
+                        }
                     }
-                } }, 'Approve all'),
+                }, 'Approve all'),
             ],
         },
     }).open();
