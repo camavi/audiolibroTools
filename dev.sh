@@ -3,7 +3,9 @@
 set -e
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-QWEN_TTS_DIR="${QWEN_TTS_DIR:-$ROOT_DIR/../Qwen3-TTS}"
+# Il fork operativo contiene il runtime MLX, i modelli locali e il servizio
+# Audiobook Tools. QWEN_TTS_DIR resta disponibile per un percorso alternativo.
+QWEN_TTS_DIR="${QWEN_TTS_DIR:-$ROOT_DIR/../qwen3-TTS-AT}"
 QWEN_TTS_URL="${QWEN_TTS_URL:-http://127.0.0.1:8020}"
 
 qwen_service_ready() {
@@ -12,7 +14,7 @@ qwen_service_ready() {
 
 if [ ! -x "$QWEN_TTS_DIR/scripts/run-dev.sh" ]; then
     echo "Qwen3-TTS launcher not found: $QWEN_TTS_DIR/scripts/run-dev.sh" >&2
-    echo "Set QWEN_TTS_DIR to the Qwen3-TTS directory or restore the service." >&2
+    echo "Set QWEN_TTS_DIR to the qwen3-TTS-AT directory or restore the service." >&2
     exit 1
 fi
 

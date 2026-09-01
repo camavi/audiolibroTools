@@ -1,5 +1,9 @@
 # Registro Avanzamento
 
+## 2026-09-01
+
+- Aggiornato `dev.sh`: `./dev.sh` avvia anche il servizio Qwen dal repository operativo fratello `../qwen3-TTS-AT`; il percorso resta configurabile con `QWEN_TTS_DIR`.
+
 ## 2026-08-24
 
 - Avviato player preview audiolibro: tre master separati Voice, Music e FX, cache per edizione basata sul fingerprint della timeline e invalidazione automatica alla sua modifica.
