@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Exceptions\BookBlockVersionConflictException;
 use App\Models\Book;
+use App\Models\BookAudioSegment;
 use App\Models\BookBlock;
+use App\Models\BookBlockTranslation;
 use App\Models\BookBlockVersion;
 use App\Services\BookBlockService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -67,6 +69,36 @@ class BookBlockVersionTest extends TestCase
         $this->assertSame('First paragraph edited.', $second['block']->text_plain);
         $this->assertDatabaseCount('book_blocks', 1);
         $this->assertDatabaseCount('book_block_versions', 2);
+    }
+
+    public function test_service_marks_previous_audio_and_translations_stale_when_content_changes(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $first = $service->saveBlock($book, [
+            'block_uuid' => (string) Str::ulid(),
+            'content_json' => $this->paragraphJson('First paragraph.'),
+            'text_plain' => 'First paragraph.',
+        ]);
+
+        $translation = BookBlockTranslation::query()->create([
+            'book_id' => $book->id, 'book_block_id' => $first['block']->id,
+            'source_book_block_version_id' => $first['version']->id, 'block_uuid' => $first['block']->block_uuid,
+            'target_locale' => 'it', 'status' => 'approved', 'source_text' => 'First paragraph.', 'translated_text' => 'Primo paragrafo.',
+        ]);
+        $segment = BookAudioSegment::query()->create([
+            'book_id' => $book->id, 'book_block_id' => $first['block']->id,
+            'book_block_version_id' => $first['version']->id, 'block_uuid' => $first['block']->block_uuid,
+            'status' => 'completed', 'text_plain' => 'First paragraph.', 'content_hash' => $first['block']->content_hash,
+        ]);
+
+        $service->saveBlock($book, [
+            'block_uuid' => $first['block']->block_uuid, 'base_version_id' => $first['version']->id,
+            'content_json' => $this->paragraphJson('Updated paragraph.'), 'text_plain' => 'Updated paragraph.',
+        ]);
+
+        $this->assertSame('stale', $translation->fresh()->status);
+        $this->assertSame('stale', $segment->fresh()->status);
     }
 
     public function test_service_does_not_create_version_when_content_hash_is_unchanged(): void

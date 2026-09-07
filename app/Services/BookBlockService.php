@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Exceptions\BookBlockVersionConflictException;
 use App\Models\Book;
+use App\Models\BookAudioSegment;
 use App\Models\BookBlock;
+use App\Models\BookBlockTranslation;
 use App\Models\BookBlockVersion;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -84,6 +86,8 @@ class BookBlockService
                 'status' => $payload['status'] ?? 'clean',
             ]);
 
+            $this->markDerivedOutputsStale($block, $version->id);
+
             return [
                 'block' => $block->fresh(['currentVersion']),
                 'version' => $version,
@@ -106,6 +110,21 @@ class BookBlockService
             ->whereIn('block_uuid', $blockUuids)
             ->where('status', '!=', 'deleted')
             ->update(['status' => 'deleted']);
+    }
+
+    private function markDerivedOutputsStale(BookBlock $block, int $currentVersionId): void
+    {
+        BookAudioSegment::query()
+            ->where('book_block_id', $block->id)
+            ->where('book_block_version_id', '!=', $currentVersionId)
+            ->whereIn('status', ['queued', 'processing', 'completed', 'ready'])
+            ->update(['status' => 'stale']);
+
+        BookBlockTranslation::query()
+            ->where('book_block_id', $block->id)
+            ->where('source_book_block_version_id', '!=', $currentVersionId)
+            ->whereIn('status', ['draft', 'approved', 'processing', 'ready'])
+            ->update(['status' => 'stale']);
     }
 
     public function restoreVersion(Book $book, BookBlock $block, BookBlockVersion $version, ?int $userId = null): array
