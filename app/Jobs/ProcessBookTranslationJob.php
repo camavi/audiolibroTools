@@ -2,7 +2,6 @@
 
 namespace App\Jobs;
 
-use App\Models\BookBlock;
 use App\Models\BookBlockTranslation;
 use App\Models\BookTranslationJob;
 use App\Services\Ai\EditorAiTranslationService;
@@ -20,9 +19,7 @@ class ProcessBookTranslationJob implements ShouldQueue
 
     public int $timeout = 3600;
 
-    public function __construct(public int $translationJobId)
-    {
-    }
+    public function __construct(public int $translationJobId) {}
 
     public function handle(EditorAiTranslationService $translations, TranslationCreditService $credits): void
     {
@@ -39,6 +36,7 @@ class ProcessBookTranslationJob implements ShouldQueue
         ])->save();
 
         $book = $job->book;
+        $translateAll = data_get($job->request_json, 'scope') === 'all';
         $accountId = $job->created_by ?: $book->account_id;
         $blocks = $book->blocks()
             ->with('currentVersion')
@@ -69,9 +67,10 @@ class ProcessBookTranslationJob implements ShouldQueue
                     ->where('model', $job->model)
                     ->exists();
 
-                if ($approved || $existingDraft) {
+                if ((! $translateAll && ($approved || $existingDraft)) || ($translateAll && $existingDraft)) {
                     $credits->release($job, $blockCredits, 'existing_translation');
                     $this->advance($job, true);
+
                     continue;
                 }
 

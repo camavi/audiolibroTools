@@ -233,7 +233,7 @@ function translationTopbar(keyBook) {
                 outline: true,
                 loading: () => batchStatus.value === 'translating' || managedJobStatus.value === 'starting',
                 disabled: () => batchStatus.value === 'translating' || managedJobStatus.value === 'starting' || managedJobIsActive() || !translationBlocks.value.length,
-                onClick: () => usesManagedTranslationBatch() ? openManagedBatchDialog(keyBook) : translateAllBlocks(keyBook),
+                onClick: () => openManagedBatchDialog(keyBook),
             }, () => managedJobIsActive()
                 ? `Batch ${managedTranslationJob.value.completed_blocks}/${managedTranslationJob.value.total_blocks}`
                 : usesManagedTranslationBatch()
@@ -789,6 +789,7 @@ async function loadCreditBalance() {
 }
 
 function openManagedBatchDialog(keyBook) {
+    const scope = _.rod('missing_or_stale');
     const pendingBlocks = Math.max(0, translationBlocks.value.length - Number(translationProgress.value.counts?.approved || 0));
     const sourceWords = translationBlocks.value.reduce((total, block) => total + countWords(block.text_plain), 0);
 
@@ -796,8 +797,8 @@ function openManagedBatchDialog(keyBook) {
         size: 'md',
         slots: {
             header: _.div(
-                _.h3('Start background translation'),
-                _.span({ class: 'text-muted' }, 'This batch is processed by Audiobook Tools using OpenAI.'),
+                _.h3('Translate manuscript'),
+                _.span({ class: 'text-muted' }, 'Choose what to translate before starting the batch.'),
             ),
             content: ({ close }) => _.div({ class: 'at-managedBatchDialog' },
                 _.Alert({
@@ -805,6 +806,13 @@ function openManagedBatchDialog(keyBook) {
                     title: `AT · OpenAI · ${aiSetting.value.model}`,
                     message: 'Your manuscript is sent to OpenAI through Audiobook Tools. The batch creates drafts only and never changes approved translations.',
                 }),
+                _.Select({ label: 'What should be translated?', model: scope, options: [
+                    { value: 'missing_or_stale', label: 'Missing or stale translations (recommended)' },
+                    { value: 'all', label: 'Translate all blocks again' },
+                ] }),
+                () => scope.value === 'all'
+                    ? _.Alert({ type: 'warning', message: 'This creates new drafts for every block. Approved translations remain preserved until you review the new drafts.' })
+                    : _.small({ class: 'text-muted' }, 'Existing current drafts and approved translations are kept.'),
                 _.div({ class: 'at-managedBatchSummary' },
                     _.span('Blocks to review'), _.strong(`${pendingBlocks}`),
                     _.span('Source words'), _.strong(`${sourceWords}`),
@@ -818,9 +826,12 @@ function openManagedBatchDialog(keyBook) {
                     _.Btn({
                         type: 'button',
                         color: 'primary',
-                        loading: managedJobStatus,
-                        disabled: () => pendingBlocks === 0 || managedJobStatus.value === 'starting',
-                        onClick: () => startManagedTranslationJob(keyBook, close),
+                        loading: () => usesManagedTranslationBatch() ? managedJobStatus.value === 'starting' : batchStatus.value === 'translating',
+                        disabled: () => pendingBlocks === 0 || managedJobStatus.value === 'starting' || batchStatus.value === 'translating',
+                        onClick: () => {
+                            if (usesManagedTranslationBatch()) startManagedTranslationJob(keyBook, close, scope.value);
+                            else { close(); translateAllBlocks(keyBook, scope.value); }
+                        },
                     }, 'Confirm and start'),
                 ),
             ),
@@ -828,7 +839,7 @@ function openManagedBatchDialog(keyBook) {
     }).open();
 }
 
-async function startManagedTranslationJob(keyBook, close) {
+async function startManagedTranslationJob(keyBook, close, scope = 'missing_or_stale') {
     if (managedJobStatus.value === 'starting') return;
 
     managedJobStatus.value = 'starting';
@@ -839,6 +850,7 @@ async function startManagedTranslationJob(keyBook, close) {
                 target_locale: targetLocale.value,
                 provider_key: aiSetting.value.provider_key,
                 model: aiSetting.value.model,
+                scope,
                 confirmed: true,
             },
         ));
@@ -872,16 +884,19 @@ async function cancelManagedTranslationJob(keyBook) {
     }
 }
 
-async function translateAllBlocks(keyBook) {
-    if (batchStatus.value === 'translating' || !translationBlocks.value.length) return;
+async function translateAllBlocks(keyBook, scope = 'missing_or_stale') {
+    const blocks = scope === 'all'
+        ? translationBlocks.value
+        : translationBlocks.value.filter((block) => (translationProgress.value.states?.[block.block_uuid] || 'missing') === 'missing');
+    if (batchStatus.value === 'translating' || !blocks.length) return;
 
     batchStatus.value = 'translating';
-    batchProgress.value = { completed: 0, total: translationBlocks.value.length, failed: 0 };
+    batchProgress.value = { completed: 0, total: blocks.length, failed: 0 };
     let failed = 0;
     let failureMessage = null;
 
-    for (let index = 0; index < translationBlocks.value.length; index += 1) {
-        const block = translationBlocks.value[index];
+    for (let index = 0; index < blocks.length; index += 1) {
+        const block = blocks[index];
 
         try {
             await createAiBookBlockTranslation(keyBook, block.block_uuid, {
@@ -908,7 +923,7 @@ async function translateAllBlocks(keyBook) {
     await loadTranslationProgress(keyBook);
     setFeedback(failed
         ? `Translation batch paused after ${batchProgress.value.completed} blocks: ${failureMessage}`
-        : `Translation batch complete: ${translationBlocks.value.length} blocks are ready for review.`, failed ? 'warning' : 'success');
+        : `Translation batch complete: ${blocks.length} blocks are ready for review.`, failed ? 'warning' : 'success');
 }
 
 async function resolveTranslation(keyBook, status) {

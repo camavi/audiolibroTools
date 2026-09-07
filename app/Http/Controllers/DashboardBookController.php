@@ -512,6 +512,7 @@ class DashboardBookController extends Controller
             'target_locale' => ['required', 'string', 'max:20'],
             'provider_key' => ['required', 'in:at-openai'],
             'model' => ['required', 'string', 'max:120'],
+            'scope' => ['nullable', 'in:missing_or_stale,all'],
             'confirmed' => ['accepted'],
         ]);
         $provider = collect(config('ai_providers.defaults', []))->firstWhere('provider_key', 'at-openai');
@@ -553,6 +554,7 @@ class DashboardBookController extends Controller
                 'source_locale' => $book->lang,
                 'estimated_source_words' => $blocks->sum(fn (BookBlock $block) => str_word_count($block->text_plain ?: '')),
                 'estimated_credits' => $estimatedCredits,
+                'scope' => $validated['scope'] ?? 'missing_or_stale',
             ],
             'created_by' => auth()->id(),
         ]);
