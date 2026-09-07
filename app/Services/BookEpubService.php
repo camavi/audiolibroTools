@@ -10,7 +10,7 @@ use ZipArchive;
 
 class BookEpubService
 {
-    public function build(Book $book, array $settings): string
+    public function build(Book $book, array $settings, ?int $publicationVersion = null, ?iterable $sourceBlocks = null): string
     {
         $temporary = tempnam(sys_get_temp_dir(), 'audiobook-tools-epub-');
         $zip = new ZipArchive;
@@ -23,7 +23,9 @@ class BookEpubService
         $zip->addFromString('META-INF/container.xml', $this->containerDocument());
 
         $identifier = $settings['metadata']['identifier'] ?: 'urn:uuid:'.Str::uuid();
-        $blocks = $book->blocks()->where('status', '!=', 'deleted')->orderBy('sort_order')->get();
+        $blocks = $sourceBlocks
+            ? collect($sourceBlocks)->sortBy('sort_order')->values()
+            : $book->blocks()->where('status', '!=', 'deleted')->orderBy('sort_order')->get();
         $chapters = $this->chapters($blocks, $settings['reading']['chapter_break']);
         $manifest = [];
         $spine = [];
@@ -64,7 +66,8 @@ class BookEpubService
         $zip->addFromString('OEBPS/content.opf', $this->packageDocument($settings, $identifier, $manifest, $spine));
         $zip->close();
 
-        $path = "book-epubs/{$book->key_book}/".Str::slug($settings['metadata']['title'] ?: $book->name).'.epub';
+        $versionPath = $publicationVersion ? "/v{$publicationVersion}" : '';
+        $path = "book-epubs/{$book->key_book}{$versionPath}/".Str::slug($settings['metadata']['title'] ?: $book->name).'.epub';
         Storage::disk('public')->put($path, file_get_contents($temporary));
         @unlink($temporary);
 
@@ -73,35 +76,52 @@ class BookEpubService
 
     private function chapters(iterable $blocks, string $breakMode): array
     {
-        $chapters = []; $current = null;
+        $chapters = [];
+        $current = null;
         foreach ($blocks as $block) {
             $node = $block->content_json ?? [];
             $attrs = $node['attrs'] ?? [];
             $text = trim((string) $block->text_plain);
             $isImage = $block->type === 'image' || ($node['type'] ?? null) === 'manuscriptImage';
             $isPageBreak = ($attrs['pageBreak'] ?? false) === true;
-            if ($text === '' && !$isImage && !$isPageBreak) continue;
+            if ($text === '' && ! $isImage && ! $isPageBreak) {
+                continue;
+            }
             $isChapter = $breakMode === 'heading' && in_array($block->type, ['chapter', 'chapter_title', 'heading'], true);
             if (! $current || $isChapter) {
-                if ($current) $chapters[] = $current;
+                if ($current) {
+                    $chapters[] = $current;
+                }
                 $current = ['title' => $isChapter ? $text : 'Chapter '.(count($chapters) + 1), 'entries' => []];
-                if (!$isChapter) $current['entries'][] = $this->entry($block);
+                if (! $isChapter) {
+                    $current['entries'][] = $this->entry($block);
+                }
             } elseif ($block->type !== 'chapter_title') {
                 $current['entries'][] = $this->entry($block);
             }
         }
-        if ($current) $chapters[] = $current;
+        if ($current) {
+            $chapters[] = $current;
+        }
+
         return $chapters ?: [['title' => 'Book', 'entries' => [['node' => ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'No manuscript content has been added yet.']]]]]]];
     }
 
     private function cover(Book $book): ?array
     {
         $path = $this->publicPath((string) $book->cover_img);
-        if (! $path) return null;
-        if (! Storage::disk('public')->exists($path)) return null;
+        if (! $path) {
+            return null;
+        }
+        if (! Storage::disk('public')->exists($path)) {
+            return null;
+        }
         $contents = Storage::disk('public')->get($path);
         $mime = Storage::disk('public')->mimeType($path) ?: 'image/jpeg';
-        $extension = match ($mime) { 'image/png' => 'png', 'image/webp' => 'webp', default => 'jpg' };
+        $extension = match ($mime) {
+            'image/png' => 'png', 'image/webp' => 'webp', default => 'jpg'
+        };
+
         return compact('contents', 'mime', 'extension');
     }
 
@@ -122,14 +142,22 @@ class BookEpubService
             $node = $block->content_json ?? [];
             $attrs = $node['attrs'] ?? [];
             $source = (string) ($attrs['src'] ?? '');
-            if (($node['type'] ?? null) !== 'manuscriptImage' || $source === '' || isset($images[$source])) continue;
+            if (($node['type'] ?? null) !== 'manuscriptImage' || $source === '' || isset($images[$source])) {
+                continue;
+            }
 
             $path = $this->publicPath($source);
-            if (! $path) continue;
-            if (!Storage::disk('public')->exists($path)) continue;
+            if (! $path) {
+                continue;
+            }
+            if (! Storage::disk('public')->exists($path)) {
+                continue;
+            }
 
             $mime = Storage::disk('public')->mimeType($path) ?: 'image/jpeg';
-            $extension = match ($mime) { 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif', default => 'jpg' };
+            $extension = match ($mime) {
+                'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif', default => 'jpg'
+            };
             $images[$source] = [
                 'id' => 'manuscript-image-'.(count($images) + 1),
                 'source' => $source,
@@ -144,10 +172,14 @@ class BookEpubService
 
     private function publicPath(string $url): ?string
     {
-        if ($url === '') return null;
+        if ($url === '') {
+            return null;
+        }
         $pathUrl = parse_url($url, PHP_URL_PATH) ?: $url;
         $prefixPath = rtrim((string) (parse_url(Storage::disk('public')->url(''), PHP_URL_PATH) ?: Storage::disk('public')->url('')), '/').'/';
-        if (!str_starts_with($pathUrl, $prefixPath)) return null;
+        if (! str_starts_with($pathUrl, $prefixPath)) {
+            return null;
+        }
 
         return ltrim(substr($pathUrl, strlen($prefixPath)), '/');
     }
@@ -159,6 +191,7 @@ class BookEpubService
         $size = max(10, min(28, (float) ($body['font_size'] ?? 18)));
         $lineHeight = max(1, min(2.5, (float) ($body['line_height'] ?? 1.6)));
         $color = preg_match('/^#[0-9a-fA-F]{6}$/', $body['color'] ?? '') ? $body['color'] : '#182033';
+
         return "body { margin: 5%; font-family: '{$font}', serif; font-size: {$size}px; line-height: {$lineHeight}; color: {$color}; } h1 { margin: 0 0 1.8em; page-break-before: always; } p { margin: 0 0 1em; } blockquote { margin:1.4em 1.5em; color:#475569; font-style:italic; } ul,ol { margin:0 0 1em 1.4em; } a { color:#1d4ed8; text-decoration:underline; } .align-left { text-align:left; } .align-center { text-align:center; } .align-right { text-align:right; } .align-justify { text-align:justify; } .page-break { break-before: page; page-break-before: always; } .scene-break { width:32%; margin:1.6em auto; border:0; border-top:1px solid #64748b; } figure { margin:1.6em 0; text-align:center; } .manuscript-image { max-width:100%; height:auto; } .title-page { text-align: center; margin-top: 28%; } .cover { max-width: 100%; max-height: 100%; }";
     }
 
@@ -169,8 +202,11 @@ class BookEpubService
 
     private function titlePage(array $settings, ?array $cover): string
     {
-        $title = $this->escape($settings['metadata']['title']); $subtitle = $this->escape($settings['metadata']['subtitle']); $author = $this->escape($settings['metadata']['author']);
+        $title = $this->escape($settings['metadata']['title']);
+        $subtitle = $this->escape($settings['metadata']['subtitle']);
+        $author = $this->escape($settings['metadata']['author']);
         $image = $cover ? '<img class="cover" src="../images/cover.'.$cover['extension'].'" alt="Cover"/>' : '';
+
         return $this->xhtml("<section class=\"title-page\">{$image}<h1>{$title}</h1>".($subtitle ? "<p>{$subtitle}</p>" : '').($author ? "<p>{$author}</p>" : '').'</section>');
     }
 
@@ -181,15 +217,18 @@ class BookEpubService
         $content = collect($entries)->map(fn (array $entry) => $renderer->render($entry['node'], [
             'image' => function (array $attrs) use ($bySource): string {
                 $image = $bySource->get($attrs['src'] ?? '');
+
                 return $image ? '<figure><img class="manuscript-image" src="../images/'.$this->escape($image['filename']).'" alt="'.$this->escape($attrs['alt'] ?? '').'"/></figure>' : '';
             },
         ]))->implode('');
+
         return $this->xhtml('<section><h1>'.$this->escape($title).'</h1>'.$content.'</section>');
     }
 
     private function navigation(array $settings, array $chapters): string
     {
         $items = collect($chapters)->map(fn ($chapter, $index) => '<li><a href="text/chapter-'.($index + 1).'.xhtml">'.$this->escape($chapter['title']).'</a></li>')->implode('');
+
         return $this->xhtml('<nav epub:type="toc" id="toc"><h1>Contents</h1><ol>'.$items.'</ol></nav>', true);
     }
 
@@ -202,14 +241,19 @@ class BookEpubService
         $direction = $settings['reading']['direction'] === 'auto'
             ? (in_array($meta['language'], ['ar', 'he', 'fa', 'ur'], true) ? 'rtl' : 'ltr')
             : $settings['reading']['direction'];
+
         return '<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id" xml:lang="'.$this->escape($meta['language']).'"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">'.$this->escape($identifier).'</dc:identifier><dc:title>'.$this->escape($meta['title']).'</dc:title><dc:language>'.$this->escape($meta['language']).'</dc:language><meta property="dcterms:modified">'.now()->utc()->format('Y-m-d\\TH:i:s\\Z').'</meta>'.($meta['author'] ? '<dc:creator>'.$this->escape($meta['author']).'</dc:creator>' : '').($meta['publisher'] ? '<dc:publisher>'.$this->escape($meta['publisher']).'</dc:publisher>' : '').($meta['publication_date'] ? '<dc:date>'.$this->escape($meta['publication_date']).'</dc:date>' : '').($meta['description'] ? '<dc:description>'.$this->escape($meta['description']).'</dc:description>' : '').($meta['rights'] ? '<dc:rights>'.$this->escape($meta['rights']).'</dc:rights>' : '').$subjects.'</metadata><manifest>'.$manifestXml.'</manifest><spine page-progression-direction="'.$direction.'">'.$spineXml.'</spine></package>';
     }
 
     private function xhtml(string $content, bool $navigation = false): string
     {
         $namespace = $navigation ? ' xmlns:epub="http://www.idpf.org/2007/ops"' : '';
+
         return '<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"'.$namespace.'><head><title>Book</title><link rel="stylesheet" type="text/css" href="'.($navigation ? 'styles/book.css' : '../styles/book.css').'"/></head><body>'.$content.'</body></html>';
     }
 
-    private function escape(?string $value): string { return htmlspecialchars((string) $value, ENT_XML1 | ENT_QUOTES, 'UTF-8'); }
+    private function escape(?string $value): string
+    {
+        return htmlspecialchars((string) $value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+    }
 }

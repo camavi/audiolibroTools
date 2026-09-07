@@ -21,6 +21,7 @@ use App\Models\BookCategory;
 use App\Models\BookDesignAsset;
 use App\Models\BookDistributionConnection;
 use App\Models\BookEdition;
+use App\Models\BookPublication;
 use App\Models\BookTranslationJob;
 use App\Models\BookVoiceProfile;
 use App\Models\User;
@@ -205,6 +206,56 @@ class DashboardBookTest extends TestCase
         $book->refresh();
         Storage::disk('public')->assertExists($book->pdf_file_path);
         $this->assertStringStartsWith('%PDF-', Storage::disk('public')->get($book->pdf_file_path));
+    }
+
+    public function test_dashboard_creates_versioned_publications_without_replacing_previous_exports(): void
+    {
+        Storage::fake('public');
+        $book = $this->createBook();
+        app(BookBlockService::class)->saveBlock($book, [
+            'block_uuid' => (string) Str::uuid(),
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Text captured in the first release.'),
+            'text_plain' => 'Text captured in the first release.',
+        ]);
+
+        $first = $this->postJson("/dashboard/api/books/{$book->key_book}/publications", ['label' => 'First release'])
+            ->assertCreated()
+            ->assertJsonPath('data.publication.version_number', 1)
+            ->assertJsonPath('data.publication.status', 'ready')
+            ->json('data.publication');
+
+        $firstPublication = BookPublication::query()->findOrFail($first['id']);
+        Storage::disk('public')->assertExists($firstPublication->epub_file_path);
+        Storage::disk('public')->assertExists($firstPublication->pdf_file_path);
+        $this->assertStringContainsString('/v1/', $firstPublication->epub_file_path);
+        $this->assertStringContainsString('/v1/', $firstPublication->pdf_file_path);
+        $this->assertNotEmpty($first['epub']['size_bytes']);
+        $this->assertNotEmpty($first['pdf']['size_bytes']);
+        $this->get($first['epub']['download_url'])->assertOk()->assertHeader('content-type', 'application/epub+zip');
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/publications/{$first['id']}/availability", ['is_online' => false])
+            ->assertOk()
+            ->assertJsonPath('data.publication.is_online', false);
+
+        $second = $this->postJson("/dashboard/api/books/{$book->key_book}/publications", ['label' => 'Second release'])
+            ->assertCreated()
+            ->assertJsonPath('data.publication.version_number', 2)
+            ->assertJsonPath('data.publication.status', 'ready')
+            ->json('data.publication');
+
+        $secondPublication = BookPublication::query()->findOrFail($second['id']);
+        $this->assertStringContainsString('/v2/', $secondPublication->epub_file_path);
+        $this->assertStringContainsString('/v2/', $secondPublication->pdf_file_path);
+        Storage::disk('public')->assertExists($firstPublication->epub_file_path);
+        Storage::disk('public')->assertExists($secondPublication->epub_file_path);
+        $this->assertDatabaseHas('book_publications', ['book_id' => $book->id, 'version_number' => 1, 'status' => 'ready']);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/publications")
+            ->assertOk()
+            ->assertJsonPath('data.publications.0.version_number', 2)
+            ->assertJsonPath('data.publications.1.version_number', 1);
     }
 
     public function test_dashboard_can_manage_distribution_channel_connections(): void

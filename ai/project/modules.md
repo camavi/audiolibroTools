@@ -28,6 +28,7 @@
 - Categorie: tabella, seed e API iniziali avviati.
 - Copertina.
 - Stato progetto.
+- Pubblicazioni versionate: ogni release mantiene snapshot e file PDF, ePub e audiobook senza sovrascrivere le versioni precedenti.
 - Lista libri.
 - Pannello libro.
 

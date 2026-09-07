@@ -12,6 +12,7 @@ use App\Http\Controllers\BookEditionController;
 use App\Http\Controllers\BookEpubController;
 use App\Http\Controllers\BookMediaController;
 use App\Http\Controllers\BookPdfController;
+use App\Http\Controllers\BookPublicationController;
 use App\Http\Controllers\DashboardAiController;
 use App\Http\Controllers\DashboardBookController;
 use App\Http\Controllers\ProfileController;
@@ -144,6 +145,10 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
     Route::delete('/books/{keyBook}/distribution/{providerKey}', [BookDistributionController::class, 'disconnect'])->name('books.distribution.disconnect');
     Route::get('/books/{keyBook}/editions', [BookEditionController::class, 'index'])->name('books.editions.index');
     Route::post('/books/{keyBook}/editions', [BookEditionController::class, 'store'])->name('books.editions.store');
+    Route::get('/books/{keyBook}/publications', [BookPublicationController::class, 'index'])->name('books.publications.index');
+    Route::post('/books/{keyBook}/publications', [BookPublicationController::class, 'store'])->name('books.publications.store');
+    Route::patch('/books/{keyBook}/publications/{publication}/availability', [BookPublicationController::class, 'updateAvailability'])->name('books.publications.availability.update');
+    Route::get('/books/{keyBook}/publications/{publication}/{format}', [BookPublicationController::class, 'download'])->whereIn('format', ['epub', 'pdf'])->name('books.publications.download');
     Route::get('/books/{keyBook}/editor', [DashboardBookController::class, 'editor'])->name('books.editor');
     Route::get('/books/{keyBook}/voices', [DashboardBookController::class, 'voiceProfiles'])->name('books.voices');
     Route::get('/books/{keyBook}/audio-timeline', [DashboardBookController::class, 'audioTimeline'])->name('books.audio-timeline');

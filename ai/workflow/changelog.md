@@ -2,6 +2,8 @@
 
 ## 2026-09-07
 
+- Avviate le pubblicazioni versionate: ogni release salva lo snapshot dell'edizione e genera PDF/ePub in un percorso dedicato, preservando i file delle release precedenti. Le traduzioni approvate vengono incluse nell'export dell'edizione selezionata; l'audiolibro resta per ora composto dai tre master WAV della timeline.
+- Spostato il controllo delle release in un gestore a dialog: mostra data, file, peso e download per ogni versione e permette di ritirare una release dalla disponibilità online senza cancellarne i file. Le versioni audio restano intenzionalmente separate dalle release ePub/PDF.
 - Completato l'import manoscritti: upload TXT/PDF, conservazione del file originale, estrazione del testo e creazione di blocchi editor con versione append-only `import`. I PDF scansiti richiedono OCR prima del caricamento.
 - Aggiunta revisione pre-import: rilevamento di heading Markdown, capitoli/parti e titoli in maiuscolo, con riepilogo capitoli, blocchi e parole prima della creazione del libro.
 - La revisione pre-import consente di riclassificare ogni blocco come titolo di capitolo o paragrafo prima della conferma.
