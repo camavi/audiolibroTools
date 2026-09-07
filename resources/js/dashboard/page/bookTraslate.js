@@ -38,7 +38,7 @@ const loadingAiProviderModels = _.rod(false);
 const aiSystemPrompt = _.rod('');
 const savingAiSetting = _.rod(false);
 const aiSettingStatus = _.rod(null);
-const translationProgress = _.rod({ counts: { all: 0, missing: 0, draft: 0, approved: 0, rejected: 0 }, states: {} });
+const translationProgress = _.rod({ counts: { all: 0, missing: 0, draft: 0, approved: 0, rejected: 0, stale: 0 }, states: {} });
 const reviewOnly = _.rod(false);
 const managedTranslationJob = _.rod(null);
 const managedJobStatus = _.rod('idle');
@@ -405,6 +405,12 @@ function managedBatchCredits() {
     return translationBlocks.value.reduce((total, block) => total + Math.ceil((countWords(block.text_plain) / 1000) * rate), 0);
 }
 
+function batchBlocks(scope) {
+    return scope === 'all'
+        ? translationBlocks.value
+        : translationBlocks.value.filter((block) => ['missing', 'stale'].includes(translationProgress.value.states?.[block.block_uuid] || 'missing'));
+}
+
 function selectedAiModelOptions() {
     return selectedAiProvider()?.models || [];
 }
@@ -589,7 +595,7 @@ async function loadTranslationProgress(keyBook) {
             `/dashboard/api/books/${encodeURIComponent(keyBook)}/translation-progress?target_locale=${encodeURIComponent(targetLocale.value)}`,
         ));
         translationProgress.value = {
-            counts: payload.counts || { all: 0, missing: 0, draft: 0, approved: 0, rejected: 0 },
+            counts: payload.counts || { all: 0, missing: 0, draft: 0, approved: 0, rejected: 0, stale: 0 },
             states: payload.states || {},
         };
     } catch (error) {
@@ -790,8 +796,10 @@ async function loadCreditBalance() {
 
 function openManagedBatchDialog(keyBook) {
     const scope = _.rod('missing_or_stale');
-    const pendingBlocks = Math.max(0, translationBlocks.value.length - Number(translationProgress.value.counts?.approved || 0));
-    const sourceWords = translationBlocks.value.reduce((total, block) => total + countWords(block.text_plain), 0);
+    const summary = () => {
+        const blocks = batchBlocks(scope.value);
+        return { blocks, words: blocks.reduce((total, block) => total + countWords(block.text_plain), 0) };
+    };
 
     _.Dialog({
         size: 'md',
@@ -814,10 +822,10 @@ function openManagedBatchDialog(keyBook) {
                     ? _.Alert({ type: 'warning', message: 'This creates new drafts for every block. Approved translations remain preserved until you review the new drafts.' })
                     : _.small({ class: 'text-muted' }, 'Existing current drafts and approved translations are kept.'),
                 _.div({ class: 'at-managedBatchSummary' },
-                    _.span('Blocks to review'), _.strong(`${pendingBlocks}`),
-                    _.span('Source words'), _.strong(`${sourceWords}`),
+                    _.span('Blocks to translate'), _.strong(() => `${summary().blocks.length}`),
+                    _.span('Source words'), _.strong(() => `${summary().words}`),
                     _.span('Billing'), _.strong(selectedTranslationProvider()?.billing_label || 'Audiobook Tools credits'),
-                    _.span('Estimated credits'), _.strong(`${managedBatchCredits()}`),
+                    _.span('Estimated credits'), _.strong(() => `${summary().blocks.reduce((total, block) => total + Math.ceil((countWords(block.text_plain) / 1000) * Number(selectedTranslationProvider()?.translation_credits_per_1000_words?.[aiSetting.value.model] || 0)), 0)}`),
                     _.span('Available credits'), _.strong(() => `${creditBalance.value.available_credits}`),
                 ),
                 _.p('You can close this page after confirmation. Progress and any errors remain available in Translation Studio.'),
@@ -827,7 +835,7 @@ function openManagedBatchDialog(keyBook) {
                         type: 'button',
                         color: 'primary',
                         loading: () => usesManagedTranslationBatch() ? managedJobStatus.value === 'starting' : batchStatus.value === 'translating',
-                        disabled: () => pendingBlocks === 0 || managedJobStatus.value === 'starting' || batchStatus.value === 'translating',
+                        disabled: () => summary().blocks.length === 0 || managedJobStatus.value === 'starting' || batchStatus.value === 'translating',
                         onClick: () => {
                             if (usesManagedTranslationBatch()) startManagedTranslationJob(keyBook, close, scope.value);
                             else { close(); translateAllBlocks(keyBook, scope.value); }
@@ -885,9 +893,7 @@ async function cancelManagedTranslationJob(keyBook) {
 }
 
 async function translateAllBlocks(keyBook, scope = 'missing_or_stale') {
-    const blocks = scope === 'all'
-        ? translationBlocks.value
-        : translationBlocks.value.filter((block) => (translationProgress.value.states?.[block.block_uuid] || 'missing') === 'missing');
+    const blocks = batchBlocks(scope);
     if (batchStatus.value === 'translating' || !blocks.length) return;
 
     batchStatus.value = 'translating';

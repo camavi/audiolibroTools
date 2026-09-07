@@ -42,6 +42,7 @@ class ProcessBookTranslationJob implements ShouldQueue
             ->with('currentVersion')
             ->where('status', '!=', 'deleted')
             ->whereNotNull('current_version_id')
+            ->when(data_get($job->request_json, 'block_uuids'), fn ($query, $blockUuids) => $query->whereIn('block_uuid', $blockUuids))
             ->get();
 
         foreach ($blocks as $block) {

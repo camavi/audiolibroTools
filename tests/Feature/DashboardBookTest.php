@@ -349,6 +349,24 @@ class DashboardBookTest extends TestCase
         ]);
     }
 
+    public function test_dashboard_background_batch_limits_missing_or_stale_scope_to_needed_blocks(): void
+    {
+        config()->set('ai_providers.defaults.1.is_configured', true);
+        config()->set('ai_providers.defaults.1.managed_api_key', 'at-server-openai-key');
+        Queue::fake();
+        AccountCreditBalance::query()->create(['account_id' => $this->user->id, 'available_credits' => 100]);
+        $book = $this->createBook();
+        $translated = app(BookBlockService::class)->saveBlock($book, ['block_uuid' => (string) Str::uuid(), 'content_json' => $this->paragraphJson('Already translated.'), 'text_plain' => 'Already translated.']);
+        $missing = app(BookBlockService::class)->saveBlock($book, ['block_uuid' => (string) Str::uuid(), 'content_json' => $this->paragraphJson('Still missing.'), 'text_plain' => 'Still missing.']);
+        BookBlockTranslation::query()->create(['book_id' => $book->id, 'book_block_id' => $translated['block']->id, 'source_book_block_version_id' => $translated['version']->id, 'block_uuid' => $translated['block']->block_uuid, 'target_locale' => 'en', 'status' => 'approved', 'source_text' => 'Already translated.', 'translated_text' => 'Gia tradotto.']);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/translation-jobs", ['target_locale' => 'en', 'provider_key' => 'at-openai', 'model' => 'gpt-5-mini', 'scope' => 'missing_or_stale', 'confirmed' => true])
+            ->assertStatus(202)
+            ->assertJsonPath('data.job.total_blocks', 1);
+
+        $this->assertSame([$missing['block']->block_uuid], BookTranslationJob::query()->sole()->request_json['block_uuids']);
+    }
+
     public function test_dashboard_background_batch_uses_the_managed_server_credential(): void
     {
         config()->set('ai_providers.defaults.1.is_configured', true);

@@ -466,10 +466,18 @@ class DashboardBookController extends Controller
             ->groupBy('book_block_id')
             ->map(fn ($translations) => $translations->first());
 
-        $states = $blocks->mapWithKeys(function (BookBlock $block) use ($latestTranslations) {
+        $staleBlockIds = BookBlockTranslation::query()
+            ->where('book_id', $book->id)
+            ->where('target_locale', $targetLocale)
+            ->where('status', 'stale')
+            ->whereIn('book_block_id', $blocks->pluck('id'))
+            ->pluck('book_block_id')
+            ->flip();
+
+        $states = $blocks->mapWithKeys(function (BookBlock $block) use ($latestTranslations, $staleBlockIds) {
             $translation = $latestTranslations->get($block->id);
 
-            return [$block->block_uuid => $translation?->status ?? 'missing'];
+            return [$block->block_uuid => $translation?->status ?? ($staleBlockIds->has($block->id) ? 'stale' : 'missing')];
         });
         $counts = [
             'all' => $blocks->count(),
@@ -477,6 +485,7 @@ class DashboardBookController extends Controller
             'draft' => $states->filter(fn (string $status) => $status === 'draft')->count(),
             'approved' => $states->filter(fn (string $status) => $status === 'approved')->count(),
             'rejected' => $states->filter(fn (string $status) => $status === 'rejected')->count(),
+            'stale' => $states->filter(fn (string $status) => $status === 'stale')->count(),
         ];
 
         return response()->json([
@@ -536,9 +545,14 @@ class DashboardBookController extends Controller
             ]);
         }
 
+        $scope = $validated['scope'] ?? 'missing_or_stale';
         $blocks = $book->blocks()
             ->where('status', '!=', 'deleted')
             ->whereNotNull('current_version_id')
+            ->when($scope === 'missing_or_stale', fn ($query) => $query->whereDoesntHave('translations', fn ($translations) => $translations
+                ->where('target_locale', $targetLocale)
+                ->whereIn('status', ['approved', 'draft'])
+                ->whereColumn('source_book_block_version_id', 'book_blocks.current_version_id')))
             ->get(['id', 'block_uuid', 'text_plain']);
         abort_if($blocks->isEmpty(), 422, 'Save at least one text block before starting a translation batch.');
         $estimatedCredits = $blocks->sum(fn (BookBlock $block) => $credits->quote($validated['model'], str_word_count($block->text_plain ?: '')));
@@ -554,7 +568,8 @@ class DashboardBookController extends Controller
                 'source_locale' => $book->lang,
                 'estimated_source_words' => $blocks->sum(fn (BookBlock $block) => str_word_count($block->text_plain ?: '')),
                 'estimated_credits' => $estimatedCredits,
-                'scope' => $validated['scope'] ?? 'missing_or_stale',
+                'scope' => $scope,
+                'block_uuids' => $blocks->pluck('block_uuid')->all(),
             ],
             'created_by' => auth()->id(),
         ]);
