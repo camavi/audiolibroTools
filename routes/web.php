@@ -6,6 +6,7 @@ use App\Http\Controllers\AudioLibraryController;
 use App\Http\Controllers\AudioMediaController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BookActivityController;
+use App\Http\Controllers\BookAudioPublicationController;
 use App\Http\Controllers\BookDesignController;
 use App\Http\Controllers\BookDistributionController;
 use App\Http\Controllers\BookEditionController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\BookPublicationController;
 use App\Http\Controllers\DashboardAiController;
 use App\Http\Controllers\DashboardBookController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PublicAudiobookController;
 use App\Http\Controllers\StatisticsController;
 use App\Http\Controllers\SupportTicketController;
 use App\Http\Controllers\TeamController;
@@ -54,6 +56,9 @@ Route::get('/project-plan/file/{path}', function (string $path) {
 Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:auth')->name('auth.register');
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:auth')->name('auth.login');
 Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth')->name('auth.logout');
+
+Route::get('/listen/{keyBook}/{release}', [PublicAudiobookController::class, 'show'])->name('public.audiobooks.show');
+Route::get('/listen/{keyBook}/{release}/{track}', [PublicAudiobookController::class, 'stream'])->whereIn('track', ['voice', 'music', 'fx'])->name('public.audiobooks.stream');
 
 Route::get('/dashboard', function () {
     return view('dashboard');
@@ -154,6 +159,11 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
     Route::get('/books/{keyBook}/audio-timeline', [DashboardBookController::class, 'audioTimeline'])->name('books.audio-timeline');
     Route::put('/books/{keyBook}/audio-timeline', [DashboardBookController::class, 'saveAudioTimeline'])->name('books.audio-timeline.save');
     Route::post('/books/{keyBook}/audio-publish', [DashboardBookController::class, 'publishAudioTimeline'])->name('books.audio-publish');
+    Route::get('/books/{keyBook}/audio-releases', [BookAudioPublicationController::class, 'index'])->name('books.audio-releases.index');
+    Route::post('/books/{keyBook}/audio-releases', [BookAudioPublicationController::class, 'store'])->name('books.audio-releases.store');
+    Route::post('/books/{keyBook}/audio-releases/{release}/retry', [BookAudioPublicationController::class, 'retry'])->name('books.audio-releases.retry');
+    Route::patch('/books/{keyBook}/audio-releases/{release}/availability', [BookAudioPublicationController::class, 'updateAvailability'])->name('books.audio-releases.availability.update');
+    Route::get('/books/{keyBook}/audio-releases/{release}/{track}', [BookAudioPublicationController::class, 'download'])->whereIn('track', ['voice', 'music', 'fx'])->name('books.audio-releases.download');
     Route::post('/books/{keyBook}/audio-preview', [DashboardBookController::class, 'previewAudioTimeline'])->name('books.audio-preview');
     Route::get('/books/{keyBook}/audio-preview/{track}', [DashboardBookController::class, 'streamAudioPreview'])->whereIn('track', ['voice', 'music', 'fx'])->name('books.audio-preview.stream');
     Route::delete('/books/{keyBook}/audio-timeline/{timelineItem}', [DashboardBookController::class, 'deleteAudioTimelineItem'])->name('books.audio-timeline.delete');

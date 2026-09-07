@@ -4,12 +4,14 @@ namespace Tests\Feature;
 
 use App\Jobs\ProcessBookAudioJob;
 use App\Jobs\ProcessBookTranslationJob;
+use App\Http\Controllers\DashboardBookController;
 use App\Models\AccountCreditBalance;
 use App\Models\AiChatMessage;
 use App\Models\AiChatThread;
 use App\Models\AudioMediaAsset;
 use App\Models\Book;
 use App\Models\BookAudioJob;
+use App\Models\BookAudioPublication;
 use App\Models\BookAudioSegment;
 use App\Models\BookAudioTimelineItem;
 use App\Models\BookBlock;
@@ -2414,6 +2416,91 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.channels.music.status', 'empty')
             ->assertJsonPath('data.channels.fx.status', 'empty')
             ->assertJsonPath('data.duration_ms', 0);
+    }
+
+    public function test_dashboard_records_a_failed_audiobook_release_without_voice_master(): void
+    {
+        $book = $this->createBook();
+
+        $release = $this->postJson("/dashboard/api/books/{$book->key_book}/audio-releases", ['label' => 'Narrated first edition'])
+            ->assertUnprocessable()
+            ->assertJsonPath('data.release.version_number', 1)
+            ->assertJsonPath('data.release.label', 'Narrated first edition')
+            ->assertJsonPath('data.release.status', 'failed')
+            ->assertJsonPath('data.release.public_url', null)
+            ->json('data.release');
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/audio-releases/{$release['id']}/availability", ['is_online' => false])
+            ->assertUnprocessable();
+
+        $this->assertDatabaseHas('book_audio_publications', ['book_id' => $book->id, 'version_number' => 1, 'is_online' => false, 'status' => 'failed']);
+        $this->getJson("/dashboard/api/books/{$book->key_book}/audio-releases")
+            ->assertOk()
+            ->assertJsonPath('data.releases.0.id', $release['id']);
+    }
+
+    public function test_public_audiobook_page_only_exposes_online_ready_releases(): void
+    {
+        $book = $this->createBook();
+        $release = BookAudioPublication::query()->create([
+            'book_id' => $book->id, 'version_number' => 1, 'status' => 'ready', 'is_online' => true,
+            'timeline_snapshot_json' => [], 'masters_json' => [], 'duration_ms' => 0,
+        ]);
+
+        $this->get("/listen/{$book->key_book}/{$release->id}")
+            ->assertOk()
+            ->assertSee($book->name);
+
+        $release->update(['is_online' => false]);
+        $this->get("/listen/{$book->key_book}/{$release->id}")->assertNotFound();
+    }
+
+    public function test_public_audiobook_streams_only_online_release_masters(): void
+    {
+        Storage::fake('public');
+        $book = $this->createBook();
+        $paths = collect(['voice', 'music', 'fx'])->mapWithKeys(function (string $track) use ($book) {
+            $path = "audiobooks/{$book->key_book}/releases/v1/{$track}.wav";
+            Storage::disk('public')->put($path, 'RIFF test wav master');
+            return [$track => $path];
+        })->all();
+        $release = BookAudioPublication::query()->create([
+            'book_id' => $book->id,
+            'version_number' => 1,
+            'status' => 'ready',
+            'is_online' => true,
+            'timeline_snapshot_json' => [],
+            'masters_json' => collect($paths)->mapWithKeys(fn (string $path, string $track) => [$track => ['path' => $path]])->all(),
+            'duration_ms' => 1_000,
+        ]);
+
+        foreach (['voice', 'music', 'fx'] as $track) {
+            $this->get("/listen/{$book->key_book}/{$release->id}/{$track}")
+                ->assertOk()
+                ->assertHeader('content-type', 'audio/wav');
+        }
+
+        $release->update(['is_online' => false]);
+        $this->get("/listen/{$book->key_book}/{$release->id}/voice")->assertNotFound();
+    }
+
+    public function test_audio_release_snapshot_keeps_the_resolved_timeline_values(): void
+    {
+        Storage::fake('public');
+        $book = $this->createBook();
+        $edition = $book->editions()->firstOrCreate(['locale' => strtolower($book->lang ?: 'en')], ['name' => $book->name, 'status' => 'ready', 'is_original' => true]);
+        $path = 'audio-media/frozen-source.wav';
+        Storage::disk('public')->put($path, 'RIFF source');
+        $asset = AudioMediaAsset::query()->create(['account_id' => $this->user->id, 'kind' => 'music', 'name' => 'Frozen source', 'audio_path' => $path, 'duration_ms' => 4_000]);
+        $item = BookAudioTimelineItem::query()->create(['book_id' => $book->id, 'book_edition_id' => $edition->id, 'audio_media_asset_id' => $asset->id, 'track' => 'voice', 'lane' => 1, 'label' => 'Frozen voice', 'start_ms' => 120, 'duration_ms' => 3_000, 'trim_start_ms' => 100, 'trim_end_ms' => 80, 'fade_in_ms' => 60, 'fade_out_ms' => 90, 'volume' => 65, 'sort_order' => 1]);
+
+        $snapshot = app(DashboardBookController::class)->freezeAudioTimeline($book, $edition);
+        $item->update(['start_ms' => 9_999, 'volume' => 1]);
+
+        $this->assertSame([[
+            'track' => 'voice', 'path' => $path, 'startMs' => 120, 'durationMs' => 3_000,
+            'trimStartMs' => 100, 'trimEndMs' => 80, 'volume' => 0.65, 'fadeInMs' => 60, 'fadeOutMs' => 90,
+        ]], $snapshot['entries']);
     }
 
     public function test_dashboard_ungroups_a_trimmed_audio_master_without_restoring_hidden_audio(): void

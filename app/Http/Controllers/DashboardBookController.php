@@ -2072,7 +2072,10 @@ class DashboardBookController extends Controller
 
                 continue;
             }
-            $filename = "audiobooks/{$book->key_book}/published/{$track}-".Str::uuid().'.wav';
+            $releaseVersion = max(0, (int) $request->input('release_version', 0));
+            $filename = $releaseVersion
+                ? "audiobooks/{$book->key_book}/releases/v{$releaseVersion}/{$track}.wav"
+                : "audiobooks/{$book->key_book}/published/{$track}-".Str::uuid().'.wav';
             Storage::disk('public')->makeDirectory(dirname($filename));
             $this->renderAudioChannel($trackEntries, Storage::disk('public')->path($filename));
             $durationMs = max(array_map(fn (array $entry): int => $entry['startMs'] + $entry['durationMs'], $trackEntries));
@@ -2083,6 +2086,75 @@ class DashboardBookController extends Controller
         }
 
         return response()->json(['data' => ['channels' => $channels, 'duration_ms' => max(array_column($channels, 'duration_ms'))]]);
+    }
+
+    /** Capture resolved source files and mix settings so a release never reads the live timeline. */
+    public function freezeAudioTimeline(Book $book, BookEdition $edition): array
+    {
+        $roots = $this->timelineItemsForEdition($book, $edition)
+            ->whereNull('parent_timeline_item_id')
+            ->with([
+                'audioSegment', 'mediaAsset', 'librarySample',
+                'audioJob.segments' => fn ($query) => $query->orderBy('segment_index'),
+                'timelineChildren.audioSegment', 'timelineChildren.mediaAsset', 'timelineChildren.librarySample',
+            ])->get();
+        $entries = [];
+        $add = static function (string $track, ?string $path, int $startMs, int $durationMs, int $trimStartMs, int $trimEndMs, float $volume, int $fadeInMs, int $fadeOutMs) use (&$entries): void {
+            if (in_array($track, ['voice', 'music', 'fx'], true) && $path && ! str_starts_with($path, 'mock://') && $durationMs > 0) {
+                $entries[] = compact('track', 'path', 'startMs', 'durationMs', 'trimStartMs', 'trimEndMs', 'volume', 'fadeInMs', 'fadeOutMs');
+            }
+        };
+
+        foreach ($roots as $root) {
+            if ($root->timelineChildren->isNotEmpty()) {
+                foreach ($root->timelineChildren->sortBy('start_ms') as $child) {
+                    $add($child->track, $child->audioSegment?->audio_path ?? $child->mediaAsset?->audio_path ?? $child->librarySample?->audio_path, (int) $child->start_ms, (int) $child->duration_ms, (int) $child->trim_start_ms, (int) $child->trim_end_ms, ((float) ($root->volume ?? 100) / 100) * ((float) ($child->volume ?? 100) / 100), (int) $child->fade_in_ms, (int) $child->fade_out_ms);
+                }
+            } elseif ($root->is_group && $root->audioJob?->segments->isNotEmpty()) {
+                $offset = 0;
+                foreach ($root->audioJob->segments as $segment) {
+                    $add($root->track, $segment->audio_path, (int) $root->start_ms + $offset, (int) $segment->duration_ms, 0, 0, (float) ($root->volume ?? 100) / 100, (int) $root->fade_in_ms, (int) $root->fade_out_ms);
+                    $offset += (int) $segment->duration_ms + (int) $segment->pause_after_ms;
+                }
+            } else {
+                $add($root->track, $root->audioSegment?->audio_path ?? $root->mediaAsset?->audio_path ?? $root->librarySample?->audio_path, (int) $root->start_ms, (int) $root->duration_ms, (int) $root->trim_start_ms, (int) $root->trim_end_ms, (float) ($root->volume ?? 100) / 100, (int) $root->fade_in_ms, (int) $root->fade_out_ms);
+            }
+        }
+
+        return ['entries' => $entries, 'frozen_at' => now()->toIso8601String()];
+    }
+
+    /** Render a previously frozen release snapshot. Voice is mandatory; music and FX remain optional. */
+    public function renderFrozenAudioTimeline(Book $book, array $snapshot, int $releaseVersion): array
+    {
+        $entries = ['voice' => [], 'music' => [], 'fx' => []];
+        foreach (($snapshot['entries'] ?? []) as $entry) {
+            $track = $entry['track'] ?? null;
+            $path = $entry['path'] ?? null;
+            if (! isset($entries[$track]) || ! is_string($path) || ! Storage::disk('public')->exists($path)) {
+                continue;
+            }
+            $absolute = Storage::disk('public')->path($path);
+            $entries[$track][] = ['absolute' => $absolute, 'startMs' => (int) ($entry['startMs'] ?? 0), 'durationMs' => (int) ($entry['durationMs'] ?? 0), 'trimStartMs' => (int) ($entry['trimStartMs'] ?? 0), 'trimEndMs' => (int) ($entry['trimEndMs'] ?? 0), 'volume' => (float) ($entry['volume'] ?? 1), 'fadeInMs' => (int) ($entry['fadeInMs'] ?? 0), 'fadeOutMs' => (int) ($entry['fadeOutMs'] ?? 0)];
+        }
+        if (empty($entries['voice'])) {
+            throw ValidationException::withMessages(['release' => 'A ready Voice master is required before creating an audiobook release.']);
+        }
+
+        $channels = [];
+        foreach (['voice', 'music', 'fx'] as $track) {
+            if (! count($entries[$track])) {
+                $channels[$track] = ['status' => 'empty', 'duration_ms' => 0, 'url' => null];
+                continue;
+            }
+            $filename = "audiobooks/{$book->key_book}/releases/v{$releaseVersion}/{$track}.wav";
+            Storage::disk('public')->makeDirectory(dirname($filename));
+            $this->renderAudioChannel($entries[$track], Storage::disk('public')->path($filename));
+            $durationMs = max(array_map(fn (array $entry): int => $entry['startMs'] + $entry['durationMs'], $entries[$track]));
+            $channels[$track] = ['status' => 'ready', 'duration_ms' => $durationMs, 'path' => $filename];
+        }
+
+        return ['channels' => $channels, 'duration_ms' => max(array_column($channels, 'duration_ms'))];
     }
 
     /** Render masters once per saved timeline fingerprint and reuse them for the reader preview. */

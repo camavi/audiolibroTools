@@ -28,7 +28,7 @@
 - Categorie: tabella, seed e API iniziali avviati.
 - Copertina.
 - Stato progetto.
-- Pubblicazioni versionate: ogni release mantiene snapshot e file PDF, ePub e audiobook senza sovrascrivere le versioni precedenti.
+- Pubblicazioni versionate: ePub/PDF e audiobook mantengono release indipendenti senza sovrascrivere le versioni precedenti; l'audiobook congela i master Voice/Music/FX e può essere ritirato dal player pubblico senza eliminare i file.
 - Lista libri.
 - Pannello libro.
 
