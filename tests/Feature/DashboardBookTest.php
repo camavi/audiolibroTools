@@ -448,6 +448,36 @@ class DashboardBookTest extends TestCase
         $this->assertSame('The second imported paragraph.', $blocks->last()->text_plain);
     }
 
+    public function test_dashboard_can_select_reimport_changes_before_applying_them(): void
+    {
+        Storage::fake('local');
+
+        $this->post('/dashboard/api/books/import', [
+            'title' => 'Selective re-import',
+            'manuscript' => UploadedFile::fake()->createWithContent('original.txt', "Keep this paragraph.\n\nChange this paragraph.\n\nDo not remove this paragraph."),
+        ])->assertCreated();
+
+        $book = Book::query()->sole();
+        $preview = $this->post("/dashboard/api/books/{$book->key_book}/reimport-preview", [
+            'manuscript' => UploadedFile::fake()->createWithContent('updated.txt', "Keep this paragraph.\n\nThis paragraph was updated."),
+        ])->assertCreated();
+
+        $items = collect($preview->json('data.items'));
+        $modifiedKey = $items->firstWhere('kind', 'modified')['selection_key'];
+        $removed = $items->firstWhere('kind', 'removed');
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/reimport-confirm", [
+            'preview_token' => $preview->json('data.preview_token'),
+            'selected_item_keys' => [$modifiedKey],
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.applied_counts.modified', 1)
+            ->assertJsonPath('data.applied_counts.removed', 0);
+
+        $this->assertDatabaseHas('book_blocks', ['book_id' => $book->id, 'text_plain' => 'This paragraph was updated.']);
+        $this->assertDatabaseHas('book_blocks', ['book_id' => $book->id, 'block_uuid' => $removed['block_uuid'], 'status' => 'clean']);
+    }
+
     public function test_dashboard_previews_a_manuscript_before_confirming_its_import(): void
     {
         Storage::fake('local');

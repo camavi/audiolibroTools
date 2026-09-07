@@ -255,27 +255,40 @@ class DashboardBookController extends Controller
     {
         $validated = $request->validate(['manuscript' => ['required', 'file', 'mimes:txt,pdf,docx', 'max:25600']]);
         $book = Book::query()->where('account_id', auth()->id())->where('key_book', $keyBook)->firstOrFail();
-        try { $incoming = $manuscripts->blocksFor($validated['manuscript']); } catch (\InvalidArgumentException $exception) { throw ValidationException::withMessages(['manuscript' => [$exception->getMessage()]]); }
+        try {
+            $incoming = $manuscripts->blocksFor($validated['manuscript']);
+        } catch (\InvalidArgumentException $exception) {
+            throw ValidationException::withMessages(['manuscript' => [$exception->getMessage()]]);
+        }
         $token = Str::random(64);
         $file = $validated['manuscript'];
         $path = $file->storeAs('bookManuscriptReimports/'.auth()->id()."/{$token}", Str::random(16).'.'.strtolower($file->getClientOriginalExtension()), 'local');
         Cache::put("book-manuscript-reimport:{$token}", ['account_id' => auth()->id(), 'book_id' => $book->id, 'path' => $path, 'name' => $file->getClientOriginalName(), 'mime' => $file->getMimeType()], now()->addHour());
+
         return response()->json(['data' => ['preview_token' => $token, ...$reimport->compare($book, $incoming, $blocks)]], 201);
     }
 
     public function confirmManuscriptReimport(Request $request, string $keyBook, ManuscriptImportService $manuscripts, ManuscriptReimportService $reimport, BookBlockService $blocks): JsonResponse
     {
-        $validated = $request->validate(['preview_token' => ['required', 'string', 'size:64']]);
+        $validated = $request->validate([
+            'preview_token' => ['required', 'string', 'size:64'],
+            'selected_item_keys' => ['sometimes', 'array', 'max:10000'],
+            'selected_item_keys.*' => ['string', 'max:100'],
+        ]);
         $book = Book::query()->where('account_id', auth()->id())->where('key_book', $keyBook)->firstOrFail();
         $preview = Cache::get("book-manuscript-reimport:{$validated['preview_token']}");
         abort_unless(is_array($preview) && $preview['account_id'] === auth()->id() && $preview['book_id'] === $book->id && Storage::disk('local')->exists($preview['path']), 404, 'The re-import preview has expired.');
         $file = new UploadedFile(Storage::disk('local')->path($preview['path']), $preview['name'], $preview['mime'], null, true);
         try {
             $incoming = $manuscripts->blocksFor($file);
-            $result = DB::transaction(fn () => $reimport->apply($book, $incoming, $blocks, auth()->id()));
+            $result = DB::transaction(fn () => $reimport->apply($book, $incoming, $blocks, auth()->id(), $validated['selected_item_keys'] ?? null));
             $path = $file->storeAs('bookManuscripts/'.auth()->id()."/{$book->key_book}", Str::random(16).'.'.strtolower($file->getClientOriginalExtension()), 'local');
             $book->update(['manuscript_file_path' => $path, 'manuscript_original_name' => $preview['name'], 'manuscript_mime_type' => $preview['mime'], 'manuscript_size' => $file->getSize(), 'manuscript_imported_at' => now()]);
-        } finally { Storage::disk('local')->delete($preview['path']); Cache::forget("book-manuscript-reimport:{$validated['preview_token']}"); }
+        } finally {
+            Storage::disk('local')->delete($preview['path']);
+            Cache::forget("book-manuscript-reimport:{$validated['preview_token']}");
+        }
+
         return response()->json(['data' => $result]);
     }
 
