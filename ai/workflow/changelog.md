@@ -1,5 +1,12 @@
 # Registro Avanzamento
 
+## 2026-09-07
+
+- Completato l'import manoscritti: upload TXT/PDF, conservazione del file originale, estrazione del testo e creazione di blocchi editor con versione append-only `import`. I PDF scansiti richiedono OCR prima del caricamento.
+- Aggiunta revisione pre-import: rilevamento di heading Markdown, capitoli/parti e titoli in maiuscolo, con riepilogo capitoli, blocchi e parole prima della creazione del libro.
+- La revisione pre-import consente di riclassificare ogni blocco come titolo di capitolo o paragrafo prima della conferma.
+- Aggiunto import DOCX: titoli Word e stili Heading vengono riconosciuti come capitoli nella revisione pre-import.
+
 ## 2026-09-01
 
 - Aggiornato `dev.sh`: `./dev.sh` avvia anche il servizio Qwen dal repository operativo fratello `../qwen3-TTS-AT`; il percorso resta configurabile con `QWEN_TTS_DIR`.

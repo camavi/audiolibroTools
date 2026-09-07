@@ -12,6 +12,7 @@ use App\Models\Book;
 use App\Models\BookAudioJob;
 use App\Models\BookAudioSegment;
 use App\Models\BookAudioTimelineItem;
+use App\Models\BookBlock;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
 use App\Models\BookBlockTranslation;
@@ -27,6 +28,7 @@ use App\Services\Ai\EditorAiTranslationService;
 use App\Services\BookAudioGenerationService;
 use App\Services\BookBlockService;
 use App\Services\Credits\TranslationCreditService;
+use Dompdf\Dompdf;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Crypt;
@@ -34,6 +36,9 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use PhpOffice\PhpWord\IOFactory;
+use PhpOffice\PhpWord\PhpWord;
+use PhpOffice\PhpWord\Style;
 use Tests\TestCase;
 
 class DashboardBookTest extends TestCase
@@ -414,6 +419,106 @@ class DashboardBookTest extends TestCase
         $this->assertSame([$category->id], $book->categories);
 
         Storage::disk('local')->assertExists("bookEdit/{$this->user->id}/{$book->key_book}.json");
+    }
+
+    public function test_dashboard_can_import_a_text_manuscript_into_versioned_editor_blocks(): void
+    {
+        Storage::fake('local');
+
+        $response = $this->post('/dashboard/api/books/import', [
+            'title' => 'Imported story',
+            'manuscript' => UploadedFile::fake()->createWithContent('story.txt', "# Chapter one\n\nThe first imported paragraph.\n\nThe second imported paragraph."),
+        ]);
+
+        $response
+            ->assertCreated()
+            ->assertJsonPath('data.name', 'Imported story')
+            ->assertJsonPath('data.imported_blocks', 3);
+
+        $book = Book::query()->sole();
+        $this->assertSame('story.txt', $book->manuscript_original_name);
+        $this->assertNotNull($book->manuscript_imported_at);
+        Storage::disk('local')->assertExists($book->manuscript_file_path);
+        Storage::disk('local')->assertExists("bookEdit/{$this->user->id}/{$book->key_book}.json");
+
+        $blocks = BookBlock::query()->with('currentVersion')->where('book_id', $book->id)->orderBy('sort_order')->get();
+        $this->assertSame(['heading', 'paragraph', 'paragraph'], $blocks->pluck('type')->all());
+        $this->assertSame('Chapter one', $blocks->first()->text_plain);
+        $this->assertSame('import', $blocks->first()->currentVersion->source);
+        $this->assertSame('The second imported paragraph.', $blocks->last()->text_plain);
+    }
+
+    public function test_dashboard_previews_a_manuscript_before_confirming_its_import(): void
+    {
+        Storage::fake('local');
+
+        $preview = $this->post('/dashboard/api/books/import-preview', [
+            'manuscript' => UploadedFile::fake()->createWithContent('structured.txt', "CHAPTER ONE\nThe opening paragraph.\n\nCHAPTER TWO\nThe next paragraph."),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.summary.chapters', 2)
+            ->assertJsonPath('data.summary.blocks', 4)
+            ->assertJsonPath('data.summary.structure.0.type', 'heading');
+
+        $this->assertDatabaseCount('books', 0);
+        $this->assertDatabaseCount('book_blocks', 0);
+
+        $this->postJson('/dashboard/api/books/import-confirm', [
+            'preview_token' => $preview->json('data.preview_token'),
+            'title' => 'Reviewed import',
+            'block_types' => ['paragraph', 'paragraph', 'heading', 'paragraph'],
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.name', 'Reviewed import')
+            ->assertJsonPath('data.imported_blocks', 4);
+
+        $this->assertDatabaseCount('books', 1);
+        $this->assertDatabaseHas('book_blocks', ['type' => 'paragraph', 'text_plain' => 'CHAPTER ONE']);
+        $this->assertDatabaseHas('book_blocks', ['type' => 'heading', 'text_plain' => 'CHAPTER TWO']);
+        $this->assertDatabaseHas('book_blocks', ['type' => 'paragraph', 'text_plain' => 'The next paragraph.']);
+    }
+
+    public function test_dashboard_can_import_text_from_a_pdf_manuscript(): void
+    {
+        Storage::fake('local');
+        $pdf = new Dompdf;
+        $pdf->loadHtml('<html><body><p>A readable PDF manuscript paragraph.</p></body></html>');
+        $pdf->render();
+
+        $this->post('/dashboard/api/books/import', [
+            'manuscript' => UploadedFile::fake()->createWithContent('readable.pdf', $pdf->output()),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.imported_blocks', 1);
+
+        $this->assertDatabaseHas('book_blocks', ['text_plain' => 'A readable PDF manuscript paragraph.']);
+    }
+
+    public function test_dashboard_previews_docx_titles_as_chapter_headings(): void
+    {
+        Storage::fake('local');
+        $word = new PhpWord;
+        Style::addTitleStyle(1, ['bold' => true, 'size' => 16]);
+        $section = $word->addSection();
+        $section->addTitle('A DOCX chapter', 1);
+        $section->addText('A paragraph read from a Word manuscript.');
+        $path = tempnam(sys_get_temp_dir(), 'audiobook-docx-');
+        IOFactory::createWriter($word, 'Word2007')->save($path);
+
+        try {
+            $preview = $this->post('/dashboard/api/books/import-preview', [
+                'manuscript' => UploadedFile::fake()->createWithContent('word-manuscript.docx', file_get_contents($path)),
+            ]);
+        } finally {
+            @unlink($path);
+        }
+
+        $preview
+            ->assertCreated()
+            ->assertJsonPath('data.summary.chapters', 1)
+            ->assertJsonPath('data.summary.structure.0.type', 'heading')
+            ->assertJsonPath('data.summary.structure.0.text', 'A DOCX chapter')
+            ->assertJsonPath('data.summary.structure.1.type', 'paragraph');
     }
 
     public function test_dashboard_returns_translation_progress_for_current_block_versions(): void

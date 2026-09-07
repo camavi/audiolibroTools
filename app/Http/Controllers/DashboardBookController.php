@@ -32,13 +32,17 @@ use App\Services\Ai\EditorAiVersionService;
 use App\Services\AudioTextSegmenter;
 use App\Services\BookBlockService;
 use App\Services\Credits\TranslationCreditService;
+use App\Services\ManuscriptImportService;
 use App\Services\QwenTtsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\Process\Process;
 
 class DashboardBookController extends Controller
@@ -147,6 +151,186 @@ class DashboardBookController extends Controller
                 'name' => $book->name,
             ],
         ], 201);
+    }
+
+    public function importManuscript(
+        Request $request,
+        ManuscriptImportService $manuscripts,
+        BookBlockService $blocks,
+    ): JsonResponse {
+        $validated = $request->validate([
+            'manuscript' => ['required', 'file', 'mimes:txt,pdf,docx', 'max:25600'],
+            'title' => ['nullable', 'string', 'max:180'],
+            'description' => ['nullable', 'string', 'max:5000'],
+            'categories' => ['nullable', 'array'],
+            'categories.*' => ['integer', 'exists:book_categories,id'],
+            'block_types' => ['nullable', 'array'],
+            'block_types.*' => ['required', 'string', Rule::in(['heading', 'paragraph'])],
+        ]);
+
+        [$book, $importedBlocks] = $this->saveImportedManuscript($validated['manuscript'], $validated, $manuscripts, $blocks);
+
+        return response()->json([
+            'data' => [
+                'id' => $book->id,
+                'key_book' => $book->key_book,
+                'name' => $book->name,
+                'imported_blocks' => count($importedBlocks),
+            ],
+        ], 201);
+    }
+
+    public function previewManuscript(Request $request, ManuscriptImportService $manuscripts): JsonResponse
+    {
+        $validated = $request->validate([
+            'manuscript' => ['required', 'file', 'mimes:txt,pdf,docx', 'max:25600'],
+        ]);
+        $file = $validated['manuscript'];
+
+        try {
+            $importedBlocks = $manuscripts->blocksFor($file);
+        } catch (\InvalidArgumentException $exception) {
+            throw ValidationException::withMessages(['manuscript' => [$exception->getMessage()]]);
+        }
+        $token = Str::random(64);
+        $path = $file->storeAs(
+            'bookManuscriptPreviews/'.(auth()->id() ?: 'guest')."/{$token}",
+            Str::random(16).'.'.strtolower($file->getClientOriginalExtension()),
+            'local',
+        );
+        Cache::put("book-manuscript-preview:{$token}", [
+            'account_id' => auth()->id(),
+            'path' => $path,
+            'original_name' => $file->getClientOriginalName(),
+            'mime_type' => $file->getMimeType(),
+        ], now()->addHour());
+
+        return response()->json(['data' => [
+            'preview_token' => $token,
+            'summary' => $this->manuscriptImportSummary($importedBlocks),
+        ]], 201);
+    }
+
+    public function confirmManuscriptImport(
+        Request $request,
+        ManuscriptImportService $manuscripts,
+        BookBlockService $blocks,
+    ): JsonResponse {
+        $validated = $request->validate([
+            'preview_token' => ['required', 'string', 'size:64'],
+            'title' => ['nullable', 'string', 'max:180'],
+            'description' => ['nullable', 'string', 'max:5000'],
+            'categories' => ['nullable', 'array'],
+            'categories.*' => ['integer', 'exists:book_categories,id'],
+            'block_types' => ['nullable', 'array'],
+            'block_types.*' => ['required', 'string', Rule::in(['heading', 'paragraph'])],
+        ]);
+        $preview = Cache::get("book-manuscript-preview:{$validated['preview_token']}");
+        abort_unless(is_array($preview) && $preview['account_id'] === auth()->id() && Storage::disk('local')->exists($preview['path']), 404, 'The import preview has expired. Choose the manuscript again.');
+
+        $file = new UploadedFile(
+            Storage::disk('local')->path($preview['path']),
+            $preview['original_name'],
+            $preview['mime_type'],
+            null,
+            true,
+        );
+        try {
+            [$book, $importedBlocks] = $this->saveImportedManuscript($file, $validated, $manuscripts, $blocks);
+        } finally {
+            Storage::disk('local')->delete($preview['path']);
+            Cache::forget("book-manuscript-preview:{$validated['preview_token']}");
+        }
+
+        return response()->json(['data' => [
+            'id' => $book->id,
+            'key_book' => $book->key_book,
+            'name' => $book->name,
+            'imported_blocks' => count($importedBlocks),
+        ]], 201);
+    }
+
+    /** @return array{Book, array<int, array{type: string, text_plain: string, content_json: array<string, mixed>}>} */
+    private function saveImportedManuscript(UploadedFile $file, array $validated, ManuscriptImportService $manuscripts, BookBlockService $blocks): array
+    {
+        try {
+            $importedBlocks = $manuscripts->blocksFor($file);
+        } catch (\InvalidArgumentException $exception) {
+            throw ValidationException::withMessages(['manuscript' => [$exception->getMessage()]]);
+        }
+        if (array_key_exists('block_types', $validated)) {
+            if (count($validated['block_types']) !== count($importedBlocks)) {
+                throw ValidationException::withMessages(['block_types' => ['The reviewed structure no longer matches this manuscript. Choose the file again.']]);
+            }
+            foreach ($importedBlocks as $index => &$block) {
+                $block['type'] = $validated['block_types'][$index];
+                $block['content_json']['type'] = $block['type'];
+            }
+            unset($block);
+        }
+        $accountId = auth()->id();
+        $title = trim(($validated['title'] ?? null) ?: pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME));
+        $title = $title !== '' ? $title : 'Imported manuscript';
+        $keyBook = md5(($accountId ?: 'guest').'-'.$title.'-'.microtime(true).'-'.Str::random(8));
+        $path = $file->storeAs(
+            'bookManuscripts/'.($accountId ?: 'guest')."/{$keyBook}",
+            Str::random(16).'.'.strtolower($file->getClientOriginalExtension()),
+            'local',
+        );
+
+        try {
+            $book = DB::transaction(function () use ($accountId, $keyBook, $title, $validated, $file, $path, $importedBlocks, $blocks) {
+                $book = Book::query()->create([
+                    'account_id' => $accountId,
+                    'key_book' => $keyBook,
+                    'id_file' => 0,
+                    'name' => $title,
+                    'description' => $validated['description'] ?? '',
+                    'categories' => $validated['categories'] ?? [],
+                    'manuscript_file_path' => $path,
+                    'manuscript_original_name' => $file->getClientOriginalName(),
+                    'manuscript_mime_type' => $file->getMimeType(),
+                    'manuscript_size' => $file->getSize(),
+                    'manuscript_imported_at' => now(),
+                ]);
+
+                foreach ($importedBlocks as $index => $block) {
+                    $blocks->saveBlock($book, [
+                        ...$block,
+                        'block_uuid' => (string) Str::ulid(),
+                        'sort_order' => ($index + 1) * 1000,
+                        'source' => 'import',
+                    ], $accountId);
+                }
+
+                Storage::disk('local')->put('bookEdit/'.($accountId ?: 'guest')."/{$keyBook}.json", '');
+
+                return $book;
+            });
+        } catch (\Throwable $exception) {
+            Storage::disk('local')->delete($path);
+            throw $exception;
+        }
+
+        return [$book, $importedBlocks];
+    }
+
+    /** @param array<int, array{type: string, text_plain: string, content_json: array<string, mixed>}> $blocks */
+    private function manuscriptImportSummary(array $blocks): array
+    {
+        $headings = collect($blocks)->where('type', 'heading')->pluck('text_plain')->take(8)->values()->all();
+        $text = collect($blocks)->pluck('text_plain')->implode(' ');
+
+        return [
+            'blocks' => count($blocks),
+            'chapters' => count($headings),
+            'words' => str_word_count($text),
+            'headings' => $headings,
+            'structure' => collect($blocks)->map(fn (array $block) => [
+                'type' => $block['type'],
+                'text' => $block['text_plain'],
+            ])->values()->all(),
+        ];
     }
 
     public function update(Request $request, string $keyBook): JsonResponse
@@ -1853,7 +2037,7 @@ class DashboardBookController extends Controller
             ->orderBy('track')->orderBy('sort_order')->get();
         $fingerprint = hash('sha256', json_encode($items->toArray(), JSON_THROW_ON_ERROR));
         $cached = data_get($edition->metadata_json, 'audio_preview');
-        if (is_array($cached) && ($cached['fingerprint'] ?? null) === $fingerprint && isset($cached['channels']) && collect($cached['channels'])->filter(fn ($channel) => ($channel['status'] ?? null) === 'ready')->every(fn ($channel) => !empty($channel['path']) && Storage::disk('public')->exists($channel['path']))) {
+        if (is_array($cached) && ($cached['fingerprint'] ?? null) === $fingerprint && isset($cached['channels']) && collect($cached['channels'])->filter(fn ($channel) => ($channel['status'] ?? null) === 'ready')->every(fn ($channel) => ! empty($channel['path']) && Storage::disk('public')->exists($channel['path']))) {
             return response()->json(['data' => [...$cached, 'channels' => $this->previewChannelUrls($request, $keyBook, $cached['channels']), 'cached' => true]]);
         }
 
@@ -1873,13 +2057,15 @@ class DashboardBookController extends Controller
         $path = is_array($channel) ? ($channel['path'] ?? null) : null;
         abort_unless($path && Storage::disk('public')->exists($path), 404);
         $absolute = Storage::disk('public')->path($path);
+
         return response()->file($absolute, ['Content-Type' => mime_content_type($absolute) ?: 'audio/wav', 'Accept-Ranges' => 'bytes']);
     }
 
     private function previewChannelUrls(Request $request, string $keyBook, array $channels): array
     {
         $edition = $request->input('edition');
-        return collect($channels)->mapWithKeys(fn (array $channel, string $track) => [$track => [...$channel, 'url' => !empty($channel['path']) ? route('dashboard.api.books.audio-preview.stream', ['keyBook' => $keyBook, 'track' => $track]).($edition ? '?edition='.urlencode((string) $edition) : '') : null]])->all();
+
+        return collect($channels)->mapWithKeys(fn (array $channel, string $track) => [$track => [...$channel, 'url' => ! empty($channel['path']) ? route('dashboard.api.books.audio-preview.stream', ['keyBook' => $keyBook, 'track' => $track]).($edition ? '?edition='.urlencode((string) $edition) : '') : null]])->all();
     }
 
     /** @param array<int, array<string, mixed>> $entries */
@@ -2896,7 +3082,9 @@ class DashboardBookController extends Controller
     {
         $editionId = $request->input('edition');
 
-        if ($editionId) return $book->editions()->findOrFail($editionId);
+        if ($editionId) {
+            return $book->editions()->findOrFail($editionId);
+        }
 
         return $book->editions()->where('is_original', true)->first()
             ?? $book->editions()->create([
@@ -2910,7 +3098,9 @@ class DashboardBookController extends Controller
 
     private function audioEditionBlock(Book $book, BookBlock $block, BookEdition $edition): BookBlock
     {
-        if ($edition->is_original) return $block;
+        if ($edition->is_original) {
+            return $block;
+        }
 
         $translation = BookBlockTranslation::query()
             ->where('book_id', $book->id)
@@ -2930,7 +3120,9 @@ class DashboardBookController extends Controller
 
     private function editionAudioSettings(Book $book, ?BookEdition $edition): array
     {
-        if (! $edition) return $book->audio_settings_json ?? [];
+        if (! $edition) {
+            return $book->audio_settings_json ?? [];
+        }
 
         $settings = data_get($edition->metadata_json, 'audio_settings');
 
@@ -2943,7 +3135,9 @@ class DashboardBookController extends Controller
     {
         return $book->audioTimelineItems()->where(function ($query) use ($edition): void {
             $query->where('book_edition_id', $edition->id);
-            if ($edition->is_original) $query->orWhereNull('book_edition_id');
+            if ($edition->is_original) {
+                $query->orWhereNull('book_edition_id');
+            }
         });
     }
 

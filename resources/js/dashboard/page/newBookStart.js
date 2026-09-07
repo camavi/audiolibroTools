@@ -6,18 +6,11 @@ const createdBook = _.rod(null);
 const formStatus = _.rod(null);
 const submittingBook = _.rod(false);
 const loadingCreateBook = _.rod(false);
+const importingManuscript = _.rod(false);
 
 const title = _.rod('');
 const description = _.rod('');
 const categories = _.rod([]);
-
-const uploadFile = _.Upload({
-    label: 'Upload book',
-    multiple: false,
-    model: 'upload',
-    accept: ".txt,.pdf/*",
-    uploadButton: false,
-});
 async function loadCategories() {
     if (loadingCategories.value || categoryOptions.value.length) return;
     loadingCategories.value = true;
@@ -137,24 +130,114 @@ function writeBookForm(close) {
     );
 
 }
-function uploadBook(close) {
-    return _.form({
-        class: 'at-newBookDialogForm',
-        action: '#',
-        method: 'post',
-        onSubmit: (event) => {
-            event.preventDefault();
+function uploadBook() {
+    const importPreview = _.rod(null);
+    const confirmingImport = _.rod(false);
+    const manuscriptUpload = _.Upload({
+        class: 'at-newBookUploadArea',
+        label: 'Manuscript',
+        subtitle: 'Choose a DOCX, TXT or text-based PDF file (max 25 MB).',
+        accept: '.docx,.txt,application/pdf',
+        multiple: false,
+        maxFileSize: 25 * 1024 * 1024,
+        url: '/dashboard/api/books/import-preview',
+        method: 'POST',
+        fieldName: 'manuscript',
+        uploadButton: false,
+        headers: {
+            Accept: 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
         },
+        onStart: () => { importingManuscript.value = true; formStatus.value = null; },
+        onSuccess: (item, { response }) => {
+            const payload = JSON.parse(response.text || '{}');
+            const preview = payload?.data?.data || payload?.data;
+            if (!preview?.preview_token) {
+                formStatus.value = { type: 'danger', title: 'Preview failed', message: 'The import preview did not include a confirmation token.' };
+                return;
+            }
+            preview.blockTypeModels = (preview.summary?.structure || []).map((block) => _.rod(block.type));
+            importPreview.value = preview;
+        },
+        onError: (item, { error }) => {
+            let message = error.message || 'Unable to analyse the manuscript.';
+            try { message = JSON.parse(error.response?.text || '{}').message || message; } catch (_) { /* Keep the upload error. */ }
+            formStatus.value = { type: 'danger', title: 'Preview failed', message };
+        },
+        onFinish: () => { importingManuscript.value = false; },
+    });
+
+    const submitImport = async () => {
+        formStatus.value = null;
+        if (importPreview.value) return;
+        if (!manuscriptUpload._upload.files().length) {
+            formStatus.value = { type: 'warning', title: 'Missing manuscript', message: 'Choose a DOCX, TXT or text-based PDF manuscript before importing.' };
+            return;
+        }
+        manuscriptUpload._upload.upload();
+    };
+
+    const confirmImport = async (close) => {
+        const preview = importPreview.value;
+        if (!preview?.preview_token || confirmingImport.value) return;
+        confirmingImport.value = true;
+        formStatus.value = null;
+        try {
+            const payload = await _.http.postJSON('/dashboard/api/books/import-confirm', {
+                preview_token: preview.preview_token,
+                title: title.value.trim() || null,
+                block_types: (preview.blockTypeModels || []).map((model) => model.value),
+            });
+            const book = payload?.data?.data || payload?.data;
+            close();
+            _.router.navigate(`/dashboard/book/${book.key_book}/edit`);
+        } catch (error) {
+            formStatus.value = { type: 'danger', title: 'Import failed', message: error.message || 'Unable to create the book from this preview.' };
+        } finally {
+            confirmingImport.value = false;
+        }
+    };
+
+    const content = _.div({
+        class: 'at-newBookDialogForm',
     },
-        _.div({ class: 'at-newBookUploadArea' }, uploadFile),
         _.Row({ gap: 'md', class: 'at-newBookDialogFields' },
+            _.Input({
+                class: 'cms-col-24',
+                label: 'Book title (optional)',
+                icon: 'title',
+                clearable: true,
+                model: title,
+                placeholder: 'Uses the file name when left blank',
+            }),
+            _.div({ class: 'cms-col-24' }, manuscriptUpload),
+            _.div({ class: 'cms-col-24' }, () => {
+                const preview = importPreview.value;
+                if (!preview) return null;
+                const summary = preview.summary || {};
+                return _.section({ class: 'at-newBookImportPreview' },
+                    _.div(_.span('Import review'), _.h3('Structure detected')),
+                    _.p(`${summary.chapters || 0} chapters · ${summary.blocks || 0} blocks · ${summary.words || 0} words`),
+                    _.p('Change a block to Chapter heading when it should appear in the book index.'),
+                    _.div({ class: 'at-newBookImportHeadings' }, ...(summary.structure || []).map((block, index) => _.div({ class: 'at-newBookImportBlock' },
+                        _.Select({ label: false, model: preview.blockTypeModels?.[index], options: [{ value: 'heading', label: 'Chapter heading' }, { value: 'paragraph', label: 'Paragraph' }] }),
+                        _.span(block.text),
+                    ))),
+                );
+            }),
             _.div({ class: 'cms-col-24' }, () => formStatus.value?.message ? statusAlert() : null),
-            _.div({ class: 'cms-col-24 at-newBookDialogActions' },
-                _.Btn({ type: "button", color: "secondary", onClick: close }, "Cancel"),
-                _.Btn({ type: "submit", color: "primary", icon: 'upload_file' }, "Upload manuscript")
-            )
         )
     );
+
+    return {
+        content,
+        actions: (close) => _.div({ class: 'at-newBookDialogActions' },
+            _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Cancel'),
+            () => importPreview.value
+                ? _.Btn({ type: 'button', color: 'primary', icon: 'auto_stories', loading: confirmingImport, onClick: () => confirmImport(close) }, 'Confirm and create book')
+                : _.Btn({ type: 'button', color: 'primary', icon: 'preview', loading: importingManuscript, onClick: submitImport }, 'Review manuscript'),
+        ),
+    };
 }
 function choiceCard({ icon, title, subtitle, action, disabled = false }) {
     return _.button({ type: 'button', class: 'at-newBookChoice', disabled, onClick: action },
@@ -199,6 +282,7 @@ export default function newBookStart() {
                         title: 'Upload book',
                         subtitle: 'Import a manuscript and prepare it for block editing.',
                         action: () => {
+                            const importer = uploadBook();
                             _.Dialog({
                                 size: "lg",
                                 stickyActions: true,
@@ -209,7 +293,8 @@ export default function newBookStart() {
                                         _.h3('Upload a book'),
                                         _.p('Upload your source file and prepare it for block editing in the workspace.'),
                                     ),
-                                    content: ({ close }) => uploadBook(close),
+                                    content: importer.content,
+                                    actions: ({ close }) => importer.actions(close),
                                 }
                             }).open();
                         },

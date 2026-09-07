@@ -11,6 +11,11 @@ class Book extends Model
         'account_id',
         'key_book',
         'id_file',
+        'manuscript_file_path',
+        'manuscript_original_name',
+        'manuscript_mime_type',
+        'manuscript_size',
+        'manuscript_imported_at',
         'name',
         'description',
         'categories',
@@ -41,6 +46,7 @@ class Book extends Model
             'pdf_settings_json' => 'array',
             'pdf_generated_at' => 'datetime',
             'moderated_at' => 'datetime',
+            'manuscript_imported_at' => 'datetime',
         ];
     }
 

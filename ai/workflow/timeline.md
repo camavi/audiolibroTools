@@ -52,7 +52,7 @@ Obiettivi:
 - dashboard utente CMSwift;
 - lista libri;
 - creazione libro: primo flusso `New book` / `Write book` avviato;
-- upload libro;
+- upload libro TXT/PDF completato: estrazione testo, blocchi editor e versione `import`;
 - pannello libro;
 - metadati e copertina.
 
