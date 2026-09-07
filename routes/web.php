@@ -116,6 +116,8 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
     Route::post('/books/import', [DashboardBookController::class, 'importManuscript'])->name('books.import');
     Route::post('/books/import-preview', [DashboardBookController::class, 'previewManuscript'])->name('books.import-preview');
     Route::post('/books/import-confirm', [DashboardBookController::class, 'confirmManuscriptImport'])->name('books.import-confirm');
+    Route::post('/books/{keyBook}/reimport-preview', [DashboardBookController::class, 'previewManuscriptReimport'])->name('books.reimport-preview');
+    Route::post('/books/{keyBook}/reimport-confirm', [DashboardBookController::class, 'confirmManuscriptReimport'])->name('books.reimport-confirm');
     Route::get('/books/{keyBook}', [DashboardBookController::class, 'show'])->name('books.show');
     Route::patch('/books/{keyBook}', [DashboardBookController::class, 'update'])->name('books.update');
     Route::patch('/books/{keyBook}/design', [DashboardBookController::class, 'updateBookDesign'])->name('books.design.update');

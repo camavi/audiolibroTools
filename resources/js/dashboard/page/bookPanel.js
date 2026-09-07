@@ -238,6 +238,14 @@ function openBookSettingsDialog(keyBook) {
     dialog.open();
 }
 
+function openReimportDialog(keyBook) {
+    const preview = _.rod(null), loading = _.rod(false), applying = _.rod(false), note = _.rod(null);
+    const upload = _.Upload({ label: 'Updated manuscript', subtitle: 'DOCX, TXT or text-based PDF · max 25 MB', accept: '.docx,.txt,application/pdf', multiple: false, maxFileSize: 25 * 1024 * 1024, url: `/dashboard/api/books/${encodeURIComponent(keyBook)}/reimport-preview`, fieldName: 'manuscript', uploadButton: false, headers: { Accept: 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' }, onStart: () => { loading.value = true; note.value = null; }, onSuccess: (item, { response }) => { CMSwift.reactive.untracked(() => { preview.value = JSON.parse(response.text || '{}').data || null; }); }, onError: (item, { error }) => { note.value = { type: 'danger', message: error.message || 'Unable to compare this manuscript.' }; }, onFinish: () => { loading.value = false; } });
+    const review = () => { if (!upload._upload.files().length) { note.value = { type: 'warning', message: 'Choose a manuscript first.' }; return; } upload._upload.upload(); };
+    const dialog = _.Dialog({ size: 'lg', stickyActions: true, slots: { header: _.div(_.span('Manuscript update'), _.h3('Re-import manuscript'), _.p('Unchanged blocks keep their history. Review the difference before applying.')), content: () => _.div({ class: 'at-newBookDialogForm' }, upload, () => { const data = preview.value; if (!data) return null; const c = data.counts || {}; return _.section({ class: 'at-newBookImportPreview' }, _.h3('Changes detected'), _.p(`${c.unchanged || 0} unchanged · ${c.modified || 0} modified · ${c.added || 0} added · ${c.removed || 0} removed`), _.div({ class: 'at-newBookImportHeadings' }, ...(data.items || []).slice(0, 30).map((item) => _.div({ class: 'at-newBookImportBlock' }, _.strong(item.kind), _.span(item.text))))) }, () => note.value ? _.Alert(note.value) : null), actions: ({ close }) => _.div({ class: 'at-newBookDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Cancel'), () => preview.value ? _.Btn({ color: 'primary', icon: 'published_with_changes', loading: applying, onClick: async () => { applying.value = true; try { await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/reimport-confirm`, { preview_token: preview.value.preview_token }); close(); loadBook(keyBook); } catch (error) { note.value = { type: 'danger', message: error.message || 'Unable to apply the re-import.' }; } finally { applying.value = false; } } }, 'Apply re-import') : _.Btn({ color: 'primary', icon: 'preview', loading, onClick: review }, 'Review changes')) } });
+    dialog.open();
+}
+
 function panelContent(keyBook) {
     if (panelStatus.value === 'loading' || panelStatus.value === 'idle') return loadingState();
     if (panelStatus.value === 'error') return errorState(keyBook);
@@ -258,6 +266,7 @@ function panelContent(keyBook) {
                 ),
             ),
             _.div({ class: 'at-bookPanelHeroSettings' },
+                _.Btn({ dense: true, color: 'secondary', icon: 'upload_file', title: 'Re-import manuscript', 'aria-label': 'Re-import manuscript', onClick: () => openReimportDialog(keyBook) }),
                 _.Btn({ dense: true, color: 'secondary', icon: 'settings', title: 'Book settings', 'aria-label': 'Book settings', onClick: () => openBookSettingsDialog(keyBook) }),
             ),
         ),
