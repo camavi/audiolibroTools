@@ -156,8 +156,10 @@ function uploadBook() {
                 formStatus.value = { type: 'danger', title: 'Preview failed', message: 'The import preview did not include a confirmation token.' };
                 return;
             }
-            preview.blockTypeModels = (preview.summary?.structure || []).map((block) => _.rod(block.type));
-            importPreview.value = preview;
+            CMSwift.reactive.untracked(() => {
+                preview.blockTypeModels = (preview.summary?.structure || []).map((block) => _.rod(block.type));
+                importPreview.value = preview;
+            });
         },
         onError: (item, { error }) => {
             let message = error.message || 'Unable to analyse the manuscript.';
