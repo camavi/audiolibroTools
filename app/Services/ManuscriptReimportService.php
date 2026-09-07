@@ -12,12 +12,12 @@ class ManuscriptReimportService
      * Exact content matches retain their existing block identity. Unmatched
      * neighbouring blocks are reported as modifications for user review.
      *
-     * @param array<int, array{type: string, text_plain: string, content_json: array<string, mixed>}> $incoming
+     * @param  array<int, array{type: string, text_plain: string, content_json: array<string, mixed>}>  $incoming
      * @return array{items: array<int, array<string, mixed>>, counts: array<string, int>}
      */
     public function compare(Book $book, array $incoming, BookBlockService $blocks): array
     {
-        $existing = $book->blocks()->where('status', '!=', 'deleted')->get()->values();
+        $existing = $book->blocks()->where('status', '!=', 'deleted')->withCount(['comments', 'reviews', 'translations', 'audioSegments'])->get()->values();
         $unused = $existing->keyBy('id')->all();
         $items = [];
 
@@ -27,6 +27,7 @@ class ManuscriptReimportService
             if ($match) {
                 unset($unused[$match->id]);
                 $items[] = ['kind' => 'unchanged', 'incoming_index' => $index, 'block_uuid' => $match->block_uuid, 'text' => $candidate['text_plain']];
+
                 continue;
             }
 
@@ -36,14 +37,21 @@ class ManuscriptReimportService
                 'incoming_index' => $index,
                 'block_uuid' => $neighbour?->block_uuid,
                 'text' => $candidate['text_plain'],
+                'previous_text' => $neighbour?->text_plain,
+                'impact' => $neighbour ? $this->impact($neighbour) : null,
             ];
         }
 
         foreach ($unused as $block) {
-            $items[] = ['kind' => 'removed', 'incoming_index' => null, 'block_uuid' => $block->block_uuid, 'text' => $block->text_plain];
+            $items[] = ['kind' => 'removed', 'incoming_index' => null, 'block_uuid' => $block->block_uuid, 'text' => $block->text_plain, 'impact' => $this->impact($block)];
         }
 
         return ['items' => $items, 'counts' => collect($items)->countBy('kind')->map(fn ($count) => (int) $count)->all() + ['unchanged' => 0, 'modified' => 0, 'added' => 0, 'removed' => 0]];
+    }
+
+    private function impact(BookBlock $block): array
+    {
+        return ['comments' => $block->comments_count, 'reviews' => $block->reviews_count, 'translations' => $block->translations_count, 'audio' => $block->audio_segments_count];
     }
 
     /** @param array<int, array{type: string, text_plain: string, content_json: array<string, mixed>}> $incoming */
@@ -67,7 +75,9 @@ class ManuscriptReimportService
         }
 
         foreach ($comparison['items'] as $item) {
-            if ($item['kind'] === 'removed') $deleted[] = $item['block_uuid'];
+            if ($item['kind'] === 'removed') {
+                $deleted[] = $item['block_uuid'];
+            }
         }
         $blocks->markBlocksDeleted($book, $deleted);
 

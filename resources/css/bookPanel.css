@@ -195,6 +195,44 @@
 .at-bookPanelNotice--error { color: var(--cms-danger, #b91c1c); }
 .at-bookPanelNotice .cms-btn { margin-left: .75rem; }
 
+.at-newBookImportBlock.is-added {
+    border-color: rgba(42, 151, 96, .28);
+    background: rgba(42, 151, 96, .07);
+}
+
+.at-newBookImportBlock.is-removed {
+    border-color: rgba(202, 75, 75, .28);
+    background: rgba(202, 75, 75, .065);
+}
+
+.at-reimportDiff {
+    display: grid;
+    gap: .6rem;
+    margin-top: .5rem;
+}
+
+.at-reimportDiffPrevious,
+.at-reimportDiffNew {
+    padding: .55rem .7rem;
+    border: 1px solid transparent;
+    border-radius: .5rem;
+}
+
+.at-reimportDiffPrevious {
+    border-color: rgba(202, 75, 75, .28);
+    background: rgba(202, 75, 75, .065);
+}
+
+.at-reimportDiffNew {
+    border-color: rgba(42, 151, 96, .28);
+    background: rgba(42, 151, 96, .07);
+}
+
+.at-reimportDiffPrevious small { color: #d98787; }
+.at-reimportDiffNew small { color: #79bd98; }
+.at-reimportDiffPrevious p,
+.at-reimportDiffNew p { margin: .18rem 0 0; }
+
 @media (max-width: 720px) {
     .at-bookPanelHero { grid-template-columns: 100px minmax(0, 1fr); padding: 1.25rem; }
     .at-bookPanelAreas { grid-template-columns: 1fr; }
