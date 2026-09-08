@@ -2294,6 +2294,37 @@ class DashboardBookTest extends TestCase
         Storage::disk('public')->assertExists(BookAudioSegment::query()->latest('id')->value('audio_path'));
     }
 
+    public function test_audio_direction_pause_settings_are_used_when_audio_is_queued(): void
+    {
+        Queue::fake();
+        $book = $this->createBook();
+        $blockUuid = (string) Str::uuid();
+        app(BookBlockService::class)->saveBlock($book, [
+            'block_uuid' => $blockUuid, 'type' => 'paragraph', 'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('A complete sentence.'),
+            'text_plain' => 'A complete sentence.',
+        ]);
+        $profile = BookVoiceProfile::query()->create([
+            'book_id' => $book->id, 'name' => 'Narrator', 'role' => 'narrator',
+            'voice_provider' => 'mock', 'voice_id' => 'narrator-main',
+        ]);
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/audio-settings", [
+            'sentence_ms' => 1375,
+            'comma_ms' => 125,
+            'semicolon_ms' => 625,
+            'newline_ms' => 900,
+        ])->assertOk()->assertJsonPath('data.audio_settings_json.sentence_ms', 1375);
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/voice-assignment", ['voice_profile_id' => $profile->id])->assertOk();
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/blocks/{$blockUuid}/audio/generate", [
+            'provider_key' => 'mock', 'model' => 'mock-tts-v1',
+        ])->assertAccepted();
+
+        $request = BookAudioJob::query()->sole()->request_json;
+        $this->assertSame(1375, $request['audio_settings']['sentence_ms']);
+        $this->assertSame(1375, $request['parts'][0]['pause_after_ms']);
+    }
+
     public function test_dashboard_requires_voice_assignment_before_audio_generation(): void
     {
         $book = $this->createBook();

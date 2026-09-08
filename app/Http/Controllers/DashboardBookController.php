@@ -1501,7 +1501,7 @@ class DashboardBookController extends Controller
             'data' => [
                 'block' => $this->serializeEditorBlock($this->audioEditionBlock($book, $block, $edition)),
                 'assignment' => $assignment ? $this->serializeVoiceAssignment($assignment, $block) : null,
-                'generator_settings' => $this->serializeAudioGeneratorSettings($book, $this->audioEditionBlock($book, $block, $edition), $generatorProfile, BookAudioGenerationOverride::query()->where('book_block_version_id', $block->current_version_id)->where('book_edition_id', $edition->id)->first()),
+                'generator_settings' => $this->serializeAudioGeneratorSettings($book, $edition, $this->audioEditionBlock($book, $block, $edition), $generatorProfile, BookAudioGenerationOverride::query()->where('book_block_version_id', $block->current_version_id)->where('book_edition_id', $edition->id)->first()),
                 'segments' => $segments
                     ->map(fn (BookAudioSegment $segment) => $this->serializeAudioSegment($segment, $block))
                     ->values(),
@@ -1575,7 +1575,7 @@ class DashboardBookController extends Controller
             'created_by' => auth()->id(),
         ]);
 
-        return response()->json(['data' => ['generator_settings' => $this->serializeAudioGeneratorSettings($book, $this->audioEditionBlock($book, $block, $edition), $profile, $override)]]);
+        return response()->json(['data' => ['generator_settings' => $this->serializeAudioGeneratorSettings($book, $edition, $this->audioEditionBlock($book, $block, $edition), $profile, $override)]]);
     }
 
     public function previewBlockAudioGeneratorSettings(Request $request, string $keyBook, string $blockUuid): JsonResponse
@@ -1608,7 +1608,7 @@ class DashboardBookController extends Controller
             'split_settings_json' => $validated['split_settings'] ?? [],
         ]);
 
-        return response()->json(['data' => ['generator_settings' => $this->serializeAudioGeneratorSettings($book, $this->audioEditionBlock($book, $block, $edition), $profile, $preview)]]);
+        return response()->json(['data' => ['generator_settings' => $this->serializeAudioGeneratorSettings($book, $edition, $this->audioEditionBlock($book, $block, $edition), $profile, $preview)]]);
     }
 
     public function audioTimeline(Request $request, string $keyBook): JsonResponse
@@ -3432,7 +3432,7 @@ class DashboardBookController extends Controller
         ];
     }
 
-    private function serializeAudioGeneratorSettings(Book $book, BookBlock $block, ?BookVoiceProfile $profile, ?BookAudioGenerationOverride $override = null): array
+    private function serializeAudioGeneratorSettings(Book $book, BookEdition $edition, BookBlock $block, ?BookVoiceProfile $profile, ?BookAudioGenerationOverride $override = null): array
     {
         $originalText = $block->currentVersion?->text_plain ?: $block->text_plain ?: '';
         $override ??= $block->current_version_id
@@ -3442,7 +3442,7 @@ class DashboardBookController extends Controller
         $tones = $libraryVoice
             ? $libraryVoice->samples->map(fn ($sample) => ['id' => $sample->tone_id, 'name' => $sample->toneDefinition?->name ?: "Tone #{$sample->tone_id}"])->unique('id')->values()->all()
             : [];
-        $settings = [...AudioTextSegmenter::DEFAULT_PAUSES, ...($book->audio_settings_json ?? []), ...($override?->split_settings_json ?? [])];
+        $settings = [...AudioTextSegmenter::DEFAULT_PAUSES, ...$this->editionAudioSettings($book, $edition), ...($override?->split_settings_json ?? [])];
         $splitTones = $override?->split_tones_json ?? [];
         $splits = app(AudioTextSegmenter::class)->split($override?->generator_text ?: $originalText, $settings);
 

@@ -30,6 +30,7 @@ const audioGroups = _.rod([]);
 const expandedAudioGroupIds = _.rod([]);
 const previewingAudioGroupId = _.rod(null);
 let generatedAudioPreview = null;
+let generatedAudioPreviewTimer = null;
 let audioPollingTimer = null;
 const audioGenerating = _.rod(false);
 const qwenModel = _.rod('quality');
@@ -407,6 +408,10 @@ function timelineAudioUrl(item) {
 }
 
 function stopGeneratedAudioPreview() {
+    if (generatedAudioPreviewTimer) {
+        window.clearTimeout(generatedAudioPreviewTimer);
+        generatedAudioPreviewTimer = null;
+    }
     if (generatedAudioPreview) {
         generatedAudioPreview.pause();
         generatedAudioPreview.onended = null;
@@ -423,8 +428,11 @@ function previewGeneratedAudioGroup(group) {
     }
 
     stopGeneratedAudioPreview();
-    const urls = (group.segments || []).map(timelineAudioUrl).filter(Boolean);
-    if (!urls.length) {
+    const parts = (group.segments || []).map((segment) => ({
+        url: timelineAudioUrl(segment),
+        pauseAfterMs: Math.max(0, Number(segment.pause_after_ms || 0)),
+    })).filter((part) => part.url);
+    if (!parts.length) {
         audioStatus.value = { type: 'warning', message: 'This generated master has no playable audio.' };
         return;
     }
@@ -433,11 +441,17 @@ function previewGeneratedAudioGroup(group) {
     previewingAudioGroupId.value = Number(group.id);
     const playNext = () => {
         if (Number(previewingAudioGroupId.value) !== Number(group.id)) return;
-        const player = new Audio(urls[index]);
+        const part = parts[index];
+        const player = new Audio(part.url);
         generatedAudioPreview = player;
         player.onended = () => {
+            generatedAudioPreview = null;
             index += 1;
-            if (index < urls.length) playNext(); else stopGeneratedAudioPreview();
+            if (index >= parts.length) { stopGeneratedAudioPreview(); return; }
+            generatedAudioPreviewTimer = window.setTimeout(() => {
+                generatedAudioPreviewTimer = null;
+                playNext();
+            }, part.pauseAfterMs);
         };
         player.onerror = () => {
             audioStatus.value = { type: 'warning', message: 'Unable to play this generated audio preview.' };
@@ -1321,6 +1335,28 @@ function openAudioDirectionDialog() {
     const libraryVoices = _.rod([]);
     const libraryLoading = _.rod(true);
     const libraryChoice = new Map();
+    // Keep the CMSwift field while using a numeric text input: it is more
+    // reliable in dialog overlays with a suffix and still opens a number pad
+    // on mobile devices.
+    const timingInput = (label, model) => {
+        const field = _.Input({
+            class: 'cms-col-6',
+            label,
+            type: 'text',
+            inputmode: 'numeric',
+            autocomplete: 'off',
+            suffix: 'ms',
+            model,
+        });
+        field._input.addEventListener('input', () => {
+            const digits = String(field._input.value || '').replace(/\D/g, '').slice(0, 4);
+            const normalized = digits === '' ? '' : String(Math.min(5000, Number(digits)));
+            if (field._input.value !== normalized) field._input.value = normalized;
+            if (model.value !== normalized) model.value = normalized;
+            field._refresh();
+        });
+        return field;
+    };
     _.http.getJSON('/dashboard/api/audio-library/voices')
         .then((payload) => { libraryVoices.value = audioData(payload).voices || []; })
         .catch((error) => { status.value = { type: 'warning', message: error.message || 'Audio Library could not be loaded.' }; })
@@ -1395,10 +1431,10 @@ function openAudioDirectionDialog() {
                     _.h4('Audiobook timing'),
                     _.small({ class: 'text-muted' }, 'Pauses used for generated audio in this language. Values are milliseconds.'),
                     _.Row({ gap: 'md' },
-                        _.Input({ class: 'cms-col-6', label: 'Comma ,', type: 'number', min: 0, suffix: 'ms', model: commaPause }),
-                        _.Input({ class: 'cms-col-6', label: 'Semicolon ; :', type: 'number', min: 0, suffix: 'ms', model: semicolonPause }),
-                        _.Input({ class: 'cms-col-6', label: 'Sentence . ! ?', type: 'number', min: 0, suffix: 'ms', model: sentencePause }),
-                        _.Input({ class: 'cms-col-6', label: 'New paragraph', type: 'number', min: 0, suffix: 'ms', model: newlinePause }),
+                        timingInput('Comma ,', commaPause),
+                        timingInput('Semicolon ; :', semicolonPause),
+                        timingInput('Sentence . ! ?', sentencePause),
+                        timingInput('New paragraph', newlinePause),
                     ),
                 ),
                 () => status.value ? _.Alert(status.value) : null,
