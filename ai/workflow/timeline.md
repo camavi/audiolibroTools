@@ -111,6 +111,7 @@ Obiettivi:
 - mappa testo/audio;
 - timeline;
 - player.
+- equalizzatore non distruttivo per clip, canale Voice/Music/FX e master: parametri salvati nella timeline, inclusi nello snapshot di release e applicati dal renderer del master WAV.
 
 ## Fase 7 - Pubblicazione
 
@@ -132,7 +133,17 @@ Obiettivi:
 - sicurezza;
 - test;
 - performance;
+- Code splitting dashboard/Vite completato: le pagine pesanti vengono caricate su richiesta; il core CMSwift condiviso resta sotto una soglia di avviso dedicata di 550 kB.
 - documentazione deploy;
 - QA UI responsive;
 - controllo accessibilita';
 - cleanup tecnico.
+
+## Fase 9 - Distribution Hub e Partnership
+
+Stato: rinviata — ultima priorita'.
+
+La base di release, delivery pubblico e pacchetti di distribuzione e' stata
+archiviata. Non sviluppare altri connettori, feed, checklist operative o
+partnership finche' le fasi precedenti non saranno completate e questa fase non
+verra' riaperta esplicitamente.

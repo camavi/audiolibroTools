@@ -287,7 +287,7 @@ export default function abtPlay(ctx) {
         () => error.value ? _.Alert({ type: 'danger', message: error.value }) : null,
         _.section({ class: 'at-abtWorkspace' },
             _.section({ class: 'at-abtPlayer' },
-                _.header({ class: 'at-abtHeader' }, _.span(() => modeLabel()), _.Btn({ dense: true, color: 'secondary', icon: 'format_list_bulleted', title: 'Chapters', onClick: () => document.querySelector('.at-abtChapters')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) })),
+                _.header({ class: 'at-abtHeader' }, _.span(() => modeLabel()), _.Btn({ dense: true, textGradient: true, color: 'secondary', icon: 'format_list_bulleted', title: 'Chapters', onClick: () => document.querySelector('.at-abtChapters')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) })),
                 _.div({ class: 'at-abtReading' }, () => loading.value || previewRendering.value ? _.div({ class: 'at-abtLoading' }, previewRendering.value ? 'Generating preview masters: Voice, Music and FX…' : 'Loading audiobook…') : reader()),
                 _.div({ class: 'at-abtProgress' }, () => [
                     _.div({ class: 'at-abtProgressLine', style: `width:${progress.value}%` }),

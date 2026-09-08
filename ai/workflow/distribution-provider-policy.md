@@ -2,6 +2,10 @@
 
 _Verificata il 2026-09-08. Questa e' una decisione di prodotto e tecnica, non consulenza legale._
 
+> Priorita': il Distribution Hub e ogni partnership/provider adapter sono
+> rinviati all'ultima fase del progetto. Questa policy resta come riferimento,
+> ma non autorizza nuovo sviluppo fino alla riapertura esplicita della fase.
+
 ## Obiettivo
 
 Audiobook Tools (AT) e' il punto unico in cui l'autore prepara file, metadata, validazioni e stato delle consegne. AT non deve diventare publisher, distributore, merchant of record o destinatario delle royalties del cliente senza un accordo commerciale scritto con il provider che lo preveda.
