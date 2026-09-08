@@ -60,6 +60,7 @@ const timelinePlayers = new Map();
 const timelinePlayerEqualizers = new Map();
 const timelineTrackLimiters = new Map();
 const timelineMeterLevel = _.rod(0);
+const timelineTrackMeterLevels = _.rod({ voice: 0, music: 0, fx: 0 });
 const timelineWaveforms = new Map();
 const pendingTimelineWaveforms = new Set();
 let timelineAudioContext = null;
@@ -70,6 +71,7 @@ let timelineFrame = null;
 let timelineStartedAt = 0;
 let timelinePausedAt = null;
 let renderTimeline = null;
+let renderTimelineMeters = null;
 let timelineSaveTimer = null;
 const timelineTracks = [
     { key: 'voice', label: 'Voice', color: '#2563eb' },
@@ -890,13 +892,15 @@ function stopTimelinePlayers() {
         chain.masterLow.disconnect(); chain.masterMid.disconnect(); chain.masterHigh.disconnect();
     });
     timelinePlayerEqualizers.clear();
-    timelineTrackLimiters.forEach((limiter) => limiter.disconnect());
+    timelineTrackLimiters.forEach(({ limiter, analyser }) => { limiter.disconnect(); analyser.disconnect(); });
     timelineTrackLimiters.clear();
     if (timelineMasterLimiter) { timelineMasterLimiter.disconnect(); timelineMasterLimiter = null; }
     if (timelineMeterFrame) window.cancelAnimationFrame(timelineMeterFrame);
     timelineMeterFrame = null;
     timelineMeterAnalyser = null;
     timelineMeterLevel.value = 0;
+    timelineTrackMeterLevels.value = { voice: 0, music: 0, fx: 0 };
+    renderTimelineMeters?.();
 }
 function timelinePartPlayerKey(item, part) {
     return `${timelineItemKey(item)}:${part.id || part.offset_ms}`;
@@ -951,17 +955,21 @@ function timelineTrackOutput(track) {
     }
     if (!timelineTrackLimiters.has(track)) {
         const limiter = transparentLimiter(timelineAudioContext);
-        limiter.connect(timelineMasterLimiter);
-        timelineTrackLimiters.set(track, limiter);
+        const analyser = timelineAudioContext.createAnalyser();
+        analyser.fftSize = 512;
+        limiter.connect(analyser).connect(timelineMasterLimiter);
+        timelineTrackLimiters.set(track, { limiter, analyser });
     }
 
-    return timelineTrackLimiters.get(track);
+    return timelineTrackLimiters.get(track).limiter;
 }
 
 function startTimelineMeter() {
     if (!timelineMeterAnalyser || timelineMeterFrame) return;
     const measure = () => {
         timelineMeterLevel.value = audioMeterLevel(timelineMeterAnalyser);
+        timelineTrackMeterLevels.value = Object.fromEntries(timelineTracks.map(({ key }) => [key, audioMeterLevel(timelineTrackLimiters.get(key)?.analyser)]));
+        renderTimelineMeters?.();
         timelineMeterFrame = timelineIsPlaying.value ? window.requestAnimationFrame(measure) : null;
     };
     measure();
@@ -1114,6 +1122,8 @@ function pauseTimelinePlayback() {
     if (timelineMeterFrame) window.cancelAnimationFrame(timelineMeterFrame);
     timelineMeterFrame = null;
     timelineMeterLevel.value = 0;
+    timelineTrackMeterLevels.value = { voice: 0, music: 0, fx: 0 };
+    renderTimelineMeters?.();
     timelinePausedAt = timelinePlayhead.value;
     readingPlayback.value = null;
 }
@@ -2511,6 +2521,7 @@ function drawTimelineLabels(canvas, lanes, height, rulerHeight, rowHeight) {
     lanes.forEach(({ key: trackKey, label: name, color, lane }, index) => {
         const y = rulerHeight + index * rowHeight;
         const state = trackState.value[trackKey];
+        const meterLevel = timelineTrackMeterLevels.value[trackKey] || 0;
         ctx.fillStyle = index % 2 ? '#111b2b' : '#142033'; ctx.fillRect(0, y, width, rowHeight - 1);
         ctx.fillStyle = '#cbd5e1'; ctx.fillText(lane ? `${name} ${lane + 1}` : name, 18, y + rowHeight / 2);
         if (lane !== 0) return;
@@ -2519,7 +2530,25 @@ function drawTimelineLabels(canvas, lanes, height, rulerHeight, rowHeight) {
         ctx.fillStyle = state.locked ? '#fbbf24' : '#64748b'; ctx.fillText('L', 116, y + rowHeight / 2);
         ctx.strokeStyle = '#475569'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(18, y + rowHeight - 17); ctx.lineTo(128, y + rowHeight - 17); ctx.stroke();
         ctx.fillStyle = color; ctx.beginPath(); ctx.arc(18 + (110 * state.volume / 100), y + rowHeight - 17, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = color; ctx.font = '18px Inter, sans-serif'; ctx.fillText('+', 145, y + rowHeight / 2); ctx.font = '11px Inter, sans-serif';
+        const meterX = 156;
+        const meterY = y + Math.max(4, rowHeight * .05);
+        const meterWidth = 8;
+        const meterHeight = Math.max(28, rowHeight * .9);
+        const meterRadius = 3;
+        ctx.beginPath(); ctx.roundRect(meterX, meterY, meterWidth, meterHeight, meterRadius);
+        ctx.fillStyle = '#0a111d'; ctx.fill();
+        const activeHeight = Math.round(meterHeight * meterLevel);
+        if (activeHeight) {
+            const gradient = ctx.createLinearGradient(0, meterY + meterHeight, 0, meterY);
+            gradient.addColorStop(0, color); gradient.addColorStop(.72, '#f1c95a'); gradient.addColorStop(1, '#e35d6a');
+            ctx.save();
+            ctx.beginPath(); ctx.roundRect(meterX, meterY, meterWidth, meterHeight, meterRadius); ctx.clip();
+            ctx.fillStyle = gradient; ctx.fillRect(meterX, meterY + meterHeight - activeHeight, meterWidth, activeHeight);
+            ctx.restore();
+        }
+        ctx.beginPath(); ctx.roundRect(meterX + .5, meterY + .5, meterWidth - 1, meterHeight - 1, meterRadius - .5);
+        ctx.strokeStyle = '#1d2b3f'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = color; ctx.font = '18px Inter, sans-serif'; ctx.fillText('+', 136, y + rowHeight / 2); ctx.font = '11px Inter, sans-serif';
     });
 }
 
@@ -2652,6 +2681,12 @@ function timelineCard() {
     scroller.append(canvas);
     const render = () => drawTimeline(canvas, labelCanvas);
     renderTimeline = render;
+    renderTimelineMeters = () => {
+        const rect = labelCanvas.getBoundingClientRect();
+        const lanes = timelineLaneLayout();
+        const rulerHeight = 34;
+        drawTimelineLabels(labelCanvas, lanes, rect.height, rulerHeight, (rect.height - rulerHeight) / lanes.length);
+    };
     let drag = null;
     const geometry = (event) => {
         const rect = canvas.getBoundingClientRect();
@@ -2675,7 +2710,7 @@ function timelineCard() {
         const x = event.clientX - rect.left;
         const localY = event.clientY - rect.top - rulerHeight - laneIndex * rowHeight;
         const next = { ...trackState.value, [laneData.key]: { ...trackState.value[laneData.key] } };
-        if (x >= 140) {
+        if (x >= 130 && x < 151) {
             if (laneData.key === 'music' || laneData.key === 'fx') openTimelineMediaDialog(laneData.key);
             else addTimelineItem(laneData.key);
             render();
@@ -2684,7 +2719,7 @@ function timelineCard() {
         if (localY > rowHeight - 30 && x <= 140) next[laneData.key].volume = Math.round(Math.max(0, Math.min(100, ((x - 18) / 110) * 100)));
         else if (x >= 54 && x < 92) next[laneData.key].muted = !next[laneData.key].muted;
         else if (x >= 92 && x < 117) next[laneData.key].solo = !next[laneData.key].solo;
-        else if (x >= 117 && x < 140) next[laneData.key].locked = !next[laneData.key].locked;
+        else if (x >= 117 && x < 130) next[laneData.key].locked = !next[laneData.key].locked;
         trackState.value = next;
         render();
     });
