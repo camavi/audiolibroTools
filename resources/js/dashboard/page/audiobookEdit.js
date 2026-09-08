@@ -442,6 +442,7 @@ async function openTimelineEqualizerDialog(scope, track = null) {
     const mid = _.rod(String(normalizeEqualizerBands(source).mid_gain_db));
     const high = _.rod(String(normalizeEqualizerBands(source).high_gain_db));
     const activePreset = _.rod('custom');
+    const bypassed = _.rod(false);
     const listening = _.rod(false);
     const name = scope === 'clip' ? selected.label : `${track.toUpperCase()} master`;
     const previewItem = scope === 'clip'
@@ -451,6 +452,12 @@ async function openTimelineEqualizerDialog(scope, track = null) {
     let previewAudio = null;
     let previewContext = null;
     let previewNodes = null;
+    const curveCanvas = document.createElement('canvas');
+    curveCanvas.className = 'at-equalizerCurveCanvas';
+    curveCanvas.width = 1200;
+    curveCanvas.height = 220;
+    curveCanvas.setAttribute('role', 'img');
+    curveCanvas.setAttribute('aria-label', 'Equalizer frequency response curve');
     const currentSettings = () => normalizeEqualizerBands({ low_gain_db: low.value, mid_gain_db: mid.value, high_gain_db: high.value });
     const stopPreview = () => {
         if (previewAudio) { previewAudio.pause(); previewAudio.src = ''; previewAudio = null; }
@@ -458,9 +465,51 @@ async function openTimelineEqualizerDialog(scope, track = null) {
         previewNodes = null;
         listening.value = false;
     };
+    const drawEqualizerCurve = () => {
+        const context = curveCanvas.getContext('2d');
+        if (!context) return;
+        const { width, height } = curveCanvas;
+        const left = 44; const right = 24; const top = 20; const bottom = 31;
+        const chartWidth = width - left - right; const chartHeight = height - top - bottom;
+        const settings = bypassed.value ? { low_gain_db: 0, mid_gain_db: 0, high_gain_db: 0 } : currentSettings();
+        const minFrequency = 80; const maxFrequency = 8000;
+        const xFor = (frequency) => left + chartWidth * (Math.log(frequency / minFrequency) / Math.log(maxFrequency / minFrequency));
+        const yFor = (gain) => top + chartHeight * ((12 - Math.max(-12, Math.min(12, gain))) / 24);
+        const responseFor = (frequency) => {
+            const lowShelf = settings.low_gain_db / (1 + (frequency / 180) ** 2);
+            const middle = settings.mid_gain_db * Math.exp(-((Math.log(frequency / 1200) ** 2) / (.32 ** 2)));
+            const highShelf = settings.high_gain_db * (1 - 1 / (1 + (frequency / 4000) ** 2));
+            return lowShelf + middle + highShelf;
+        };
+        context.clearRect(0, 0, width, height);
+        context.fillStyle = '#0b1320'; context.fillRect(0, 0, width, height);
+        context.strokeStyle = '#263851'; context.lineWidth = 1;
+        [-12, -6, 0, 6, 12].forEach((gain) => {
+            const y = yFor(gain);
+            context.beginPath(); context.moveTo(left, y); context.lineTo(width - right, y); context.stroke();
+        });
+        [180, 1200, 4000].forEach((frequency) => {
+            const x = xFor(frequency);
+            context.beginPath(); context.moveTo(x, top); context.lineTo(x, height - bottom); context.stroke();
+        });
+        const points = Array.from({ length: 181 }, (_, index) => {
+            const frequency = minFrequency * ((maxFrequency / minFrequency) ** (index / 180));
+            return [xFor(frequency), yFor(responseFor(frequency))];
+        });
+        const zero = yFor(0);
+        const fill = context.createLinearGradient(0, top, 0, height - bottom);
+        fill.addColorStop(0, 'rgb(76 130 255 / 42%)'); fill.addColorStop(1, 'rgb(76 130 255 / 4%)');
+        context.beginPath(); context.moveTo(points[0][0], zero); points.forEach(([x, y]) => context.lineTo(x, y)); context.lineTo(points.at(-1)[0], zero); context.closePath(); context.fillStyle = fill; context.fill();
+        context.beginPath(); points.forEach(([x, y], index) => index ? context.lineTo(x, y) : context.moveTo(x, y)); context.strokeStyle = '#75a1ff'; context.lineWidth = 4; context.stroke();
+        context.fillStyle = '#87a1c3'; context.font = '18px ui-monospace, monospace';
+        context.fillText('−12', 2, yFor(-12) + 6); context.fillText('0', 22, yFor(0) + 6); context.fillText('+12', 2, yFor(12) + 6);
+        context.textAlign = 'center';
+        [[180, '180 Hz'], [1200, '1.2 kHz'], [4000, '4 kHz']].forEach(([frequency, label]) => context.fillText(label, xFor(frequency), height - 8));
+    };
     const updatePreview = () => {
+        drawEqualizerCurve();
         if (!previewNodes || !previewContext) return;
-        const settings = currentSettings();
+        const settings = bypassed.value ? { low_gain_db: 0, mid_gain_db: 0, high_gain_db: 0 } : currentSettings();
         const at = previewContext.currentTime;
         previewNodes.low.gain.setTargetAtTime(settings.low_gain_db, at, .015);
         previewNodes.mid.gain.setTargetAtTime(settings.mid_gain_db, at, .015);
@@ -478,6 +527,7 @@ async function openTimelineEqualizerDialog(scope, track = null) {
         mid.value = String(settings.mid_gain_db);
         high.value = String(settings.high_gain_db);
         activePreset.value = preset.key;
+        bypassed.value = false;
         updatePreview();
     };
     const togglePreview = async () => {
@@ -553,6 +603,7 @@ async function openTimelineEqualizerDialog(scope, track = null) {
             _.div({ class: 'at-equalizerScale' }, _.span('−12'), _.span('0'), _.span('+12')),
         );
     };
+    drawEqualizerCurve();
 
     _.Dialog({
         size: 'md',
@@ -567,11 +618,15 @@ async function openTimelineEqualizerDialog(scope, track = null) {
                     _.span({ class: 'at-equalizerPresetsLabel' }, 'Starting point'),
                     _.div({ class: 'at-equalizerPresetButtons' }, presets.map((preset) => _.Btn({ dense: true, color: () => activePreset.value === preset.key ? 'primary' : 'secondary', onClick: () => applyPreset(preset) }, preset.label))),
                 ),
+                _.div({ class: 'at-equalizerCurve' }, curveCanvas),
                 _.div({ class: 'at-equalizerBands' }, gainInput('Low', '180 Hz', low), gainInput('Mid', '1.2 kHz', mid), gainInput('High', '4 kHz', high)),
                 _.small({ class: 'at-equalizerListenHint' }, () => previewPart ? `Listening loops ${scope === 'clip' ? 'the selected clip' : `a ${track.toUpperCase()} clip`} with the current tuning.` : 'No playable source is available for this scope.'),
             ),
             actions: ({ close }) => _.div({ class: 'at-equalizerActions' },
-                _.Btn({ class: 'at-equalizerListenButton', color: () => listening.value ? 'danger' : 'secondary', icon: 'play_circle', disabled: !previewPart, onClick: togglePreview }, () => listening.value ? 'Stop listening' : 'Listen in loop'),
+                _.div({ class: 'at-equalizerAuditionActions' },
+                    _.Btn({ class: 'at-equalizerListenButton', color: () => listening.value ? 'danger' : 'secondary', icon: 'play_circle', disabled: !previewPart, onClick: togglePreview }, () => listening.value ? 'Stop listening' : 'Listen in loop'),
+                    _.Btn({ dense: true, color: () => bypassed.value ? 'warning' : 'secondary', icon: 'hearing_disabled', onClick: () => { bypassed.value = !bypassed.value; updatePreview(); } }, () => bypassed.value ? 'Bypass on' : 'Bypass'),
+                ),
                 _.div({ class: 'at-equalizerActionsRight' },
                     _.Btn({ color: 'secondary', onClick: () => { reset(); updatePreview(); } }, 'Reset'),
                     _.Btn({ color: 'secondary', onClick: () => { stopPreview(); close(); } }, 'Cancel'),

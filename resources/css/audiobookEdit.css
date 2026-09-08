@@ -1500,6 +1500,19 @@
     gap: .35rem
 }
 
+.at-equalizerCurve {
+    overflow: hidden;
+    border: 1px solid #314157;
+    border-radius: .5rem;
+    background: #0b1320;
+}
+
+.at-equalizerCurveCanvas {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
 .at-equalizerBands {
     display: grid;
     gap: .55rem
@@ -1582,6 +1595,12 @@
 .at-equalizerActionsRight {
     display: flex;
     justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: .5rem
+}
+
+.at-equalizerAuditionActions {
+    display: flex;
     flex-wrap: wrap;
     gap: .5rem
 }
@@ -1779,6 +1798,10 @@
     }
 
     .at-equalizerActionsRight {
+        width: 100%;
+    }
+
+    .at-equalizerAuditionActions {
         width: 100%;
     }
 
