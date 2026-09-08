@@ -265,19 +265,52 @@ class DashboardBookTest extends TestCase
         $book = $this->createBook();
         $this->getJson("/dashboard/api/books/{$book->key_book}/distribution")
             ->assertOk()
-            ->assertJsonPath('data.providers.0.key', 'amazon_kdp');
+            ->assertJsonPath('data.providers.0.key', 'amazon_kdp')
+            ->assertJsonPath('data.providers.0.integration', 'manual_only')
+            ->assertJsonPath('data.providers.1.integration', 'delegated_portal')
+            ->assertJsonPath('data.providers.4.integration', 'file_feed')
+            ->assertJsonPath('data.providers.7.integration', 'partnership_api');
 
-        $this->putJson("/dashboard/api/books/{$book->key_book}/distribution/draft2digital", ['account_label' => 'My D2D', 'api_token' => 'private-distribution-token'])
+        $this->putJson("/dashboard/api/books/{$book->key_book}/distribution/draft2digital", ['account_label' => 'My D2D'])
             ->assertOk()
-            ->assertJsonPath('data.connection.status', 'connected')
-            ->assertJsonPath('data.connection.has_token', true);
+            ->assertJsonPath('data.connection.status', 'manual_ready')
+            ->assertJsonPath('data.connection.has_token', false);
         $connection = BookDistributionConnection::query()->sole();
-        $this->assertSame('private-distribution-token', $connection->api_token);
+        $this->assertNull($connection->api_token);
+
+        $this->putJson("/dashboard/api/books/{$book->key_book}/distribution/draft2digital", ['api_token' => 'private-distribution-token'])
+            ->assertUnprocessable();
+
+        $this->putJson("/dashboard/api/books/{$book->key_book}/distribution/streetlib", ['account_label' => 'My StreetLib'])
+            ->assertUnprocessable();
+
+        $this->putJson("/dashboard/api/books/{$book->key_book}/distribution/google_play_books", ['account_label' => 'My Google feed'])
+            ->assertOk()
+            ->assertJsonPath('data.connection.status', 'setup_requested');
 
         $this->deleteJson("/dashboard/api/books/{$book->key_book}/distribution/draft2digital")
             ->assertOk()
             ->assertJsonPath('data.disconnected', true);
+        $this->assertDatabaseCount('book_distribution_connections', 1);
+        $this->deleteJson("/dashboard/api/books/{$book->key_book}/distribution/google_play_books")
+            ->assertOk()
+            ->assertJsonPath('data.disconnected', true);
         $this->assertDatabaseCount('book_distribution_connections', 0);
+    }
+
+    public function test_dashboard_prepares_only_online_releases_for_a_distribution_provider(): void
+    {
+        $book = $this->createBook();
+        $this->putJson("/dashboard/api/books/{$book->key_book}/distribution/amazon_kdp", ['account_label' => 'My KDP'])->assertOk();
+        $publication = BookPublication::query()->create(['book_id' => $book->id, 'version_number' => 1, 'status' => 'ready', 'is_online' => true, 'snapshot_json' => []]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/distribution/amazon_kdp/releases", ['publication_id' => $publication->id])
+            ->assertCreated()
+            ->assertJsonPath('data.release.status', 'ready_to_upload')
+            ->assertJsonPath('data.release.publication_id', $publication->id);
+
+        $publication->update(['is_online' => false]);
+        $this->postJson("/dashboard/api/books/{$book->key_book}/distribution/amazon_kdp/releases", ['publication_id' => $publication->id])->assertNotFound();
     }
 
     public function test_dashboard_creates_and_lists_language_editions(): void
@@ -2442,6 +2475,7 @@ class DashboardBookTest extends TestCase
     public function test_public_audiobook_page_only_exposes_online_ready_releases(): void
     {
         $book = $this->createBook();
+        $book->update(['public_access' => 'public']);
         $release = BookAudioPublication::query()->create([
             'book_id' => $book->id, 'version_number' => 1, 'status' => 'ready', 'is_online' => true,
             'timeline_snapshot_json' => [], 'masters_json' => [], 'duration_ms' => 0,
@@ -2455,10 +2489,30 @@ class DashboardBookTest extends TestCase
         $this->get("/listen/{$book->key_book}/{$release->id}")->assertNotFound();
     }
 
+    public function test_public_book_delivery_protects_private_and_invite_releases(): void
+    {
+        Storage::fake('public');
+        $book = $this->createBook();
+        $book->update(['public_access' => 'private']);
+        $path = "publications/{$book->key_book}/v1/book.epub";
+        Storage::disk('public')->put($path, 'epub release');
+        $publication = BookPublication::query()->create(['book_id' => $book->id, 'version_number' => 1, 'status' => 'ready', 'is_online' => true, 'snapshot_json' => [], 'epub_file_path' => $path]);
+
+        $this->get("/read/{$book->key_book}")->assertNotFound();
+        $book->update(['public_access' => 'invite', 'public_share_token' => 'secret-link']);
+        $this->get("/read/{$book->key_book}")->assertNotFound();
+        $this->get("/read/{$book->key_book}?access=secret-link")->assertOk()->assertSee($book->name);
+        $this->get("/read/{$book->key_book}/{$publication->id}/epub?access=secret-link")->assertOk();
+
+        $publication->update(['is_online' => false]);
+        $this->get("/read/{$book->key_book}/{$publication->id}/epub?access=secret-link")->assertNotFound();
+    }
+
     public function test_public_audiobook_streams_only_online_release_masters(): void
     {
         Storage::fake('public');
         $book = $this->createBook();
+        $book->update(['public_access' => 'public']);
         $paths = collect(['voice', 'music', 'fx'])->mapWithKeys(function (string $track) use ($book) {
             $path = "audiobooks/{$book->key_book}/releases/v1/{$track}.wav";
             Storage::disk('public')->put($path, 'RIFF test wav master');

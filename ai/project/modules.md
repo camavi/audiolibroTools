@@ -28,7 +28,7 @@
 - Categorie: tabella, seed e API iniziali avviati.
 - Copertina.
 - Stato progetto.
-- Pubblicazioni versionate: ePub/PDF e audiobook mantengono release indipendenti senza sovrascrivere le versioni precedenti; l'audiobook congela i master Voice/Music/FX e può essere ritirato dal player pubblico senza eliminare i file.
+- Pubblicazioni versionate: ePub/PDF e audiobook mantengono release indipendenti senza sovrascrivere le versioni precedenti; l'audiobook congela i master Voice/Music/FX e può essere ritirato dal player pubblico senza eliminare i file. La distribuzione pubblica può essere privata, pubblica o protetta da link-invito; espone esclusivamente release online.
 - Lista libri.
 - Pannello libro.
 

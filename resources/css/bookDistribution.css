@@ -164,6 +164,12 @@
     font-size: .82rem
 }
 
+.at-distributionProviderIdentity {
+    display: grid;
+    gap: .18rem;
+    min-width: 0;
+}
+
 .at-distributionProviderHead small {
     color: #72839a;
     font-size: .66rem
@@ -183,6 +189,10 @@
 .at-distributionState.manual_ready,
 .at-distributionState.connected {
     color: #277245
+}
+
+.at-distributionState.setup_requested {
+    color: #a66a18
 }
 
 .at-distributionProvider p {

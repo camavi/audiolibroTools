@@ -18,6 +18,7 @@ use App\Http\Controllers\DashboardAiController;
 use App\Http\Controllers\DashboardBookController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicAudiobookController;
+use App\Http\Controllers\PublicBookController;
 use App\Http\Controllers\StatisticsController;
 use App\Http\Controllers\SupportTicketController;
 use App\Http\Controllers\TeamController;
@@ -59,6 +60,8 @@ Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth
 
 Route::get('/listen/{keyBook}/{release}', [PublicAudiobookController::class, 'show'])->name('public.audiobooks.show');
 Route::get('/listen/{keyBook}/{release}/{track}', [PublicAudiobookController::class, 'stream'])->whereIn('track', ['voice', 'music', 'fx'])->name('public.audiobooks.stream');
+Route::get('/read/{keyBook}', [PublicBookController::class, 'show'])->name('public.books.show');
+Route::get('/read/{keyBook}/{publication}/{format}', [PublicBookController::class, 'download'])->whereIn('format', ['epub', 'pdf'])->name('public.books.download');
 
 Route::get('/dashboard', function () {
     return view('dashboard');
@@ -148,6 +151,10 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
     Route::get('/books/{keyBook}/distribution', [BookDistributionController::class, 'index'])->name('books.distribution.index');
     Route::put('/books/{keyBook}/distribution/{providerKey}', [BookDistributionController::class, 'connect'])->name('books.distribution.connect');
     Route::delete('/books/{keyBook}/distribution/{providerKey}', [BookDistributionController::class, 'disconnect'])->name('books.distribution.disconnect');
+    Route::post('/books/{keyBook}/distribution/{providerKey}/releases', [BookDistributionController::class, 'publish'])->name('books.distribution.releases.store');
+    Route::patch('/books/{keyBook}/distribution/releases/{release}', [BookDistributionController::class, 'updateRelease'])->name('books.distribution.releases.update');
+    Route::get('/books/{keyBook}/distribution/releases/{release}/package', [BookDistributionController::class, 'downloadPackage'])->name('books.distribution.releases.package');
+    Route::patch('/books/{keyBook}/distribution/public-delivery', [BookDistributionController::class, 'updatePublicDelivery'])->name('books.distribution.public-delivery.update');
     Route::get('/books/{keyBook}/editions', [BookEditionController::class, 'index'])->name('books.editions.index');
     Route::post('/books/{keyBook}/editions', [BookEditionController::class, 'store'])->name('books.editions.store');
     Route::get('/books/{keyBook}/publications', [BookPublicationController::class, 'index'])->name('books.publications.index');

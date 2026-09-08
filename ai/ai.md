@@ -42,6 +42,7 @@ Quando lavori con CMSwift, evita che un parent dinamico si sottoscriva ai model 
 - [Timeline sviluppo](workflow/timeline.md)
 - [Piano editor blocchi e salvataggio](workflow/editor-block-save-plan.md)
 - [Decisioni tecniche](workflow/decisions.md)
+- [Policy provider Distribution Hub](workflow/distribution-provider-policy.md)
 - [Registro avanzamento](workflow/changelog.md)
 - [Riferimenti vecchio progetto](reference/old-project.md)
 

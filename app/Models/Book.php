@@ -21,6 +21,8 @@ class Book extends Model
         'categories',
         'lang',
         'cover_img',
+        'public_access',
+        'public_share_token',
         'moderation_status',
         'moderation_reason',
         'moderated_at',
