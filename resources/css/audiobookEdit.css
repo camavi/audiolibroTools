@@ -1605,6 +1605,53 @@
     gap: .5rem
 }
 
+.at-audioMeter {
+    display: grid;
+    grid-template-columns: auto minmax(4.2rem, 1fr) auto;
+    align-items: center;
+    gap: .38rem;
+    min-width: 10.5rem;
+    padding: .28rem .42rem;
+    border: 1px solid #314157;
+    border-radius: .38rem;
+    background: #0d1522;
+}
+
+.at-audioMeterLabel {
+    color: #8fa5c1;
+    font-size: .58rem;
+    font-weight: 800;
+    letter-spacing: .08em
+}
+
+.at-audioMeterTrack {
+    position: relative;
+    height: .38rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #22324a;
+}
+
+.at-audioMeterFill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #3ccf91 0%, #f1c95a 76%, #e35d6a 100%);
+    transition: width 70ms linear;
+}
+
+.at-audioMeterValue {
+    min-width: 2.8rem;
+    color: #cbd8eb;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: .61rem;
+    text-align: right;
+}
+
+.at-audioMeter--timeline {
+    align-self: center;
+    width: 10.5rem;
+}
+
 .at-audioTimelineSelection {
     display: flex;
     width: 100%;
@@ -1802,6 +1849,10 @@
     }
 
     .at-equalizerAuditionActions {
+        width: 100%;
+    }
+
+    .at-audioMeter {
         width: 100%;
     }
 

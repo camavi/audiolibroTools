@@ -59,10 +59,13 @@ const trackState = _.rod({ voice: { muted: false, solo: false, locked: false, vo
 const timelinePlayers = new Map();
 const timelinePlayerEqualizers = new Map();
 const timelineTrackLimiters = new Map();
+const timelineMeterLevel = _.rod(0);
 const timelineWaveforms = new Map();
 const pendingTimelineWaveforms = new Set();
 let timelineAudioContext = null;
 let timelineMasterLimiter = null;
+let timelineMeterAnalyser = null;
+let timelineMeterFrame = null;
 let timelineFrame = null;
 let timelineStartedAt = 0;
 let timelinePausedAt = null;
@@ -102,6 +105,19 @@ function normalizeEqualizerBands(value = {}) {
 function normalizeTimelineEqualizer(value = {}) {
     const tracks = value?.tracks || {};
     return { tracks: Object.fromEntries(['voice', 'music', 'fx'].map((track) => [track, normalizeEqualizerBands(tracks[track])])) };
+}
+
+function audioMeterLevel(analyser) {
+    if (!analyser) return 0;
+    const samples = new Uint8Array(analyser.fftSize);
+    analyser.getByteTimeDomainData(samples);
+    const rms = Math.sqrt(samples.reduce((total, sample) => total + ((sample - 128) / 128) ** 2, 0) / samples.length);
+    const decibels = 20 * Math.log10(Math.max(.00001, rms));
+    return Math.max(0, Math.min(1, (decibels + 60) / 60));
+}
+
+function audioMeterLabel(level) {
+    return `${Math.round(-60 + Math.max(0, Math.min(1, level)) * 60)} dBFS`;
 }
 
 function activeBlock() {
@@ -446,6 +462,7 @@ async function openTimelineEqualizerDialog(scope, track = null) {
     const activePreset = _.rod('custom');
     const bypassed = _.rod(false);
     const listening = _.rod(false);
+    const previewMeterLevel = _.rod(0);
     const name = scope === 'clip' ? selected.label : `${track.toUpperCase()} master`;
     const previewItem = scope === 'clip'
         ? selected
@@ -454,6 +471,8 @@ async function openTimelineEqualizerDialog(scope, track = null) {
     let previewAudio = null;
     let previewContext = null;
     let previewNodes = null;
+    let previewMeterAnalyser = null;
+    let previewMeterFrame = null;
     const curveCanvas = document.createElement('canvas');
     curveCanvas.className = 'at-equalizerCurveCanvas';
     curveCanvas.width = 1200;
@@ -464,6 +483,10 @@ async function openTimelineEqualizerDialog(scope, track = null) {
     const stopPreview = () => {
         if (previewAudio) { previewAudio.pause(); previewAudio.src = ''; previewAudio = null; }
         if (previewContext) { previewContext.close().catch(() => {}); previewContext = null; }
+        if (previewMeterFrame) window.cancelAnimationFrame(previewMeterFrame);
+        previewMeterFrame = null;
+        previewMeterAnalyser = null;
+        previewMeterLevel.value = 0;
         previewNodes = null;
         listening.value = false;
     };
@@ -553,12 +576,19 @@ async function openTimelineEqualizerDialog(scope, track = null) {
             const highNode = previewContext.createBiquadFilter(); highNode.type = 'highshelf'; highNode.frequency.value = 4000;
             const limiterNode = previewContext.createDynamicsCompressor();
             limiterNode.threshold.value = -3; limiterNode.knee.value = 0; limiterNode.ratio.value = 20; limiterNode.attack.value = .003; limiterNode.release.value = .1;
+            previewMeterAnalyser = previewContext.createAnalyser();
+            previewMeterAnalyser.fftSize = 512;
             previewNodes = { low: lowNode, mid: midNode, high: highNode };
-            sourceNode.connect(lowNode).connect(midNode).connect(highNode).connect(limiterNode).connect(previewContext.destination);
+            sourceNode.connect(lowNode).connect(midNode).connect(highNode).connect(limiterNode).connect(previewMeterAnalyser).connect(previewContext.destination);
             updatePreview();
             await previewContext.resume();
             await previewAudio.play();
             listening.value = true;
+            const measure = () => {
+                previewMeterLevel.value = audioMeterLevel(previewMeterAnalyser);
+                previewMeterFrame = listening.value ? window.requestAnimationFrame(measure) : null;
+            };
+            measure();
             previewAudio.addEventListener('error', stopPreview, { once: true });
         } catch (error) {
             stopPreview();
@@ -630,6 +660,11 @@ async function openTimelineEqualizerDialog(scope, track = null) {
                 _.div({ class: 'at-equalizerAuditionActions' },
                     _.Btn({ class: 'at-equalizerListenButton', color: () => listening.value ? 'danger' : 'secondary', icon: 'play_circle', disabled: !previewPart, onClick: togglePreview }, () => listening.value ? 'Stop listening' : 'Listen in loop'),
                     _.Btn({ dense: true, color: () => bypassed.value ? 'warning' : 'secondary', icon: 'hearing_disabled', onClick: () => { bypassed.value = !bypassed.value; updatePreview(); } }, () => bypassed.value ? 'Bypass on' : 'Bypass'),
+                    _.div({ class: 'at-audioMeter', title: 'Output level after EQ and limiter' },
+                        _.span({ class: 'at-audioMeterLabel' }, 'OUT'),
+                        _.div({ class: 'at-audioMeterTrack' }, _.div({ class: 'at-audioMeterFill', style: () => ({ width: `${Math.round(previewMeterLevel.value * 100)}%` }) })),
+                        _.span({ class: 'at-audioMeterValue' }, () => audioMeterLabel(previewMeterLevel.value)),
+                    ),
                 ),
                 _.div({ class: 'at-equalizerActionsRight' },
                     _.Btn({ color: 'secondary', onClick: () => { reset(); updatePreview(); } }, 'Reset'),
@@ -858,6 +893,10 @@ function stopTimelinePlayers() {
     timelineTrackLimiters.forEach((limiter) => limiter.disconnect());
     timelineTrackLimiters.clear();
     if (timelineMasterLimiter) { timelineMasterLimiter.disconnect(); timelineMasterLimiter = null; }
+    if (timelineMeterFrame) window.cancelAnimationFrame(timelineMeterFrame);
+    timelineMeterFrame = null;
+    timelineMeterAnalyser = null;
+    timelineMeterLevel.value = 0;
 }
 function timelinePartPlayerKey(item, part) {
     return `${timelineItemKey(item)}:${part.id || part.offset_ms}`;
@@ -906,7 +945,9 @@ function timelineTrackOutput(track) {
     timelineAudioContext ||= new (window.AudioContext || window.webkitAudioContext)();
     if (!timelineMasterLimiter) {
         timelineMasterLimiter = transparentLimiter(timelineAudioContext);
-        timelineMasterLimiter.connect(timelineAudioContext.destination);
+        timelineMeterAnalyser = timelineAudioContext.createAnalyser();
+        timelineMeterAnalyser.fftSize = 512;
+        timelineMasterLimiter.connect(timelineMeterAnalyser).connect(timelineAudioContext.destination);
     }
     if (!timelineTrackLimiters.has(track)) {
         const limiter = transparentLimiter(timelineAudioContext);
@@ -915,6 +956,15 @@ function timelineTrackOutput(track) {
     }
 
     return timelineTrackLimiters.get(track);
+}
+
+function startTimelineMeter() {
+    if (!timelineMeterAnalyser || timelineMeterFrame) return;
+    const measure = () => {
+        timelineMeterLevel.value = audioMeterLevel(timelineMeterAnalyser);
+        timelineMeterFrame = timelineIsPlaying.value ? window.requestAnimationFrame(measure) : null;
+    };
+    measure();
 }
 
 function configureTimelinePlayerEqualizer(key, audio, clipSettings, masterSettings, track) {
@@ -952,6 +1002,7 @@ function configureTimelinePlayerEqualizer(key, audio, clipSettings, masterSettin
 function playTimelinePlayer(audio) {
     if (audio._atTimelineActive && timelineIsPlaying.value && audio.paused) {
         timelineAudioContext?.resume().catch(() => { });
+        startTimelineMeter();
         audio.play().catch(() => { });
     }
 }
@@ -1060,6 +1111,9 @@ function pauseTimelinePlayback() {
     // Keep the decoded media alive. Recreating an HTMLAudioElement at resume
     // can start it at zero before metadata makes the requested seek available.
     pauseTimelinePlayers();
+    if (timelineMeterFrame) window.cancelAnimationFrame(timelineMeterFrame);
+    timelineMeterFrame = null;
+    timelineMeterLevel.value = 0;
     timelinePausedAt = timelinePlayhead.value;
     readingPlayback.value = null;
 }
@@ -2808,6 +2862,11 @@ function timelineCard() {
                     _.Btn({ dense: true, color: 'secondary', icon: 'skip_next', title: 'Next block', onClick: () => { activeBlockIndex.value = Math.min(audiobookBlocks.value.length - 1, activeBlockIndex.value + 1); } }),
                 ),
                 _.span({ class: 'at-audioTimecode' }, () => `00:00:${String(Math.floor(timelinePlayhead.value)).padStart(2, '0')}`),
+                _.div({ class: 'at-audioMeter at-audioMeter--timeline', title: 'Timeline output level after EQ and limiter' },
+                    _.span({ class: 'at-audioMeterLabel' }, 'OUT'),
+                    _.div({ class: 'at-audioMeterTrack' }, _.div({ class: 'at-audioMeterFill', style: () => ({ width: `${Math.round(timelineMeterLevel.value * 100)}%` }) })),
+                    _.span({ class: 'at-audioMeterValue' }, () => audioMeterLabel(timelineMeterLevel.value)),
+                ),
             ),
             _.div({ class: 'at-audioTimelineActions' },
                 _.div({ class: 'at-audioToolbarGroup', title: 'View mode' },
