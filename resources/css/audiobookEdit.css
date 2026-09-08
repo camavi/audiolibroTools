@@ -1474,6 +1474,32 @@
     line-height: 1.45
 }
 
+.at-equalizerPresets {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .55rem .7rem;
+    border: 1px solid #293c56;
+    border-radius: .5rem;
+    background: #111a29
+}
+
+.at-equalizerPresetsLabel {
+    color: #8fa5c1;
+    font-size: .65rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase
+}
+
+.at-equalizerPresetButtons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: .35rem
+}
+
 .at-equalizerBands {
     display: grid;
     gap: .55rem
@@ -1754,6 +1780,15 @@
 
     .at-equalizerActionsRight {
         width: 100%;
+    }
+
+    .at-equalizerPresets {
+        align-items: flex-start;
+        flex-direction: column
+    }
+
+    .at-equalizerPresetButtons {
+        justify-content: flex-start
     }
 
     .at-timelineMediaResult audio {

@@ -57,6 +57,7 @@ const timelineEqualizer = _.rod({ tracks: { voice: { low_gain_db: 0, mid_gain_db
 const readingPlayback = _.rod(null);
 const trackState = _.rod({ voice: { muted: false, solo: false, locked: false, volume: 80 }, music: { muted: false, solo: false, locked: false, volume: 80 }, fx: { muted: false, solo: false, locked: false, volume: 80 } });
 const timelinePlayers = new Map();
+const timelinePlayerEqualizers = new Map();
 const timelineWaveforms = new Map();
 const pendingTimelineWaveforms = new Set();
 let timelineAudioContext = null;
@@ -417,15 +418,30 @@ function adjustSelectedTimelineItem(field, delta, max = Infinity) {
     updateSelectedTimelineItem((item) => ({ ...item, [field]: Math.max(0, Math.min(max, Number(item[field] || 0) + delta)) }));
 }
 
-function openTimelineEqualizerDialog(scope, track = null) {
-    const selected = selectedTimelineItem();
+async function openTimelineEqualizerDialog(scope, track = null) {
+    let selected = selectedTimelineItem();
     if (scope === 'clip' && !selected) return;
+    const selectedKey = selected ? timelineItemKey(selected) : null;
+    try {
+        // The dialog is also an editor for values saved by an earlier request.
+        // Reload them here so reopening it never relies on a stale page state.
+        const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(bookKey())}/audio-timeline${audioEditionQuery()}`);
+        const data = audioData(payload);
+        timelineEqualizer.value = normalizeTimelineEqualizer(data.equalizer);
+        if (Array.isArray(data.items)) {
+            timelineItems.value = data.items;
+            selected = data.items.find((item) => timelineItemKey(item) === selectedKey) || selected;
+        }
+    } catch (error) {
+        audioStatus.value = { type: 'warning', message: error.message || 'Unable to refresh equalizer settings. Showing the current timeline values.' };
+    }
     const source = scope === 'clip'
         ? selected.eq_settings_json
         : timelineEqualizer.value.tracks[track];
     const low = _.rod(String(normalizeEqualizerBands(source).low_gain_db));
     const mid = _.rod(String(normalizeEqualizerBands(source).mid_gain_db));
     const high = _.rod(String(normalizeEqualizerBands(source).high_gain_db));
+    const activePreset = _.rod('custom');
     const listening = _.rod(false);
     const name = scope === 'clip' ? selected.label : `${track.toUpperCase()} master`;
     const previewItem = scope === 'clip'
@@ -449,6 +465,20 @@ function openTimelineEqualizerDialog(scope, track = null) {
         previewNodes.low.gain.setTargetAtTime(settings.low_gain_db, at, .015);
         previewNodes.mid.gain.setTargetAtTime(settings.mid_gain_db, at, .015);
         previewNodes.high.gain.setTargetAtTime(settings.high_gain_db, at, .015);
+    };
+    const presets = [
+        { key: 'natural', label: 'Natural', settings: { low_gain_db: 0, mid_gain_db: 0, high_gain_db: 0 } },
+        { key: 'warm', label: 'Warm', settings: { low_gain_db: 2, mid_gain_db: -1, high_gain_db: -1 } },
+        { key: 'clear', label: 'Clear', settings: { low_gain_db: -1, mid_gain_db: 2, high_gain_db: 1 } },
+        { key: 'bright', label: 'Bright', settings: { low_gain_db: -1, mid_gain_db: 0, high_gain_db: 3 } },
+    ];
+    const applyPreset = (preset) => {
+        const settings = normalizeEqualizerBands(preset.settings);
+        low.value = String(settings.low_gain_db);
+        mid.value = String(settings.mid_gain_db);
+        high.value = String(settings.high_gain_db);
+        activePreset.value = preset.key;
+        updatePreview();
     };
     const togglePreview = async () => {
         if (listening.value) { stopPreview(); return; }
@@ -481,7 +511,7 @@ function openTimelineEqualizerDialog(scope, track = null) {
             audioStatus.value = { type: 'warning', message: error.message || 'Unable to start the equalizer preview.' };
         }
     };
-    const reset = () => { low.value = '0'; mid.value = '0'; high.value = '0'; };
+    const reset = () => applyPreset(presets[0]);
     const save = async (close) => {
         const settings = normalizeEqualizerBands({ low_gain_db: low.value, mid_gain_db: mid.value, high_gain_db: high.value });
         if (scope === 'clip') {
@@ -497,11 +527,32 @@ function openTimelineEqualizerDialog(scope, track = null) {
         const saved = await saveTimeline(bookKey(), false);
         if (saved) { stopPreview(); close(); }
     };
-    const gainInput = (label, hint, model) => _.div({ class: 'at-equalizerBand' },
-        _.div({ class: 'at-equalizerBandHead' }, _.div(_.span({ class: 'at-equalizerBandLabel' }, label), _.small(hint)), _.span({ class: 'at-equalizerValue' }, () => `${Number(model.value || 0).toFixed(1)} dB`)),
-        _.div({ class: 'at-equalizerSlider' }, _.Input({ label: false, type: 'range', min: -12, max: 12, step: .5, model, onInput: updatePreview })),
-        _.div({ class: 'at-equalizerScale' }, _.span('−12'), _.span('0'), _.span('+12')),
-    );
+    const gainInput = (label, hint, model) => {
+        const field = _.Input({ label: false, type: 'range', model });
+        const input = field._input;
+        // CMSwift's generic range field defaults to 0–100. Set its native
+        // bounds explicitly so the visual thumb and the persisted dB value
+        // always use the same −12…+12 scale.
+        input.min = '-12';
+        input.max = '12';
+        input.step = '.5';
+        const initial = Math.max(-12, Math.min(12, Number(model.value || 0)));
+        model.value = String(initial);
+        input.value = String(initial);
+        input.addEventListener('input', () => {
+            const value = Math.max(-12, Math.min(12, Number(input.value || 0)));
+            model.value = String(value);
+            if (input.value !== String(value)) input.value = String(value);
+            activePreset.value = 'custom';
+            updatePreview();
+        });
+
+        return _.div({ class: 'at-equalizerBand' },
+            _.div({ class: 'at-equalizerBandHead' }, _.div(_.span({ class: 'at-equalizerBandLabel' }, label), _.small(hint)), _.span({ class: 'at-equalizerValue' }, () => `${Number(model.value || 0).toFixed(1)} dB`)),
+            _.div({ class: 'at-equalizerSlider' }, field),
+            _.div({ class: 'at-equalizerScale' }, _.span('−12'), _.span('0'), _.span('+12')),
+        );
+    };
 
     _.Dialog({
         size: 'md',
@@ -512,6 +563,10 @@ function openTimelineEqualizerDialog(scope, track = null) {
             header: _.div(_.h3(`Equalizer · ${name}`), _.span({ class: 'text-muted' }, scope === 'clip' ? 'Applied only to this clip before the channel mix.' : 'Applied after this channel is mixed into its release master.')),
             content: ({ close }) => _.div({ class: 'at-equalizerDialog' },
                 _.p({ class: 'at-equalizerHint' }, 'Three musical fixed bands. Move the controls while listening: the changes are heard immediately and are saved only when you confirm.'),
+                _.div({ class: 'at-equalizerPresets' },
+                    _.span({ class: 'at-equalizerPresetsLabel' }, 'Starting point'),
+                    _.div({ class: 'at-equalizerPresetButtons' }, presets.map((preset) => _.Btn({ dense: true, color: () => activePreset.value === preset.key ? 'primary' : 'secondary', onClick: () => applyPreset(preset) }, preset.label))),
+                ),
                 _.div({ class: 'at-equalizerBands' }, gainInput('Low', '180 Hz', low), gainInput('Mid', '1.2 kHz', mid), gainInput('High', '4 kHz', high)),
                 _.small({ class: 'at-equalizerListenHint' }, () => previewPart ? `Listening loops ${scope === 'clip' ? 'the selected clip' : `a ${track.toUpperCase()} clip`} with the current tuning.` : 'No playable source is available for this scope.'),
             ),
@@ -735,6 +790,12 @@ function stopTimelinePlayers() {
     pauseTimelinePlayers();
     timelinePlayers.forEach((audio) => { audio._atTimelineActive = false; });
     timelinePlayers.clear();
+    timelinePlayerEqualizers.forEach((chain) => {
+        chain.source.disconnect();
+        chain.clipLow.disconnect(); chain.clipMid.disconnect(); chain.clipHigh.disconnect();
+        chain.masterLow.disconnect(); chain.masterMid.disconnect(); chain.masterHigh.disconnect();
+    });
+    timelinePlayerEqualizers.clear();
 }
 function timelinePartPlayerKey(item, part) {
     return `${timelineItemKey(item)}:${part.id || part.offset_ms}`;
@@ -759,8 +820,52 @@ function prepareTimelinePlayer(key, url) {
     timelinePlayers.set(key, audio);
     return audio;
 }
+
+function setTimelineEqualizerBands(nodes, settings) {
+    const bands = normalizeEqualizerBands(settings);
+    const now = timelineAudioContext?.currentTime || 0;
+    nodes.low.gain.setTargetAtTime(bands.low_gain_db, now, .015);
+    nodes.mid.gain.setTargetAtTime(bands.mid_gain_db, now, .015);
+    nodes.high.gain.setTargetAtTime(bands.high_gain_db, now, .015);
+}
+
+function configureTimelinePlayerEqualizer(key, audio, clipSettings, masterSettings) {
+    let chain = timelinePlayerEqualizers.get(key);
+    if (!chain) {
+        timelineAudioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+        const filter = (type, frequency, q = null) => {
+            const node = timelineAudioContext.createBiquadFilter();
+            node.type = type; node.frequency.value = frequency;
+            if (q !== null) node.Q.value = q;
+            return node;
+        };
+        const source = timelineAudioContext.createMediaElementSource(audio);
+        const clipLow = filter('lowshelf', 180);
+        const clipMid = filter('peaking', 1200, 1);
+        const clipHigh = filter('highshelf', 4000);
+        const masterLow = filter('lowshelf', 180);
+        const masterMid = filter('peaking', 1200, 1);
+        const masterHigh = filter('highshelf', 4000);
+        source.connect(clipLow).connect(clipMid).connect(clipHigh).connect(masterLow).connect(masterMid).connect(masterHigh).connect(timelineAudioContext.destination);
+        chain = { source, clipLow, clipMid, clipHigh, masterLow, masterMid, masterHigh };
+        timelinePlayerEqualizers.set(key, chain);
+    }
+    const clipSignature = JSON.stringify(normalizeEqualizerBands(clipSettings));
+    const masterSignature = JSON.stringify(normalizeEqualizerBands(masterSettings));
+    if (chain.clipSignature !== clipSignature) {
+        setTimelineEqualizerBands({ low: chain.clipLow, mid: chain.clipMid, high: chain.clipHigh }, clipSettings);
+        chain.clipSignature = clipSignature;
+    }
+    if (chain.masterSignature !== masterSignature) {
+        setTimelineEqualizerBands({ low: chain.masterLow, mid: chain.masterMid, high: chain.masterHigh }, masterSettings);
+        chain.masterSignature = masterSignature;
+    }
+}
 function playTimelinePlayer(audio) {
-    if (audio._atTimelineActive && timelineIsPlaying.value && audio.paused) audio.play().catch(() => { });
+    if (audio._atTimelineActive && timelineIsPlaying.value && audio.paused) {
+        timelineAudioContext?.resume().catch(() => { });
+        audio.play().catch(() => { });
+    }
 }
 function resumeTimelinePlayerAfterSeek(audio) {
     if (!audio._atTimelineActive || !timelineIsPlaying.value || !audio._atWaitingForSeek) return;
@@ -823,6 +928,7 @@ function syncTimelinePlayers(playhead, seek = false) {
         }
         activeKeys.add(key);
         const audio = prepareTimelinePlayer(key, url);
+        configureTimelinePlayerEqualizer(key, audio, item.eq_settings_json, timelineEqualizer.value.tracks[item.track]);
         const elapsedMs = Math.max(0, (playhead - item.start_ms / 1000) * 1000);
         const remainingMs = Math.max(0, Number(item.duration_ms || 0) - elapsedMs);
         const fadeInGain = Number(item.fade_in_ms || 0) > 0 ? Math.min(1, elapsedMs / Number(item.fade_in_ms)) : 1;
@@ -2673,8 +2779,8 @@ function timelineCard() {
                         _.Btn({ dense: true, color: 'secondary', icon: 'add', title: 'Increase fade out', onClick: () => { const item = selectedTimelineItem(); adjustSelectedTimelineItem('fade_out_ms', 100, Math.floor((item?.duration_ms || 0) / 2)); } }),
                     ),
                     !multiple ? _.div({ class: 'at-audioInspectorGroup' },
-                        _.span({ class: 'at-audioInspectorGroupLabel' }, 'EQ'),
-                        _.Btn({ dense: true, color: 'secondary', icon: 'equalizer', title: 'Edit clip equalizer', onClick: () => openTimelineEqualizerDialog('clip') }),
+                        _.span({ class: 'at-audioInspectorGroupLabel' }, item.is_group ? 'Group EQ' : 'Clip EQ'),
+                        _.Btn({ dense: true, color: 'secondary', icon: 'equalizer', title: item.is_group ? 'Equalize only this selected group' : 'Equalize only this selected clip', onClick: () => openTimelineEqualizerDialog('clip') }, item.is_group ? 'Tune group' : 'Tune clip'),
                     ) : null,
                 ),
                 _.div({ class: 'at-audioInspectorGroup at-audioInspectorGroup--actions' },
