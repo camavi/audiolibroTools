@@ -115,6 +115,62 @@
     gap: 1rem;
 }
 
+.at-audioDirectionTiming {
+    display: grid;
+    gap: .85rem;
+    padding: 1rem;
+    border: 1px solid var(--at-border);
+    border-radius: .75rem;
+    background: var(--at-surface-subtle);
+}
+
+.at-audioDirectionTimingHead {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: .75rem;
+}
+
+.at-audioDirectionTimingHead h4 {
+    margin: 0 0 .18rem;
+    font-size: .9rem;
+}
+
+.at-audioDirectionTimingHead small {
+    display: block;
+    font-size: .72rem;
+}
+
+.at-audioDirectionTimingUnit {
+    flex: 0 0 auto;
+    padding: .22rem .45rem;
+    border-radius: .35rem;
+    background: var(--at-surface);
+    color: var(--at-muted);
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.at-audioDirectionTimingFields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .75rem;
+}
+
+.at-audioDirectionTimingField,
+.at-audioDirectionTimingField .cms-field {
+    min-width: 0;
+    margin: 0;
+}
+
+@media (max-width: 520px) {
+    .at-audioDirectionTimingFields {
+        grid-template-columns: 1fr;
+    }
+}
+
 .at-bookAudioGenerateDialog {
     display: grid;
     gap: .9rem;

@@ -1340,7 +1340,6 @@ function openAudioDirectionDialog() {
     // on mobile devices.
     const timingInput = (label, model) => {
         const field = _.Input({
-            class: 'cms-col-6',
             label,
             type: 'text',
             inputmode: 'numeric',
@@ -1355,7 +1354,9 @@ function openAudioDirectionDialog() {
             if (model.value !== normalized) model.value = normalized;
             field._refresh();
         });
-        return field;
+        // Do not put cms-col-* on _.Input: CMSwift forwards the class to its
+        // native <input>, shrinking the editable surface to one quarter.
+        return _.div({ class: 'at-audioDirectionTimingField' }, field);
     };
     _.http.getJSON('/dashboard/api/audio-library/voices')
         .then((payload) => { libraryVoices.value = audioData(payload).voices || []; })
@@ -1428,9 +1429,11 @@ function openAudioDirectionDialog() {
                 () => libraryLoading.value ? _.small({ class: 'text-muted' }, 'Loading Audio Library voices…') : _.small({ class: 'text-muted' }, 'Audio Library selections are configured as the book narrator automatically.'),
                 audioDirection({ narratorName, voiceDirection, performancePrompt }),
                 _.div({ class: 'at-audioDirectionTiming' },
-                    _.h4('Audiobook timing'),
-                    _.small({ class: 'text-muted' }, 'Pauses used for generated audio in this language. Values are milliseconds.'),
-                    _.Row({ gap: 'md' },
+                    _.div({ class: 'at-audioDirectionTimingHead' },
+                        _.div(_.h4('Audiobook timing'), _.small({ class: 'text-muted' }, 'Pauses used for generated audio in this language.')),
+                        _.span({ class: 'at-audioDirectionTimingUnit' }, 'Milliseconds'),
+                    ),
+                    _.div({ class: 'at-audioDirectionTimingFields' },
                         timingInput('Comma ,', commaPause),
                         timingInput('Semicolon ; :', semicolonPause),
                         timingInput('Sentence . ! ?', sentencePause),
