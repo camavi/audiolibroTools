@@ -2578,7 +2578,8 @@ class DashboardBookTest extends TestCase
         $path = 'audio-media/frozen-source.wav';
         Storage::disk('public')->put($path, 'RIFF source');
         $asset = AudioMediaAsset::query()->create(['account_id' => $this->user->id, 'kind' => 'music', 'name' => 'Frozen source', 'audio_path' => $path, 'duration_ms' => 4_000]);
-        $item = BookAudioTimelineItem::query()->create(['book_id' => $book->id, 'book_edition_id' => $edition->id, 'audio_media_asset_id' => $asset->id, 'track' => 'voice', 'lane' => 1, 'label' => 'Frozen voice', 'start_ms' => 120, 'duration_ms' => 3_000, 'trim_start_ms' => 100, 'trim_end_ms' => 80, 'fade_in_ms' => 60, 'fade_out_ms' => 90, 'volume' => 65, 'sort_order' => 1]);
+        $item = BookAudioTimelineItem::query()->create(['book_id' => $book->id, 'book_edition_id' => $edition->id, 'audio_media_asset_id' => $asset->id, 'track' => 'voice', 'lane' => 1, 'label' => 'Frozen voice', 'start_ms' => 120, 'duration_ms' => 3_000, 'trim_start_ms' => 100, 'trim_end_ms' => 80, 'fade_in_ms' => 60, 'fade_out_ms' => 90, 'volume' => 65, 'eq_settings_json' => ['low_gain_db' => 2, 'mid_gain_db' => -1.5, 'high_gain_db' => 3.5], 'sort_order' => 1]);
+        $edition->update(['metadata_json' => ['audio_timeline_equalizer' => ['tracks' => ['voice' => ['low_gain_db' => 1, 'mid_gain_db' => 0, 'high_gain_db' => -2]]]]]);
 
         $snapshot = app(DashboardBookController::class)->freezeAudioTimeline($book, $edition);
         $item->update(['start_ms' => 9_999, 'volume' => 1]);
@@ -2586,7 +2587,33 @@ class DashboardBookTest extends TestCase
         $this->assertSame([[
             'track' => 'voice', 'path' => $path, 'startMs' => 120, 'durationMs' => 3_000,
             'trimStartMs' => 100, 'trimEndMs' => 80, 'volume' => 0.65, 'fadeInMs' => 60, 'fadeOutMs' => 90,
+            'equalizer' => ['low_gain_db' => 2.0, 'mid_gain_db' => -1.5, 'high_gain_db' => 3.5],
         ]], $snapshot['entries']);
+        $this->assertSame(['low_gain_db' => 1.0, 'mid_gain_db' => 0.0, 'high_gain_db' => -2.0], $snapshot['equalizer']['tracks']['voice']);
+    }
+
+    public function test_dashboard_saves_clip_and_channel_equalizer_settings(): void
+    {
+        $book = $this->createBook();
+        $edition = $book->editions()->firstOrCreate(['locale' => strtolower($book->lang ?: 'en')], ['name' => $book->name, 'status' => 'ready', 'is_original' => true]);
+
+        $response = $this->putJson("/dashboard/api/books/{$book->key_book}/audio-timeline", [
+            'edition' => $edition->id,
+            'items' => [[
+                'track' => 'voice', 'lane' => 0, 'label' => 'EQ narration', 'start_ms' => 0, 'duration_ms' => 1000,
+                'eq_settings_json' => ['low_gain_db' => 2.5, 'mid_gain_db' => -1, 'high_gain_db' => 3],
+            ]],
+            'equalizer' => ['tracks' => [
+                'voice' => ['low_gain_db' => 1, 'mid_gain_db' => 0, 'high_gain_db' => -2],
+                'music' => ['low_gain_db' => 0, 'mid_gain_db' => 2, 'high_gain_db' => 0],
+            ]],
+        ])->assertOk();
+
+        $response->assertJsonPath('data.items.0.eq_settings_json.high_gain_db', 3);
+        $response->assertJsonPath('data.equalizer.tracks.voice.low_gain_db', 1);
+        $response->assertJsonPath('data.equalizer.tracks.music.mid_gain_db', 2);
+        $this->assertDatabaseHas('book_audio_timeline_items', ['book_id' => $book->id, 'label' => 'EQ narration']);
+        $this->assertSame(-2.0, (float) data_get($edition->fresh()->metadata_json, 'audio_timeline_equalizer.tracks.voice.high_gain_db'));
     }
 
     public function test_dashboard_ungroups_a_trimmed_audio_master_without_restoring_hidden_audio(): void

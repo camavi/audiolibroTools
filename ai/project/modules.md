@@ -90,7 +90,7 @@
 - Drag/drop.
 - Taglio o regolazione asset.
 - Volume per canale.
-- Equalizzatore non distruttivo per clip, canale e master; i parametri devono essere congelati nella release e applicati durante il render WAV.
+- Equalizzatore non distruttivo a tre bande vocali (180 Hz, 1,2 kHz, 4 kHz) per clip e master di ciascun canale; i parametri vengono congelati nella release e applicati al render WAV con FFmpeg.
 - Preview sincronizzata.
 - Salvataggio metadati.
 

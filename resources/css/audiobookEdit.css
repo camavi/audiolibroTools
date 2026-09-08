@@ -1462,6 +1462,104 @@
     margin-left: .1rem
 }
 
+.at-equalizerDialog {
+    display: grid;
+    gap: 1rem
+}
+
+.at-equalizerHint {
+    margin: 0;
+    color: #a6b6cc;
+    font-size: .82rem;
+    line-height: 1.45
+}
+
+.at-equalizerBands {
+    display: grid;
+    gap: .55rem
+}
+
+.at-equalizerBand {
+    display: grid;
+    gap: .42rem;
+    min-width: 0;
+    padding: .7rem .8rem;
+    border: 1px solid #314157;
+    border-radius: .5rem;
+    background: linear-gradient(135deg, #111a29, #0e1725)
+}
+
+.at-equalizerBandHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem
+}
+
+.at-equalizerBandHead > div {
+    display: grid;
+    gap: .16rem
+}
+
+.at-equalizerBandLabel {
+    color: #dce7f5;
+    font-size: .73rem;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase
+}
+
+.at-equalizerBand small {
+    color: #8fa5c1;
+    font-size: .7rem
+}
+
+.at-equalizerValue {
+    color: #e7f0ff;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: .78rem;
+    font-variant-numeric: tabular-nums
+}
+
+.at-equalizerSlider .cms-field {
+    margin: 0
+}
+
+.at-equalizerSlider input[type='range'] {
+    width: 100%;
+    accent-color: #4c82ff;
+    cursor: ew-resize
+}
+
+.at-equalizerScale {
+    display: flex;
+    justify-content: space-between;
+    color: #7187a5;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: .62rem
+}
+
+.at-equalizerListenHint {
+    display: block;
+    color: #98abc5;
+    font-size: .7rem
+}
+
+.at-equalizerActions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: .75rem;
+}
+
+.at-equalizerActionsRight {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: .5rem
+}
+
 .at-audioTimelineSelection {
     display: flex;
     width: 100%;
@@ -1647,6 +1745,15 @@
 
     .at-timelineMediaResult {
         grid-template-columns: 1fr auto
+    }
+
+    .at-equalizerActions {
+        align-items: flex-start;
+        flex-direction: column
+    }
+
+    .at-equalizerActionsRight {
+        width: 100%;
     }
 
     .at-timelineMediaResult audio {

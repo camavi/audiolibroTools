@@ -1674,7 +1674,10 @@ class DashboardBookController extends Controller
                 return $data;
             });
 
-        return response()->json(['data' => ['items' => $items]]);
+        return response()->json(['data' => [
+            'items' => $items,
+            'equalizer' => $this->audioTimelineEqualizerSettings($edition),
+        ]]);
     }
 
     public function streamAudioSegment(BookAudioSegment $segment)
@@ -1692,7 +1695,13 @@ class DashboardBookController extends Controller
 
     public function saveAudioTimeline(Request $request, string $keyBook): JsonResponse
     {
-        $validated = $request->validate(['items' => ['required', 'array', 'max:300'], 'items.*.id' => ['nullable', 'integer'], 'items.*.track' => ['required', 'in:voice,music,fx'], 'items.*.lane' => ['nullable', 'integer', 'min:0', 'max:40'], 'items.*.label' => ['required', 'string', 'max:160'], 'items.*.start_ms' => ['required', 'integer', 'min:0'], 'items.*.duration_ms' => ['required', 'integer', 'min:100'], 'items.*.trim_start_ms' => ['nullable', 'integer', 'min:0'], 'items.*.trim_end_ms' => ['nullable', 'integer', 'min:0'], 'items.*.fade_in_ms' => ['nullable', 'integer', 'min:0'], 'items.*.fade_out_ms' => ['nullable', 'integer', 'min:0'], 'items.*.volume' => ['nullable', 'integer', 'min:0', 'max:100'], 'items.*.muted' => ['nullable', 'boolean'], 'items.*.is_group' => ['nullable', 'boolean'], 'items.*.book_audio_segment_id' => ['nullable', 'integer'], 'items.*.audio_library_voice_sample_id' => ['nullable', 'integer'], 'items.*.audio_media_asset_id' => ['nullable', 'integer'], 'items.*.book_audio_job_id' => ['nullable', 'integer']]);
+        $validated = $request->validate([
+            'items' => ['required', 'array', 'max:300'], 'items.*.id' => ['nullable', 'integer'], 'items.*.track' => ['required', 'in:voice,music,fx'], 'items.*.lane' => ['nullable', 'integer', 'min:0', 'max:40'], 'items.*.label' => ['required', 'string', 'max:160'], 'items.*.start_ms' => ['required', 'integer', 'min:0'], 'items.*.duration_ms' => ['required', 'integer', 'min:100'], 'items.*.trim_start_ms' => ['nullable', 'integer', 'min:0'], 'items.*.trim_end_ms' => ['nullable', 'integer', 'min:0'], 'items.*.fade_in_ms' => ['nullable', 'integer', 'min:0'], 'items.*.fade_out_ms' => ['nullable', 'integer', 'min:0'], 'items.*.volume' => ['nullable', 'integer', 'min:0', 'max:100'], 'items.*.muted' => ['nullable', 'boolean'], 'items.*.is_group' => ['nullable', 'boolean'], 'items.*.book_audio_segment_id' => ['nullable', 'integer'], 'items.*.audio_library_voice_sample_id' => ['nullable', 'integer'], 'items.*.audio_media_asset_id' => ['nullable', 'integer'], 'items.*.book_audio_job_id' => ['nullable', 'integer'],
+            'items.*.eq_settings_json' => ['nullable', 'array'], 'items.*.eq_settings_json.low_gain_db' => ['nullable', 'numeric', 'between:-12,12'], 'items.*.eq_settings_json.mid_gain_db' => ['nullable', 'numeric', 'between:-12,12'], 'items.*.eq_settings_json.high_gain_db' => ['nullable', 'numeric', 'between:-12,12'],
+            'equalizer' => ['nullable', 'array'], 'equalizer.tracks' => ['nullable', 'array'],
+            'equalizer.tracks.voice' => ['nullable', 'array'], 'equalizer.tracks.music' => ['nullable', 'array'], 'equalizer.tracks.fx' => ['nullable', 'array'],
+            'equalizer.tracks.*.low_gain_db' => ['nullable', 'numeric', 'between:-12,12'], 'equalizer.tracks.*.mid_gain_db' => ['nullable', 'numeric', 'between:-12,12'], 'equalizer.tracks.*.high_gain_db' => ['nullable', 'numeric', 'between:-12,12'],
+        ]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
         $edition = $this->audioEdition($request, $book);
         $sampleIds = collect($validated['items'])->pluck('audio_library_voice_sample_id')->filter()->map(fn ($id) => (int) $id)->unique()->values();
@@ -1710,6 +1719,10 @@ class DashboardBookController extends Controller
                 $record = isset($item['id']) ? $this->timelineItemsForEdition($book, $edition)->whereKey($item['id'])->firstOrFail() : new BookAudioTimelineItem(['book_id' => $book->id, 'book_edition_id' => $edition->id]);
                 $record->fill([...$item, 'sort_order' => $index]);
                 $record->save();
+            }
+
+            if (array_key_exists('equalizer', $validated)) {
+                $edition->forceFill(['metadata_json' => [...($edition->metadata_json ?? []), 'audio_timeline_equalizer' => $this->normalizeAudioEqualizer($validated['equalizer'])]])->save();
             }
         });
 
@@ -1945,7 +1958,11 @@ class DashboardBookController extends Controller
             $children = $timelineItem->timelineChildren()->get();
             abort_if($children->isEmpty(), 422, 'This compound clip has no children to ungroup.');
             DB::transaction(function () use ($timelineItem): void {
-                $timelineItem->timelineChildren()->update(['parent_timeline_item_id' => null]);
+                $timelineItem->timelineChildren()->each(function (BookAudioTimelineItem $child) use ($timelineItem): void {
+                    $child->parent_timeline_item_id = null;
+                    $child->eq_settings_json = $this->mergeAudioEqualizerBands($timelineItem->eq_settings_json, $child->eq_settings_json);
+                    $child->save();
+                });
                 $timelineItem->delete();
             });
 
@@ -2005,6 +2022,7 @@ class DashboardBookController extends Controller
                     'fade_out_ms' => $index === $lastIndex ? min((int) $timelineItem->fade_out_ms, (int) floor($part['duration_ms'] / 2)) : 0,
                     'volume' => $timelineItem->volume,
                     'muted' => $timelineItem->muted,
+                    'eq_settings_json' => $timelineItem->eq_settings_json,
                     'sort_order' => $timelineItem->sort_order + $index,
                 ]);
             }
@@ -2027,8 +2045,9 @@ class DashboardBookController extends Controller
                 'timelineChildren.audioSegment', 'timelineChildren.mediaAsset', 'timelineChildren.librarySample',
             ])
             ->get();
+        $trackEqualizers = $this->audioTimelineEqualizerSettings($edition)['tracks'];
         $entries = ['voice' => [], 'music' => [], 'fx' => []];
-        $addEntry = function (string $track, ?string $path, int $startMs, int $durationMs, int $trimStartMs, int $trimEndMs, float $volume, int $fadeInMs, int $fadeOutMs) use (&$entries): void {
+        $addEntry = function (string $track, ?string $path, int $startMs, int $durationMs, int $trimStartMs, int $trimEndMs, float $volume, int $fadeInMs, int $fadeOutMs, ?array $equalizer = null) use (&$entries): void {
             if (! isset($entries[$track]) || ! $path || str_starts_with($path, 'mock://')) {
                 return;
             }
@@ -2036,7 +2055,8 @@ class DashboardBookController extends Controller
             if (! is_file($absolute) || $durationMs < 1) {
                 return;
             }
-            $entries[$track][] = compact('absolute', 'startMs', 'durationMs', 'trimStartMs', 'trimEndMs', 'volume', 'fadeInMs', 'fadeOutMs');
+            $equalizer = $this->normalizeAudioEqualizerBands($equalizer);
+            $entries[$track][] = compact('absolute', 'startMs', 'durationMs', 'trimStartMs', 'trimEndMs', 'volume', 'fadeInMs', 'fadeOutMs', 'equalizer');
         };
 
         foreach ($roots as $root) {
@@ -2044,7 +2064,7 @@ class DashboardBookController extends Controller
                 foreach ($root->timelineChildren->sortBy('start_ms') as $child) {
                     $path = $child->audioSegment?->audio_path ?? $child->mediaAsset?->audio_path ?? $child->librarySample?->audio_path;
                     $volume = ((float) ($root->volume ?? 100) / 100) * ((float) ($child->volume ?? 100) / 100);
-                    $addEntry($child->track, $path, (int) $child->start_ms, (int) $child->duration_ms, (int) $child->trim_start_ms, (int) $child->trim_end_ms, $volume, (int) $child->fade_in_ms, (int) $child->fade_out_ms);
+                    $addEntry($child->track, $path, (int) $child->start_ms, (int) $child->duration_ms, (int) $child->trim_start_ms, (int) $child->trim_end_ms, $volume, (int) $child->fade_in_ms, (int) $child->fade_out_ms, $this->mergeAudioEqualizerBands($root->eq_settings_json, $child->eq_settings_json));
                 }
 
                 continue;
@@ -2053,7 +2073,7 @@ class DashboardBookController extends Controller
             if ($root->is_group && $root->audioJob?->segments->isNotEmpty()) {
                 $offset = 0;
                 foreach ($root->audioJob->segments as $segment) {
-                    $addEntry($root->track, $segment->audio_path, (int) $root->start_ms + $offset, (int) $segment->duration_ms, 0, 0, (float) ($root->volume ?? 100) / 100, (int) $root->fade_in_ms, (int) $root->fade_out_ms);
+                    $addEntry($root->track, $segment->audio_path, (int) $root->start_ms + $offset, (int) $segment->duration_ms, 0, 0, (float) ($root->volume ?? 100) / 100, (int) $root->fade_in_ms, (int) $root->fade_out_ms, $root->eq_settings_json);
                     $offset += (int) $segment->duration_ms + (int) $segment->pause_after_ms;
                 }
 
@@ -2061,7 +2081,7 @@ class DashboardBookController extends Controller
             }
 
             $path = $root->audioSegment?->audio_path ?? $root->mediaAsset?->audio_path ?? $root->librarySample?->audio_path;
-            $addEntry($root->track, $path, (int) $root->start_ms, (int) $root->duration_ms, (int) $root->trim_start_ms, (int) $root->trim_end_ms, (float) ($root->volume ?? 100) / 100, (int) $root->fade_in_ms, (int) $root->fade_out_ms);
+            $addEntry($root->track, $path, (int) $root->start_ms, (int) $root->duration_ms, (int) $root->trim_start_ms, (int) $root->trim_end_ms, (float) ($root->volume ?? 100) / 100, (int) $root->fade_in_ms, (int) $root->fade_out_ms, $root->eq_settings_json);
         }
 
         $channels = [];
@@ -2077,7 +2097,7 @@ class DashboardBookController extends Controller
                 ? "audiobooks/{$book->key_book}/releases/v{$releaseVersion}/{$track}.wav"
                 : "audiobooks/{$book->key_book}/published/{$track}-".Str::uuid().'.wav';
             Storage::disk('public')->makeDirectory(dirname($filename));
-            $this->renderAudioChannel($trackEntries, Storage::disk('public')->path($filename));
+            $this->renderAudioChannel($trackEntries, Storage::disk('public')->path($filename), $trackEqualizers[$track]);
             $durationMs = max(array_map(fn (array $entry): int => $entry['startMs'] + $entry['durationMs'], $trackEntries));
             // Build the URL from the current API request host. APP_URL is
             // commonly `http://localhost` in local .env files, while dev.sh
@@ -2099,29 +2119,30 @@ class DashboardBookController extends Controller
                 'timelineChildren.audioSegment', 'timelineChildren.mediaAsset', 'timelineChildren.librarySample',
             ])->get();
         $entries = [];
-        $add = static function (string $track, ?string $path, int $startMs, int $durationMs, int $trimStartMs, int $trimEndMs, float $volume, int $fadeInMs, int $fadeOutMs) use (&$entries): void {
+        $add = function (string $track, ?string $path, int $startMs, int $durationMs, int $trimStartMs, int $trimEndMs, float $volume, int $fadeInMs, int $fadeOutMs, ?array $equalizer = null) use (&$entries): void {
             if (in_array($track, ['voice', 'music', 'fx'], true) && $path && ! str_starts_with($path, 'mock://') && $durationMs > 0) {
-                $entries[] = compact('track', 'path', 'startMs', 'durationMs', 'trimStartMs', 'trimEndMs', 'volume', 'fadeInMs', 'fadeOutMs');
+                $equalizer = $this->normalizeAudioEqualizerBands($equalizer);
+                $entries[] = compact('track', 'path', 'startMs', 'durationMs', 'trimStartMs', 'trimEndMs', 'volume', 'fadeInMs', 'fadeOutMs', 'equalizer');
             }
         };
 
         foreach ($roots as $root) {
             if ($root->timelineChildren->isNotEmpty()) {
                 foreach ($root->timelineChildren->sortBy('start_ms') as $child) {
-                    $add($child->track, $child->audioSegment?->audio_path ?? $child->mediaAsset?->audio_path ?? $child->librarySample?->audio_path, (int) $child->start_ms, (int) $child->duration_ms, (int) $child->trim_start_ms, (int) $child->trim_end_ms, ((float) ($root->volume ?? 100) / 100) * ((float) ($child->volume ?? 100) / 100), (int) $child->fade_in_ms, (int) $child->fade_out_ms);
+                    $add($child->track, $child->audioSegment?->audio_path ?? $child->mediaAsset?->audio_path ?? $child->librarySample?->audio_path, (int) $child->start_ms, (int) $child->duration_ms, (int) $child->trim_start_ms, (int) $child->trim_end_ms, ((float) ($root->volume ?? 100) / 100) * ((float) ($child->volume ?? 100) / 100), (int) $child->fade_in_ms, (int) $child->fade_out_ms, $this->mergeAudioEqualizerBands($root->eq_settings_json, $child->eq_settings_json));
                 }
             } elseif ($root->is_group && $root->audioJob?->segments->isNotEmpty()) {
                 $offset = 0;
                 foreach ($root->audioJob->segments as $segment) {
-                    $add($root->track, $segment->audio_path, (int) $root->start_ms + $offset, (int) $segment->duration_ms, 0, 0, (float) ($root->volume ?? 100) / 100, (int) $root->fade_in_ms, (int) $root->fade_out_ms);
+                    $add($root->track, $segment->audio_path, (int) $root->start_ms + $offset, (int) $segment->duration_ms, 0, 0, (float) ($root->volume ?? 100) / 100, (int) $root->fade_in_ms, (int) $root->fade_out_ms, $root->eq_settings_json);
                     $offset += (int) $segment->duration_ms + (int) $segment->pause_after_ms;
                 }
             } else {
-                $add($root->track, $root->audioSegment?->audio_path ?? $root->mediaAsset?->audio_path ?? $root->librarySample?->audio_path, (int) $root->start_ms, (int) $root->duration_ms, (int) $root->trim_start_ms, (int) $root->trim_end_ms, (float) ($root->volume ?? 100) / 100, (int) $root->fade_in_ms, (int) $root->fade_out_ms);
+                $add($root->track, $root->audioSegment?->audio_path ?? $root->mediaAsset?->audio_path ?? $root->librarySample?->audio_path, (int) $root->start_ms, (int) $root->duration_ms, (int) $root->trim_start_ms, (int) $root->trim_end_ms, (float) ($root->volume ?? 100) / 100, (int) $root->fade_in_ms, (int) $root->fade_out_ms, $root->eq_settings_json);
             }
         }
 
-        return ['entries' => $entries, 'frozen_at' => now()->toIso8601String()];
+        return ['entries' => $entries, 'equalizer' => $this->audioTimelineEqualizerSettings($edition), 'frozen_at' => now()->toIso8601String()];
     }
 
     /** Render a previously frozen release snapshot. Voice is mandatory; music and FX remain optional. */
@@ -2135,7 +2156,7 @@ class DashboardBookController extends Controller
                 continue;
             }
             $absolute = Storage::disk('public')->path($path);
-            $entries[$track][] = ['absolute' => $absolute, 'startMs' => (int) ($entry['startMs'] ?? 0), 'durationMs' => (int) ($entry['durationMs'] ?? 0), 'trimStartMs' => (int) ($entry['trimStartMs'] ?? 0), 'trimEndMs' => (int) ($entry['trimEndMs'] ?? 0), 'volume' => (float) ($entry['volume'] ?? 1), 'fadeInMs' => (int) ($entry['fadeInMs'] ?? 0), 'fadeOutMs' => (int) ($entry['fadeOutMs'] ?? 0)];
+            $entries[$track][] = ['absolute' => $absolute, 'startMs' => (int) ($entry['startMs'] ?? 0), 'durationMs' => (int) ($entry['durationMs'] ?? 0), 'trimStartMs' => (int) ($entry['trimStartMs'] ?? 0), 'trimEndMs' => (int) ($entry['trimEndMs'] ?? 0), 'volume' => (float) ($entry['volume'] ?? 1), 'fadeInMs' => (int) ($entry['fadeInMs'] ?? 0), 'fadeOutMs' => (int) ($entry['fadeOutMs'] ?? 0), 'equalizer' => $this->normalizeAudioEqualizerBands($entry['equalizer'] ?? null)];
         }
         if (empty($entries['voice'])) {
             throw ValidationException::withMessages(['release' => 'A ready Voice master is required before creating an audiobook release.']);
@@ -2149,7 +2170,7 @@ class DashboardBookController extends Controller
             }
             $filename = "audiobooks/{$book->key_book}/releases/v{$releaseVersion}/{$track}.wav";
             Storage::disk('public')->makeDirectory(dirname($filename));
-            $this->renderAudioChannel($entries[$track], Storage::disk('public')->path($filename));
+            $this->renderAudioChannel($entries[$track], Storage::disk('public')->path($filename), data_get($snapshot, "equalizer.tracks.{$track}", []));
             $durationMs = max(array_map(fn (array $entry): int => $entry['startMs'] + $entry['durationMs'], $entries[$track]));
             $channels[$track] = ['status' => 'ready', 'duration_ms' => $durationMs, 'path' => $filename];
         }
@@ -2166,7 +2187,10 @@ class DashboardBookController extends Controller
             ->whereNull('parent_timeline_item_id')
             ->with(['audioSegment', 'mediaAsset', 'librarySample', 'audioJob.segments', 'timelineChildren.audioSegment', 'timelineChildren.mediaAsset', 'timelineChildren.librarySample'])
             ->orderBy('track')->orderBy('sort_order')->get();
-        $fingerprint = hash('sha256', json_encode($items->toArray(), JSON_THROW_ON_ERROR));
+        $fingerprint = hash('sha256', json_encode([
+            'items' => $items->toArray(),
+            'equalizer' => $this->audioTimelineEqualizerSettings($edition),
+        ], JSON_THROW_ON_ERROR));
         $cached = data_get($edition->metadata_json, 'audio_preview');
         if (is_array($cached) && ($cached['fingerprint'] ?? null) === $fingerprint && isset($cached['channels']) && collect($cached['channels'])->filter(fn ($channel) => ($channel['status'] ?? null) === 'ready')->every(fn ($channel) => ! empty($channel['path']) && Storage::disk('public')->exists($channel['path']))) {
             return response()->json(['data' => [...$cached, 'channels' => $this->previewChannelUrls($request, $keyBook, $cached['channels']), 'cached' => true]]);
@@ -2200,7 +2224,7 @@ class DashboardBookController extends Controller
     }
 
     /** @param array<int, array<string, mixed>> $entries */
-    private function renderAudioChannel(array $entries, string $output): void
+    private function renderAudioChannel(array $entries, string $output, ?array $masterEqualizer = null): void
     {
         $arguments = [config('audiobook.ffmpeg_binary', env('FFMPEG_BINARY', 'ffmpeg')), '-y'];
         $filters = [];
@@ -2212,6 +2236,7 @@ class DashboardBookController extends Controller
             $trimStart = max(0, ((int) $entry['trimStartMs']) / 1000);
             $filter = "[{$index}:a]atrim=start={$trimStart}:duration={$duration},asetpts=PTS-STARTPTS";
             $filter .= ',volume='.max(0, min(4, (float) $entry['volume']));
+            $filter .= $this->audioEqualizerFilter($entry['equalizer'] ?? null);
             if ((int) $entry['fadeInMs'] > 0) {
                 $filter .= ',afade=t=in:st=0:d='.((int) $entry['fadeInMs'] / 1000);
             }
@@ -2223,7 +2248,7 @@ class DashboardBookController extends Controller
             $filters[] = $filter;
             $labels[] = "[a{$index}]";
         }
-        $filters[] = implode('', $labels).'amix=inputs='.count($labels).':duration=longest:normalize=0,aresample=async=1:first_pts=0[mix]';
+        $filters[] = implode('', $labels).'amix=inputs='.count($labels).':duration=longest:normalize=0,aresample=async=1:first_pts=0'.$this->audioEqualizerFilter($masterEqualizer).'[mix]';
         $arguments = array_merge($arguments, ['-filter_complex', implode(';', $filters), '-map', '[mix]', '-ac', '2', '-ar', '44100', '-c:a', 'pcm_s16le', $output]);
         $process = new Process($arguments);
         $process->setTimeout(0);
@@ -3260,6 +3285,55 @@ class DashboardBookController extends Controller
         return is_array($settings)
             ? $settings
             : ($edition->is_original ? ($book->audio_settings_json ?? []) : []);
+    }
+
+    /** @return array{tracks: array{voice: array{low_gain_db: float, mid_gain_db: float, high_gain_db: float}, music: array{low_gain_db: float, mid_gain_db: float, high_gain_db: float}, fx: array{low_gain_db: float, mid_gain_db: float, high_gain_db: float}}} */
+    private function audioTimelineEqualizerSettings(BookEdition $edition): array
+    {
+        return $this->normalizeAudioEqualizer(data_get($edition->metadata_json, 'audio_timeline_equalizer'));
+    }
+
+    /** @return array{tracks: array{voice: array{low_gain_db: float, mid_gain_db: float, high_gain_db: float}, music: array{low_gain_db: float, mid_gain_db: float, high_gain_db: float}, fx: array{low_gain_db: float, mid_gain_db: float, high_gain_db: float}}} */
+    private function normalizeAudioEqualizer(?array $settings): array
+    {
+        $tracks = is_array($settings['tracks'] ?? null) ? $settings['tracks'] : [];
+
+        return ['tracks' => collect(['voice', 'music', 'fx'])->mapWithKeys(fn (string $track) => [$track => $this->normalizeAudioEqualizerBands($tracks[$track] ?? null)])->all()];
+    }
+
+    /** @return array{low_gain_db: float, mid_gain_db: float, high_gain_db: float} */
+    private function normalizeAudioEqualizerBands(?array $settings): array
+    {
+        return collect(['low_gain_db', 'mid_gain_db', 'high_gain_db'])->mapWithKeys(function (string $band) use ($settings): array {
+            $gain = is_numeric($settings[$band] ?? null) ? (float) $settings[$band] : 0;
+
+            return [$band => round(max(-12, min(12, $gain)), 2)];
+        })->all();
+    }
+
+    /** Stack a compound group's EQ with the child's own non-destructive EQ. */
+    private function mergeAudioEqualizerBands(?array $parent, ?array $child): array
+    {
+        $parent = $this->normalizeAudioEqualizerBands($parent);
+        $child = $this->normalizeAudioEqualizerBands($child);
+
+        return collect($parent)->mapWithKeys(fn (float $gain, string $band): array => [$band => max(-12, min(12, $gain + $child[$band]))])->all();
+    }
+
+    private function audioEqualizerFilter(?array $settings): string
+    {
+        $bands = $this->normalizeAudioEqualizerBands($settings);
+        if (! array_filter($bands, static fn (float $gain): bool => abs($gain) > .001)) {
+            return '';
+        }
+
+        $gain = static fn (float $value): string => number_format($value, 2, '.', '');
+
+        // Match the real-time Web Audio preview. Shelves at 180 Hz and 4 kHz
+        // are deliberately inside Qwen narration's useful speech spectrum.
+        return ',bass=g='.$gain($bands['low_gain_db']).':f=180:w=0.6'
+            .',equalizer=f=1200:t=q:w=1:g='.$gain($bands['mid_gain_db'])
+            .',treble=g='.$gain($bands['high_gain_db']).':f=4000:w=0.6';
     }
 
     private function timelineItemsForEdition(Book $book, BookEdition $edition)
