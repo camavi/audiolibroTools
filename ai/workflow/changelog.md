@@ -8,6 +8,7 @@
 - Aggiunto delivery pubblico del libro: pagina `/read`, download ePub/PDF e passaggio al player audiobook sono autorizzati solo per release online. Il proprietario configura Private, Public oppure un link-invito segreto dal Distribution hub.
 - Avviato workflow di distribuzione per provider: il Distribution hub prepara consegne tracciate scegliendo release ePub/PDF e/o audio online. I canali manuali ricevono uno stato `ready_to_upload`; i canali API entrano in coda in attesa dell'adattatore provider.
 - Definita la policy di integrazione Distribution Hub: nessuna password o 2FA del cliente; automazione solo con token revocabile, file feed ufficiale o partnership. Documentata la classificazione operativa iniziale dei principali provider.
+- I canali in attesa di partnership sono ora nascosti come dettaglio interno: nel dashboard cliente mostrano soltanto lo stato `Coming soon`.
 - Completato l'import manoscritti: upload TXT/PDF, conservazione del file originale, estrazione del testo e creazione di blocchi editor con versione append-only `import`. I PDF scansiti richiedono OCR prima del caricamento.
 - Aggiunta revisione pre-import: rilevamento di heading Markdown, capitoli/parti e titoli in maiuscolo, con riepilogo capitoli, blocchi e parole prima della creazione del libro.
 - La revisione pre-import consente di riclassificare ogni blocco come titolo di capitolo o paragrafo prima della conferma.

@@ -19,7 +19,7 @@ class BookDistributionController extends Controller
         $book = $this->book($keyBook);
         $connections = $book->distributionConnections->keyBy('provider_key');
         return response()->json(['data' => [
-            'providers' => collect(config('distribution_providers'))->map(fn ($provider) => [...$provider, 'connection' => $this->connection($connections->get($provider['key'])), 'releases' => BookDistributionRelease::query()->where('book_id', $book->id)->where('provider_key', $provider['key'])->latest()->take(4)->get()->map(fn ($release) => $this->release($release))->values()])->values(),
+            'providers' => collect(config('distribution_providers'))->map(fn ($provider) => $this->provider($provider, $connections->get($provider['key']), $book))->values(),
             'readiness' => ['epub' => $book->publications()->where('status', 'ready')->where('is_online', true)->whereNotNull('epub_file_path')->exists(), 'pdf' => $book->publications()->where('status', 'ready')->where('is_online', true)->whereNotNull('pdf_file_path')->exists(), 'audiobook' => \App\Models\BookAudioPublication::query()->where('book_id', $book->id)->where('status', 'ready')->where('is_online', true)->exists(), 'cover' => filled($book->cover_img)],
             'public_delivery' => ['access' => $book->public_access, 'url' => $book->public_access !== 'private' ? route('public.books.show', ['keyBook' => $book->key_book], false).($book->public_access === 'invite' ? '?access='.$book->public_share_token : '') : null],
         ]]);
@@ -95,6 +95,19 @@ class BookDistributionController extends Controller
     }
 
     private function book(string $keyBook): Book { return Book::query()->where('account_id', auth()->id())->where('key_book', $keyBook)->firstOrFail(); }
+    private function provider(array $provider, ?BookDistributionConnection $connection, Book $book): array
+    {
+        $comingSoon = $provider['integration'] === 'partnership_api';
+        return [
+            'key' => $provider['key'],
+            'name' => $provider['name'],
+            'types' => $provider['types'],
+            'availability' => $comingSoon ? 'coming_soon' : $provider['integration'],
+            'note' => $comingSoon ? 'This delivery channel is coming soon.' : $provider['note'],
+            'connection' => $this->connection($connection),
+            'releases' => BookDistributionRelease::query()->where('book_id', $book->id)->where('provider_key', $provider['key'])->latest()->take(4)->get()->map(fn ($release) => $this->release($release))->values(),
+        ];
+    }
     private function connection(?BookDistributionConnection $connection): array { return ['status' => $connection?->status ?? 'not_connected', 'account_label' => $connection?->account_label, 'has_token' => filled($connection?->api_token), 'connected_at' => $connection?->connected_at?->toISOString(), 'last_published_at' => $connection?->last_published_at?->toISOString()]; }
     private function release(BookDistributionRelease $release): array { return ['id' => $release->id, 'status' => $release->status, 'publication_id' => $release->book_publication_id, 'audio_release_id' => $release->book_audio_publication_id, 'failure_message' => $release->failure_message, 'external_reference' => $release->external_reference, 'package_url' => route('dashboard.api.books.distribution.releases.package', ['keyBook' => $release->book->key_book, 'release' => $release], false), 'published_at' => $release->published_at?->toISOString(), 'created_at' => $release->created_at?->toISOString()]; }
 }

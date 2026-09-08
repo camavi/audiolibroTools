@@ -48,6 +48,8 @@ Un accesso delegato e ufficiale (un invito a un account AT distinto, con ruoli r
 
 Per l'accesso delegato, la CTA deve dire `Request delegated access`, mai `Connect`: il cliente invita un account AT nominativo dal proprio portale, sceglie i permessi e puo' revocarli in qualsiasi momento. L'operatore AT non deve poter visualizzare o cambiare pagamenti, tasse o credenziali.
 
+Le partnership in valutazione sono informazioni interne di AT: nel dashboard cliente il canale deve mostrare solo Coming soon, senza requisiti, documentazione, contatti o dettagli contrattuali.
+
 ## Requisiti prima di implementare un connettore
 
 - Confermare termini, paesi supportati, ruoli, diritti e responsabilita' con il provider e, quando serve, con consulenza legale.

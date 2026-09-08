@@ -266,10 +266,11 @@ class DashboardBookTest extends TestCase
         $this->getJson("/dashboard/api/books/{$book->key_book}/distribution")
             ->assertOk()
             ->assertJsonPath('data.providers.0.key', 'amazon_kdp')
-            ->assertJsonPath('data.providers.0.integration', 'manual_only')
-            ->assertJsonPath('data.providers.1.integration', 'delegated_portal')
-            ->assertJsonPath('data.providers.4.integration', 'file_feed')
-            ->assertJsonPath('data.providers.7.integration', 'partnership_api');
+            ->assertJsonPath('data.providers.0.availability', 'manual_only')
+            ->assertJsonPath('data.providers.1.availability', 'delegated_portal')
+            ->assertJsonPath('data.providers.4.availability', 'file_feed')
+            ->assertJsonPath('data.providers.7.availability', 'coming_soon')
+            ->assertJsonMissingPath('data.providers.7.integration');
 
         $this->putJson("/dashboard/api/books/{$book->key_book}/distribution/draft2digital", ['account_label' => 'My D2D'])
             ->assertOk()
