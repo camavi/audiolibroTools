@@ -91,6 +91,7 @@
 - Taglio o regolazione asset.
 - Volume per canale.
 - Equalizzatore non distruttivo a tre bande vocali (180 Hz, 1,2 kHz, 4 kHz) per clip e master di ciascun canale; i parametri vengono congelati nella release e applicati al render WAV con FFmpeg.
+- Limiter trasparente dopo il mix dei master per evitare clipping causato da sovrapposizioni o boost EQ.
 - Preview sincronizzata.
 - Salvataggio metadati.
 

@@ -58,9 +58,11 @@ const readingPlayback = _.rod(null);
 const trackState = _.rod({ voice: { muted: false, solo: false, locked: false, volume: 80 }, music: { muted: false, solo: false, locked: false, volume: 80 }, fx: { muted: false, solo: false, locked: false, volume: 80 } });
 const timelinePlayers = new Map();
 const timelinePlayerEqualizers = new Map();
+const timelineTrackLimiters = new Map();
 const timelineWaveforms = new Map();
 const pendingTimelineWaveforms = new Set();
 let timelineAudioContext = null;
+let timelineMasterLimiter = null;
 let timelineFrame = null;
 let timelineStartedAt = 0;
 let timelinePausedAt = null;
@@ -549,8 +551,10 @@ async function openTimelineEqualizerDialog(scope, track = null) {
             const lowNode = previewContext.createBiquadFilter(); lowNode.type = 'lowshelf'; lowNode.frequency.value = 180;
             const midNode = previewContext.createBiquadFilter(); midNode.type = 'peaking'; midNode.frequency.value = 1200; midNode.Q.value = 1;
             const highNode = previewContext.createBiquadFilter(); highNode.type = 'highshelf'; highNode.frequency.value = 4000;
+            const limiterNode = previewContext.createDynamicsCompressor();
+            limiterNode.threshold.value = -3; limiterNode.knee.value = 0; limiterNode.ratio.value = 20; limiterNode.attack.value = .003; limiterNode.release.value = .1;
             previewNodes = { low: lowNode, mid: midNode, high: highNode };
-            sourceNode.connect(lowNode).connect(midNode).connect(highNode).connect(previewContext.destination);
+            sourceNode.connect(lowNode).connect(midNode).connect(highNode).connect(limiterNode).connect(previewContext.destination);
             updatePreview();
             await previewContext.resume();
             await previewAudio.play();
@@ -851,6 +855,9 @@ function stopTimelinePlayers() {
         chain.masterLow.disconnect(); chain.masterMid.disconnect(); chain.masterHigh.disconnect();
     });
     timelinePlayerEqualizers.clear();
+    timelineTrackLimiters.forEach((limiter) => limiter.disconnect());
+    timelineTrackLimiters.clear();
+    if (timelineMasterLimiter) { timelineMasterLimiter.disconnect(); timelineMasterLimiter = null; }
 }
 function timelinePartPlayerKey(item, part) {
     return `${timelineItemKey(item)}:${part.id || part.offset_ms}`;
@@ -884,7 +891,33 @@ function setTimelineEqualizerBands(nodes, settings) {
     nodes.high.gain.setTargetAtTime(bands.high_gain_db, now, .015);
 }
 
-function configureTimelinePlayerEqualizer(key, audio, clipSettings, masterSettings) {
+function transparentLimiter(context) {
+    const limiter = context.createDynamicsCompressor();
+    limiter.threshold.value = -3;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = .003;
+    limiter.release.value = .1;
+
+    return limiter;
+}
+
+function timelineTrackOutput(track) {
+    timelineAudioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (!timelineMasterLimiter) {
+        timelineMasterLimiter = transparentLimiter(timelineAudioContext);
+        timelineMasterLimiter.connect(timelineAudioContext.destination);
+    }
+    if (!timelineTrackLimiters.has(track)) {
+        const limiter = transparentLimiter(timelineAudioContext);
+        limiter.connect(timelineMasterLimiter);
+        timelineTrackLimiters.set(track, limiter);
+    }
+
+    return timelineTrackLimiters.get(track);
+}
+
+function configureTimelinePlayerEqualizer(key, audio, clipSettings, masterSettings, track) {
     let chain = timelinePlayerEqualizers.get(key);
     if (!chain) {
         timelineAudioContext ||= new (window.AudioContext || window.webkitAudioContext)();
@@ -901,7 +934,7 @@ function configureTimelinePlayerEqualizer(key, audio, clipSettings, masterSettin
         const masterLow = filter('lowshelf', 180);
         const masterMid = filter('peaking', 1200, 1);
         const masterHigh = filter('highshelf', 4000);
-        source.connect(clipLow).connect(clipMid).connect(clipHigh).connect(masterLow).connect(masterMid).connect(masterHigh).connect(timelineAudioContext.destination);
+        source.connect(clipLow).connect(clipMid).connect(clipHigh).connect(masterLow).connect(masterMid).connect(masterHigh).connect(timelineTrackOutput(track));
         chain = { source, clipLow, clipMid, clipHigh, masterLow, masterMid, masterHigh };
         timelinePlayerEqualizers.set(key, chain);
     }
@@ -983,7 +1016,7 @@ function syncTimelinePlayers(playhead, seek = false) {
         }
         activeKeys.add(key);
         const audio = prepareTimelinePlayer(key, url);
-        configureTimelinePlayerEqualizer(key, audio, item.eq_settings_json, timelineEqualizer.value.tracks[item.track]);
+        configureTimelinePlayerEqualizer(key, audio, item.eq_settings_json, timelineEqualizer.value.tracks[item.track], item.track);
         const elapsedMs = Math.max(0, (playhead - item.start_ms / 1000) * 1000);
         const remainingMs = Math.max(0, Number(item.duration_ms || 0) - elapsedMs);
         const fadeInGain = Number(item.fade_in_ms || 0) > 0 ? Math.min(1, elapsedMs / Number(item.fade_in_ms)) : 1;

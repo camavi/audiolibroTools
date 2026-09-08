@@ -2248,7 +2248,10 @@ class DashboardBookController extends Controller
             $filters[] = $filter;
             $labels[] = "[a{$index}]";
         }
-        $filters[] = implode('', $labels).'amix=inputs='.count($labels).':duration=longest:normalize=0,aresample=async=1:first_pts=0'.$this->audioEqualizerFilter($masterEqualizer).'[mix]';
+        // Keep EQ boosts and overlapping clips below digital full scale in
+        // every published master. `level=0` preserves normal material and
+        // only limits peaks that cross the 0.95 ceiling.
+        $filters[] = implode('', $labels).'amix=inputs='.count($labels).':duration=longest:normalize=0,aresample=async=1:first_pts=0'.$this->audioEqualizerFilter($masterEqualizer).',alimiter=limit=0.95:level=0[mix]';
         $arguments = array_merge($arguments, ['-filter_complex', implode(';', $filters), '-map', '[mix]', '-ac', '2', '-ar', '44100', '-c:a', 'pcm_s16le', $output]);
         $process = new Process($arguments);
         $process->setTimeout(0);
