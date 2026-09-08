@@ -1,26 +1,4 @@
 import 'cmswift';
-import newBookStartPage from './dashboard/page/newBookStart.js';
-import bookEditorPage from './dashboard/page/bookEditor.js';
-import settingPage from './dashboard/page/setting.js';
-import booksPage from './dashboard/page/books.js';
-import bookPanelPage from './dashboard/page/bookPanel.js';
-import bookTraslatePage from './dashboard/page/bookTraslate.js';
-import audiobookEditPage from './dashboard/page/audiobookEdit.js';
-import abtPlayPage from './dashboard/page/abtPlay.js';
-import uploadAudioPage from './dashboard/page/uploadAudio.js';
-import bookDesignPage from './dashboard/page/bookDesign.js';
-import bookEpubPage from './dashboard/page/bookEpub.js';
-import bookPdfPage from './dashboard/page/bookPdf.js';
-import bookDistributionPage from './dashboard/page/bookDistribution.js';
-import profilePage from './dashboard/page/profile.js';
-import tokensPage from './dashboard/page/tokens.js';
-import activityPage from './dashboard/page/activity.js';
-import statisticsPage from './dashboard/page/statistics.js';
-import teamPage from './dashboard/page/team.js';
-import promptsPage from './dashboard/page/prompts.js';
-import supportPage from './dashboard/page/support.js';
-import logoutPage from './dashboard/page/logout.js';
-import dashboardHomePage from './dashboard/page/dashboardHome.js';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
@@ -121,16 +99,66 @@ function statusAlert() {
         message: status.message,
     });
 }
-function newBookStart() {
-    return newBookStartPage;
-}
-function bookEditor(ctx) {
-    return bookEditorPage(ctx);
+function lazyPage(name, load) {
+    let page = null;
+    let loading = null;
+    let error = null;
+
+    const refreshRoute = () => {
+        const { pathname, search, hash } = window.location;
+        _.router.navigate(`${pathname}${search}${hash}`, { replace: true });
+    };
+
+    return (ctx) => {
+        if (page) return page(ctx);
+
+        if (!loading && !error) {
+            loading = load()
+                .then(({ default: component }) => {
+                    page = component;
+                    refreshRoute();
+                })
+                .catch((reason) => {
+                    error = reason;
+                    refreshRoute();
+                });
+        }
+
+        if (error) {
+            return _.main({ class: 'at-dashboardLazyPage' },
+                _.Alert({ type: 'danger', title: `Unable to load ${name}`, message: 'Try again to load this dashboard page.' }),
+                _.Btn({ color: 'primary', icon: 'refresh', onClick: () => { error = null; loading = null; refreshRoute(); } }, 'Try again'),
+            );
+        }
+
+        return _.main({ class: 'at-dashboardLazyPage' },
+            _.Alert({ type: 'info', icon: 'progress_activity', message: `Loading ${name}…` }),
+        );
+    };
 }
 
-function pageDashboard() {
-    return dashboardHomePage();
-}
+const newBookStart = lazyPage('New book', () => import('./dashboard/page/newBookStart.js'));
+const bookEditor = lazyPage('Book editor', () => import('./dashboard/page/bookEditor.js'));
+const pageDashboard = lazyPage('Dashboard', () => import('./dashboard/page/dashboardHome.js'));
+const settingPage = lazyPage('Settings', () => import('./dashboard/page/setting.js'));
+const booksPage = lazyPage('Books', () => import('./dashboard/page/books.js'));
+const bookPanelPage = lazyPage('Book panel', () => import('./dashboard/page/bookPanel.js'));
+const bookTraslatePage = lazyPage('Translations', () => import('./dashboard/page/bookTraslate.js'));
+const audiobookEditPage = lazyPage('Audiobook studio', () => import('./dashboard/page/audiobookEdit.js'));
+const abtPlayPage = lazyPage('Audiobook player', () => import('./dashboard/page/abtPlay.js'));
+const uploadAudioPage = lazyPage('Audio library', () => import('./dashboard/page/uploadAudio.js'));
+const bookDesignPage = lazyPage('Book design', () => import('./dashboard/page/bookDesign.js'));
+const bookEpubPage = lazyPage('ePub', () => import('./dashboard/page/bookEpub.js'));
+const bookPdfPage = lazyPage('PDF', () => import('./dashboard/page/bookPdf.js'));
+const bookDistributionPage = lazyPage('Distribution', () => import('./dashboard/page/bookDistribution.js'));
+const profilePage = lazyPage('Profile', () => import('./dashboard/page/profile.js'));
+const tokensPage = lazyPage('Tokens', () => import('./dashboard/page/tokens.js'));
+const activityPage = lazyPage('Activity', () => import('./dashboard/page/activity.js'));
+const statisticsPage = lazyPage('Statistics', () => import('./dashboard/page/statistics.js'));
+const teamPage = lazyPage('Team', () => import('./dashboard/page/team.js'));
+const promptsPage = lazyPage('AI prompts', () => import('./dashboard/page/prompts.js'));
+const supportPage = lazyPage('Help and support', () => import('./dashboard/page/support.js'));
+const logoutPage = lazyPage('Logout', () => import('./dashboard/page/logout.js'));
 function setPageHeaderActions(actions = []) {
     const nodes = Array.isArray(actions) ? actions : [actions];
     pageHeaderActions = () => nodes;

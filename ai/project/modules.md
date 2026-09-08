@@ -90,6 +90,7 @@
 - Drag/drop.
 - Taglio o regolazione asset.
 - Volume per canale.
+- Equalizzatore non distruttivo per clip, canale e master; i parametri devono essere congelati nella release e applicati durante il render WAV.
 - Preview sincronizzata.
 - Salvataggio metadati.
 
