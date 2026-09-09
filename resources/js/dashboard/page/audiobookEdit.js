@@ -79,6 +79,16 @@ const timelineTracks = [
     { key: 'fx', label: 'FX', color: '#f59e0b' },
 ];
 
+function timelineLaneBackground(track, lane = 0) {
+    const backgrounds = {
+        voice: ['#142033', '#111b2b'],
+        music: ['#171a2d', '#13192a'],
+        fx: ['#1b1b28', '#171925'],
+    };
+    const shades = backgrounds[track] || backgrounds.voice;
+    return shades[lane % shades.length];
+}
+
 function bookKey(ctx) {
     return ctx?.params?.key_book
         || window.location.pathname.match(/\/dashboard\/book\/([^/]+)\/audiobook\/edit/)?.[1]
@@ -652,7 +662,7 @@ async function openTimelineEqualizerDialog(scope, track = null) {
                 _.p({ class: 'at-equalizerHint' }, 'Three musical fixed bands. Move the controls while listening: the changes are heard immediately and are saved only when you confirm.'),
                 _.div({ class: 'at-equalizerPresets' },
                     _.span({ class: 'at-equalizerPresetsLabel' }, 'Starting point'),
-                    _.div({ class: 'at-equalizerPresetButtons' }, presets.map((preset) => _.Btn({ dense: true, color: () => activePreset.value === preset.key ? 'primary' : 'secondary', onClick: () => applyPreset(preset) }, preset.label))),
+                    _.div({ class: 'at-equalizerPresetButtons' }, presets.map((preset) => _.Btn({ dense: true, class: 'at-equalizerPresetButton', color: () => activePreset.value === preset.key ? 'primary' : 'secondary', onClick: () => applyPreset(preset) }, preset.label))),
                 ),
                 _.div({ class: 'at-equalizerCurve' }, curveCanvas),
                 _.div({ class: 'at-equalizerBands' }, gainInput('Low', '180 Hz', low), gainInput('Mid', '1.2 kHz', mid), gainInput('High', '4 kHz', high)),
@@ -2522,7 +2532,7 @@ function drawTimelineLabels(canvas, lanes, height, rulerHeight, rowHeight) {
         const y = rulerHeight + index * rowHeight;
         const state = trackState.value[trackKey];
         const meterLevel = timelineTrackMeterLevels.value[trackKey] || 0;
-        ctx.fillStyle = index % 2 ? '#111b2b' : '#142033'; ctx.fillRect(0, y, width, rowHeight - 1);
+        ctx.fillStyle = timelineLaneBackground(trackKey, lane); ctx.fillRect(0, y, width, rowHeight - 1);
         ctx.fillStyle = '#cbd5e1'; ctx.fillText(lane ? `${name} ${lane + 1}` : name, 18, y + rowHeight / 2);
         if (lane !== 0) return;
         ctx.fillStyle = state.muted ? '#ef4444' : '#94a3b8'; ctx.fillText('M', 72, y + rowHeight / 2);
@@ -2583,7 +2593,7 @@ function drawTimeline(canvas, labelCanvas) {
     }
     lanes.forEach(({ key: trackKey, label: name, color, lane }, index) => {
         const y = rulerHeight + index * rowHeight;
-        ctx.fillStyle = index % 2 ? '#111b2b' : '#142033'; ctx.fillRect(0, y, width, rowHeight - 1);
+        ctx.fillStyle = timelineLaneBackground(trackKey, lane); ctx.fillRect(0, y, width, rowHeight - 1);
         timelineItems.value.filter((item) => item.track === trackKey && Number(item.lane || 0) === lane).forEach((item) => {
             const x = width * (item.start_ms / 1000) / duration;
             const clipWidth = Math.max(28, width * (item.duration_ms / 1000) / duration);
@@ -2921,9 +2931,9 @@ function timelineCard() {
                     _.Btn({ dense: true, color: 'secondary', icon: 'waves', title: 'Choose FX from audio library', onClick: () => openTimelineMediaDialog('fx') }),
                 ),
                 _.div({ class: 'at-audioToolbarGroup', title: 'Channel master equalizers' },
-                    _.Btn({ dense: true, color: 'secondary', icon: 'equalizer', title: 'Voice master equalizer', onClick: () => openTimelineEqualizerDialog('track', 'voice') }),
-                    _.Btn({ dense: true, color: 'secondary', icon: 'equalizer', title: 'Music master equalizer', onClick: () => openTimelineEqualizerDialog('track', 'music') }),
-                    _.Btn({ dense: true, color: 'secondary', icon: 'equalizer', title: 'FX master equalizer', onClick: () => openTimelineEqualizerDialog('track', 'fx') }),
+                    _.Btn({ dense: true, class: 'at-audioEqualizerButton--voice', color: 'secondary', icon: 'equalizer', title: 'Voice master equalizer', onClick: () => openTimelineEqualizerDialog('track', 'voice') }),
+                    _.Btn({ dense: true, class: 'at-audioEqualizerButton--music', color: 'secondary', icon: 'equalizer', title: 'Music master equalizer', onClick: () => openTimelineEqualizerDialog('track', 'music') }),
+                    _.Btn({ dense: true, class: 'at-audioEqualizerButton--fx', color: 'secondary', icon: 'equalizer', title: 'FX master equalizer', onClick: () => openTimelineEqualizerDialog('track', 'fx') }),
                 ),
                 _.div({ class: 'at-audioToolbarGroup at-audioToolbarGroup--save' },
                     _.Btn({ dense: true, color: 'primary', icon: 'save', title: 'Save timeline', onClick: () => saveTimeline(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }),
