@@ -1356,18 +1356,24 @@ class DashboardBookController extends Controller
      * is intentionally not auto-assigned because it is not reliable enough to
      * decide who owns a whole block without an AI review step.
      */
-    public function detectCharacters(string $keyBook): JsonResponse
+    public function detectCharacters(Request $request, string $keyBook): JsonResponse
     {
+        $validated = $request->validate([
+            'speaker_separators' => ['nullable', 'string', 'max:20'],
+        ]);
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
         $candidates = [];
+        $separators = trim($validated['speaker_separators'] ?? ':—–-');
+        abort_if($separators === '', 422, 'Enter at least one speaker separator.');
+        $separatorPattern = '['.preg_quote($separators, '/').']';
 
-        $book->blocks()->whereIn('type', ['paragraph', 'blockquote'])->get()->each(function (BookBlock $block) use (&$candidates): void {
+        $book->blocks()->whereIn('type', ['paragraph', 'blockquote'])->get()->each(function (BookBlock $block) use (&$candidates, $separatorPattern): void {
             $text = trim((string) $block->text_plain);
             if ($text === '') return;
 
             foreach (preg_split('/\\R/u', $text) ?: [] as $line) {
                 // Examples: "Carlos: Hello" and "CARLOS — Hello".
-                if (! preg_match('/^\\s*([\\p{Lu}][\\p{L}\\p{M}’\\x27.-]*(?:\\s+[\\p{Lu}][\\p{L}\\p{M}’\\x27.-]*){0,3})\\s*(?::|—|–|-)\\s*\\S/u', $line, $match)) {
+                if (! preg_match('/^\\s*([\\p{Lu}][\\p{L}\\p{M}’\\x27.-]*(?:\\s+[\\p{Lu}][\\p{L}\\p{M}’\\x27.-]*){0,3})\\s*'.$separatorPattern.'\\s*\\S/u', $line, $match)) {
                     continue;
                 }
 

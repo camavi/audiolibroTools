@@ -70,7 +70,7 @@
 - Voci disponibili.
 - Toni.
 - Voce default libro.
-- Personaggi: nel tool Characters dell'editor, rilevamento assistito dei dialoghi con speaker esplicito (`Nome:` o `Nome —`), revisione obbligatoria dei candidati e creazione/assegnazione tracciata ai blocchi salvati. Le attribuzioni narrative ambigue restano da confermare in una fase AI successiva.
+- Personaggi: nel tool Characters dell'editor, rilevamento assistito dei dialoghi con speaker esplicito (`Nome:` o `Nome —`), revisione obbligatoria dei candidati e creazione/assegnazione tracciata ai blocchi salvati. Prima della scansione l'utente inserisce i caratteri separatori usati dal proprio libro (per esempio `:`, `—` o `»`). Le attribuzioni narrative ambigue restano da confermare in una fase AI successiva.
 - Lingua per voce.
 - Marcatori nel testo.
 - Generazione singolo blocco.

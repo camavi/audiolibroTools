@@ -5823,12 +5823,15 @@ function editorText(keyBook) {
         const loading = _.rod(true);
         const importing = _.rod(false);
         const status = _.rod(null);
+        const speakerSeparators = _.rod(':—–-');
 
         const detect = async () => {
             loading.value = true;
             status.value = null;
             try {
-                const payload = await _.http.postJSON(`/dashboard/api/books/${bookKey}/characters/detect`, {});
+                const payload = await _.http.postJSON(`/dashboard/api/books/${bookKey}/characters/detect`, {
+                    speaker_separators: speakerSeparators.value,
+                });
                 const detected = normalizeDataPayload(payload).candidates || [];
                 CMSwift.reactive.untracked(() => {
                     candidates.value = detected.map((candidate) => ({ ...candidate, selected: _.rod(true) }));
@@ -5873,6 +5876,14 @@ function editorText(keyBook) {
                     _.span('Recognizes explicit speaker labels such as “Carlos: Hello” or “Carlos — Hello”. Review the suggestions before they are created.'),
                 ),
                 content: ({ close }) => _.div({ class: 'at-characterManageDialog at-characterDetectionDialog' },
+                    _.Input({
+                        label: 'Speaker separator(s)',
+                        icon: 'format_quote',
+                        model: speakerSeparators,
+                        placeholder: ':—',
+                        maxlength: 20,
+                    }),
+                    _.small({ class: 'text-muted' }, 'Characters placed after a speaker name, for example : or —.'),
                     () => loading.value
                         ? _.div({ class: 'at-chatNotice' }, 'Scanning saved manuscript blocks…')
                         : candidates.value.length

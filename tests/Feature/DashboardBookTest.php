@@ -2128,6 +2128,16 @@ class DashboardBookTest extends TestCase
             ]);
         }
 
+        $this->postJson("/dashboard/api/books/{$book->key_book}/characters/detect", ['speaker_separators' => ':'])
+            ->assertOk()
+            ->assertJsonPath('data.candidates.0.name', 'Carlos')
+            ->assertJsonPath('data.candidates.0.block_uuids.0', $carlos);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/characters/detect", ['speaker_separators' => '—'])
+            ->assertOk()
+            ->assertJsonPath('data.candidates.0.name', 'Maria')
+            ->assertJsonPath('data.candidates.0.block_uuids.0', $maria);
+
         $this->postJson("/dashboard/api/books/{$book->key_book}/characters/detect")
             ->assertOk()
             ->assertJsonPath('data.candidates.0.name', 'Carlos')

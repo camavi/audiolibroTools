@@ -5,6 +5,7 @@
 - Rinominato il tool editor `Voices` in `Characters` e corretto il falso stato `Unsaved`: il baseline viene ora calcolato dopo la normalizzazione TipTap del documento appena caricato, quindi un blocco non modificato resta subito assegnabile.
 - Aggiunto primo rilevamento assistito dei personaggi: riconosce dialoghi con speaker esplicito (`Nome:` e `Nome —`), mostra esempi e blocchi trovati, richiede revisione dell'utente e solo dopo crea i Character e assegna i blocchi alla loro versione salvata. Le attribuzioni narrative ambigue non vengono assegnate automaticamente.
 - Rimosse le AI settings dal tool `Characters`: il rilevamento corrente è deterministico e non usa un LLM. Il servizio AI `voices` non viene più esposto nella dashboard; il dialog e i relativi stili condivisi restano disponibili agli strumenti AI che li usano.
+- Il dialog di rilevamento Characters permette ora di inserire i caratteri separatori usati nel proprio libro; il backend applica esattamente quelli alla scansione.
 
 ## 2026-09-07
 
