@@ -13,6 +13,7 @@ use App\Models\AudioMediaAsset;
 use App\Models\Book;
 use App\Models\BookAudioGenerationOverride;
 use App\Models\BookAudioJob;
+use App\Models\BookAudioPublication;
 use App\Models\BookAudioSegment;
 use App\Models\BookAudioTimelineItem;
 use App\Models\BookBlock;
@@ -22,6 +23,7 @@ use App\Models\BookBlockTranslation;
 use App\Models\BookBlockVoiceAssignment;
 use App\Models\BookCategory;
 use App\Models\BookEdition;
+use App\Models\BookPublication;
 use App\Models\BookTranslationJob;
 use App\Models\BookTranslationTerm;
 use App\Models\BookVoiceProfile;
@@ -61,6 +63,13 @@ class DashboardBookController extends Controller
     {
         $books = Book::query()
             ->where('account_id', auth()->id())
+            ->withCount([
+                'publications',
+                'audioPublications',
+                'distributionReleases',
+                'publications as online_publications_count' => fn ($query) => $query->where('status', 'ready')->where('is_online', true),
+                'audioPublications as online_audio_publications_count' => fn ($query) => $query->where('status', 'ready')->where('is_online', true),
+            ])
             ->latest('updated_at')
             ->get([
                 'id',
@@ -85,9 +94,77 @@ class DashboardBookController extends Controller
                 'lang' => $book->lang,
                 'cover_img' => $book->cover_img,
                 'audio_settings' => [...AudioTextSegmenter::DEFAULT_PAUSES, ...($book->audio_settings_json ?? [])],
+                'release_count' => $this->releaseCount($book),
+                'online_release_count' => $this->onlineReleaseCount($book),
+                'distribution_release_count' => (int) $book->distribution_releases_count,
+                'is_paused' => $this->releaseCount($book) > 0 && $this->onlineReleaseCount($book) === 0,
                 'updated_at' => $book->updated_at?->toIso8601String(),
             ])->values(),
         ]);
+    }
+
+    /**
+     * Releases are durable publication records. A book with any release is
+     * never hard-deleted from the library: it can only be taken offline.
+     */
+    public function pauseBook(string $keyBook): JsonResponse
+    {
+        $book = Book::query()
+            ->where('account_id', auth()->id())
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        abort_if($this->releaseCount($book) === 0, 422, 'Only books with a release can be paused.');
+
+        [$publicationsPaused, $audioPaused] = DB::transaction(function () use ($book): array {
+            $publicationsPaused = $book->publications()->where('is_online', true)->update(['is_online' => false]);
+            $audioPaused = $book->audioPublications()->where('is_online', true)->update(['is_online' => false]);
+            $book->forceFill(['public_access' => 'private'])->save();
+
+            return [$publicationsPaused, $audioPaused];
+        });
+
+        return response()->json(['data' => [
+            'paused' => true,
+            'publications_paused' => $publicationsPaused,
+            'audio_releases_paused' => $audioPaused,
+            'distribution_releases' => $book->distributionReleases()->count(),
+        ]]);
+    }
+
+    public function destroy(string $keyBook): JsonResponse
+    {
+        $book = Book::query()
+            ->where('account_id', auth()->id())
+            ->where('key_book', $keyBook)
+            ->firstOrFail();
+
+        $accountId = (int) $book->account_id;
+        $bookKey = $book->key_book;
+        $manuscriptPath = $book->manuscript_file_path;
+        $publicPaths = [
+            ...$book->designAssets()->pluck('image_path')->filter()->all(),
+            ...$book->mediaAssets()->pluck('image_path')->filter()->all(),
+            ...$book->audioSegments()->pluck('audio_path')->filter(fn (?string $path) => $path && ! str_starts_with($path, 'mock://'))->all(),
+        ];
+
+        DB::transaction(function () use ($book): void {
+            $lockedBook = Book::query()->whereKey($book->id)->lockForUpdate()->firstOrFail();
+            abort_if($this->releaseCount($lockedBook) > 0, 422, 'Books with releases cannot be deleted. Pause their public releases instead.');
+            $lockedBook->delete();
+        });
+
+        Storage::disk('public')->delete(array_values(array_unique($publicPaths)));
+        foreach (['audiobooks', 'book-designs', 'book-media', 'book-epubs', 'book-pdfs'] as $directory) {
+            Storage::disk('public')->deleteDirectory("{$directory}/{$bookKey}");
+        }
+        if ($manuscriptPath) {
+            Storage::disk('local')->delete($manuscriptPath);
+        }
+        Storage::disk('local')->deleteDirectory("bookEdit/{$accountId}/{$bookKey}");
+        Storage::disk('local')->deleteDirectory("bookManuscripts/{$accountId}/{$bookKey}");
+
+        return response()->json(['data' => ['deleted' => true]]);
     }
 
     public function show(string $keyBook): JsonResponse
@@ -3930,5 +4007,18 @@ class DashboardBookController extends Controller
             ])
             ->values()
             ->all();
+    }
+
+    private function releaseCount(Book $book): int
+    {
+        return (int) ($book->publications_count ?? $book->publications()->count())
+            + (int) ($book->audio_publications_count ?? $book->audioPublications()->count())
+            + (int) ($book->distribution_releases_count ?? $book->distributionReleases()->count());
+    }
+
+    private function onlineReleaseCount(Book $book): int
+    {
+        return (int) ($book->online_publications_count ?? $book->publications()->where('status', 'ready')->where('is_online', true)->count())
+            + (int) ($book->online_audio_publications_count ?? $book->audioPublications()->where('status', 'ready')->where('is_online', true)->count());
     }
 }

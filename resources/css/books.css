@@ -177,6 +177,65 @@
 
 .at-libraryBookDetails .cms-icon { font-size: 1rem; }
 
+.at-libraryBookCoverWrap { position: relative; }
+
+.at-libraryBookManage {
+    position: absolute;
+    right: .7rem;
+    bottom: .7rem;
+    z-index: 2;
+    display: inline-grid;
+    width: 2.35rem;
+    height: 2.35rem;
+    padding: 0;
+    place-items: center;
+    border: 1px solid rgb(255 255 255 / 36%);
+    border-radius: .55rem;
+    color: #fff;
+    background: var(--cms-danger, #dc2626);
+    box-shadow: 0 3px 10px rgb(15 23 42 / 25%);
+    cursor: pointer;
+    transition: background 160ms ease, transform 160ms ease;
+}
+
+.at-libraryBookManage:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
+.at-libraryBookManage:hover { background: var(--cms-danger-dark, #b91c1c); }
+.at-libraryBookManage:active { transform: translateY(1px); }
+
+.at-libraryBookRelease {
+    color: var(--cms-primary, #4f46e5);
+    font-weight: 600;
+}
+
+.at-libraryBookRelease.is-paused {
+    color: var(--cms-text-muted, var(--at-muted));
+}
+
+.at-libraryDeleteDialog {
+    display: grid;
+    gap: 1rem;
+}
+
+.at-libraryDeleteDialog p {
+    margin: .45rem 0 0;
+    color: var(--cms-text-muted, var(--at-muted));
+    line-height: 1.45;
+}
+
+.at-libraryDeleteWarning {
+    color: var(--cms-warning, #b45309) !important;
+}
+
+.at-libraryDeleteActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .75rem;
+}
+
 .at-libraryEmpty,
 .at-libraryNotice {
     margin-top: 2rem;

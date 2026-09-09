@@ -129,6 +129,8 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
     Route::post('/books/{keyBook}/reimport-confirm', [DashboardBookController::class, 'confirmManuscriptReimport'])->name('books.reimport-confirm');
     Route::get('/books/{keyBook}', [DashboardBookController::class, 'show'])->name('books.show');
     Route::patch('/books/{keyBook}', [DashboardBookController::class, 'update'])->name('books.update');
+    Route::patch('/books/{keyBook}/pause', [DashboardBookController::class, 'pauseBook'])->name('books.pause');
+    Route::delete('/books/{keyBook}', [DashboardBookController::class, 'destroy'])->name('books.destroy');
     Route::patch('/books/{keyBook}/design', [DashboardBookController::class, 'updateBookDesign'])->name('books.design.update');
     Route::get('/books/{keyBook}/design-assets', [BookDesignController::class, 'index'])->name('books.design-assets.index');
     Route::post('/books/{keyBook}/design-assets', [BookDesignController::class, 'store'])->name('books.design-assets.store');

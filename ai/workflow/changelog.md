@@ -7,6 +7,7 @@
 - Rimosse le AI settings dal tool `Characters`: il rilevamento corrente è deterministico e non usa un LLM. Il servizio AI `voices` non viene più esposto nella dashboard; il dialog e i relativi stili condivisi restano disponibili agli strumenti AI che li usano.
 - Il dialog di rilevamento Characters permette ora di inserire i caratteri separatori usati nel proprio libro; il backend applica esattamente quelli alla scansione.
 - Normalizzato l'import manoscritti DOCX/TXT/PDF: le entità HTML residue dagli export, come `&quot;`, vengono decodificate sia nella review sia nei blocchi salvati.
+- Aggiunta gestione sicura dalla libreria Books: delete definitivo con conferma per libri senza release e pausa delle release pubbliche per libri pubblicati; i libri con release non sono eliminabili.
 
 ## 2026-09-07
 

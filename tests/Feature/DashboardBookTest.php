@@ -2872,6 +2872,62 @@ class DashboardBookTest extends TestCase
         ]);
     }
 
+    public function test_dashboard_deletes_an_unreleased_book_and_its_files(): void
+    {
+        Storage::fake('local');
+        Storage::fake('public');
+
+        $book = $this->createBook();
+        $manuscriptPath = "bookManuscripts/{$this->user->id}/{$book->key_book}/source.txt";
+        $book->update(['manuscript_file_path' => $manuscriptPath]);
+        Storage::disk('local')->put($manuscriptPath, 'Manuscript');
+        Storage::disk('local')->put("bookEdit/{$this->user->id}/{$book->key_book}/document.json", '{}');
+        Storage::disk('public')->put("audiobooks/{$book->key_book}/segment.wav", 'audio');
+        Storage::disk('public')->put("book-designs/{$book->key_book}/cover.png", 'cover');
+
+        $this->deleteJson("/dashboard/api/books/{$book->key_book}")
+            ->assertOk()
+            ->assertJsonPath('data.deleted', true);
+
+        $this->assertDatabaseMissing('books', ['id' => $book->id]);
+        Storage::disk('local')->assertMissing($manuscriptPath);
+        Storage::disk('local')->assertMissing("bookEdit/{$this->user->id}/{$book->key_book}/document.json");
+        Storage::disk('public')->assertMissing("audiobooks/{$book->key_book}/segment.wav");
+        Storage::disk('public')->assertMissing("book-designs/{$book->key_book}/cover.png");
+    }
+
+    public function test_dashboard_blocks_deletion_for_a_released_book_and_can_pause_it(): void
+    {
+        $book = $this->createBook();
+        $book->update(['public_access' => 'public']);
+        $publication = BookPublication::query()->create([
+            'book_id' => $book->id,
+            'version_number' => 1,
+            'status' => 'ready',
+            'is_online' => true,
+            'snapshot_json' => [],
+        ]);
+
+        $this->getJson('/dashboard/api/books')
+            ->assertOk()
+            ->assertJsonPath('data.0.release_count', 1)
+            ->assertJsonPath('data.0.online_release_count', 1);
+
+        $this->deleteJson("/dashboard/api/books/{$book->key_book}")
+            ->assertUnprocessable();
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/pause")
+            ->assertOk()
+            ->assertJsonPath('data.paused', true)
+            ->assertJsonPath('data.publications_paused', 1);
+
+        $this->assertDatabaseHas('books', ['id' => $book->id, 'public_access' => 'private']);
+        $this->assertDatabaseHas('book_publications', ['id' => $publication->id, 'is_online' => false]);
+        $this->getJson('/dashboard/api/books')
+            ->assertOk()
+            ->assertJsonPath('data.0.is_paused', true);
+    }
+
     private function createBook(): Book
     {
         return Book::query()->create([

@@ -132,6 +132,16 @@ class Book extends Model
         return $this->hasMany(BookPublication::class);
     }
 
+    public function audioPublications(): HasMany
+    {
+        return $this->hasMany(BookAudioPublication::class);
+    }
+
+    public function distributionReleases(): HasMany
+    {
+        return $this->hasMany(BookDistributionRelease::class);
+    }
+
     public function aiChatThreads(): HasMany
     {
         return $this->hasMany(AiChatThread::class);
