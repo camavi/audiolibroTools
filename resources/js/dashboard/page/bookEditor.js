@@ -272,7 +272,6 @@ const toolAiServices = {
     chat: 'chat',
     comments: 'comments',
     correct: 'correction',
-    voices: 'voices',
     audio: 'audio',
     translate: 'translate',
     versions: 'versions',
@@ -1847,7 +1846,7 @@ function rightWorkspaceHeader(tool, block, keyBook) {
                 _.Icon ? _.Icon({ name: tool.icon, class: 'at-rightWorkspace-titleIcon' }) : null,
                 _.span(tool.label)
             ),
-            !['activity', 'settings'].includes(tool.id) ? _.button({
+            !['activity', 'settings', 'voices'].includes(tool.id) ? _.button({
                 type: 'button',
                 class: 'at-rightWorkspace-toolSettings',
                 title: `${tool.label} AI settings`,

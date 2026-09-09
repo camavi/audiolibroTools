@@ -922,7 +922,7 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.setting.system_prompt', 'You are a professional book editor. Return only the corrected text, with no explanation.')
             ->assertJsonPath('data.providers.0.provider_key', 'mock')
             ->assertJsonPath('data.services.2.key', 'correction')
-            ->assertJsonPath('data.services.7.key', 'versions');
+            ->assertJsonPath('data.services.6.key', 'versions');
     }
 
     public function test_dashboard_can_create_custom_ai_provider_and_save_service_setting(): void
