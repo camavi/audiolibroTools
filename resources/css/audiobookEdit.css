@@ -1535,7 +1535,7 @@
     gap: 1rem
 }
 
-.at-equalizerBandHead > div {
+.at-equalizerBandHead>div {
     display: grid;
     gap: .16rem
 }
@@ -1786,7 +1786,8 @@
     overscroll-behavior: contain;
     background: var(--at-text);
     scrollbar-color: var(--at-muted) var(--at-text);
-    scrollbar-width: thin
+    scrollbar-width: thin;
+    background-color: #111a29;
 }
 
 .at-audioTimelineScroller::-webkit-scrollbar {
