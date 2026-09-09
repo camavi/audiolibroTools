@@ -23,7 +23,7 @@
 ## 3. Libri
 
 - Creazione libro vuoto: primo flusso dashboard avviato.
-- Upload libro DOCX/TXT/PDF: anteprima di capitoli/blocchi/parole prima della conferma, poi crea blocchi editor con versione `import`; i titoli Word diventano heading e i PDF devono contenere testo selezionabile (OCR esterno per scansioni). Il re-import confronta i blocchi e permette di selezionare quali modifiche, aggiunte e rimozioni applicare; le rimozioni sono escluse per default. Le modifiche applicate rendono `stale` audio e traduzioni legati alla versione precedente.
+- Upload libro DOCX/TXT/PDF: anteprima di capitoli/blocchi/parole prima della conferma, poi crea blocchi editor con versione `import`; le entità HTML residue degli export (es. `&quot;`) vengono decodificate prima di preview e salvataggio. I titoli Word diventano heading e i PDF devono contenere testo selezionabile (OCR esterno per scansioni). Il re-import confronta i blocchi e permette di selezionare quali modifiche, aggiunte e rimozioni applicare; le rimozioni sono escluse per default. Le modifiche applicate rendono `stale` audio e traduzioni legati alla versione precedente.
 - Metadati libro.
 - Categorie: tabella, seed e API iniziali avviati.
 - Copertina.

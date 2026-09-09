@@ -149,6 +149,9 @@ class ManuscriptImportService
 
     private function normalize(string $text): string
     {
+        // PDF/TXT exports sometimes preserve typographic punctuation as HTML
+        // entities (for example &quot;). Decode it before previewing or saving.
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $text = str_replace(["\r\n", "\r", "\u{00A0}"], ["\n", "\n", ' '], $text);
         $text = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u', '', $text) ?? $text;
 

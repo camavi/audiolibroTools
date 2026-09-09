@@ -613,6 +613,24 @@ class DashboardBookTest extends TestCase
         $this->assertDatabaseHas('book_blocks', ['type' => 'paragraph', 'text_plain' => 'The next paragraph.']);
     }
 
+    public function test_dashboard_decodes_html_entities_in_manuscript_preview_and_import(): void
+    {
+        Storage::fake('local');
+
+        $preview = $this->post('/dashboard/api/books/import-preview', [
+            'manuscript' => UploadedFile::fake()->createWithContent('quoted.txt', '&quot;Hola, despierta!&quot; exclamó Victoria.'),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.summary.structure.0.text', '"Hola, despierta!" exclamó Victoria.');
+
+        $this->postJson('/dashboard/api/books/import-confirm', [
+            'preview_token' => $preview->json('data.preview_token'),
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('book_blocks', ['text_plain' => '"Hola, despierta!" exclamó Victoria.']);
+        $this->assertDatabaseMissing('book_blocks', ['text_plain' => '&quot;Hola, despierta!&quot; exclamó Victoria.']);
+    }
+
     public function test_dashboard_can_import_text_from_a_pdf_manuscript(): void
     {
         Storage::fake('local');
