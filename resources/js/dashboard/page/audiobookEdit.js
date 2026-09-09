@@ -33,7 +33,7 @@ let generatedAudioPreview = null;
 let generatedAudioPreviewTimer = null;
 let audioPollingTimer = null;
 const audioGenerating = _.rod(false);
-const qwenModel = _.rod('quality');
+const voiceEngineMode = _.rod('quality');
 const bookAudioGenerating = _.rod(false);
 const allAudioInserting = _.rod(false);
 const selectedLibraryVoice = _.rod(null);
@@ -580,7 +580,7 @@ async function openTimelineEqualizerDialog(scope, track = null) {
             previewAudio.loop = true;
             previewContext = new (window.AudioContext || window.webkitAudioContext)();
             const sourceNode = previewContext.createMediaElementSource(previewAudio);
-            // Qwen narration carries little useful energy below 120 Hz or
+            // Narration carries little useful energy below 120 Hz or
             // above 6 kHz. These shelves sit inside its effective spectrum,
             // so low/high adjustments are as audible as the mid band.
             const lowNode = previewContext.createBiquadFilter(); lowNode.type = 'lowshelf'; lowNode.frequency.value = 180;
@@ -1159,7 +1159,7 @@ function startTimelinePlayback(render) {
     timelinePausedAt = null;
     const available = timelineItems.value.some((item) => timelineAudioUrl(item));
     if (!available) audioStatus.value = { type: 'info', message: 'The playhead is running. There are no playable audio files in the timeline yet.' };
-    // Qwen creates many short WAV parts. Preloading them prevents a network
+    // The voice engine creates many short WAV parts. Preloading them prevents a network
     // and decoder gap each time playback moves to the next spoken segment.
     preloadTimelinePlayers();
     timelineIsPlaying.value = true;
@@ -1350,8 +1350,7 @@ async function loadBlockAudio(keyBook) {
 async function generateSelectedAudio(keyBook) {
     const block = activeBlock();
     if (!keyBook || !block?.block_uuid || audioGenerating.value) return;
-    const providerKey = 'qwen-local';
-    const model = qwenModel.value;
+    const model = voiceEngineMode.value;
 
     if (!blockVoiceAssignment.value?.voice_profile?.voice_id) {
         audioStatus.value = { type: 'danger', message: 'Assign a direct voice, or configure a voice for the selected character before generating audio.' };
@@ -1359,14 +1358,13 @@ async function generateSelectedAudio(keyBook) {
     }
 
     audioGenerating.value = true;
-    audioStatus.value = { type: 'info', message: 'Audio generation queued. You can keep working while Qwen creates the WAV file.' };
+    audioStatus.value = { type: 'info', message: 'Audio generation queued. You can keep working while the voice engine creates the WAV file.' };
     let pollingStarted = false;
     try {
         const generated = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/generate`, {
             ...audioEditionPayload(),
-            provider_key: providerKey,
             model,
-        }, providerKey === 'qwen-local' ? { timeout: 900000, retry: { attempts: 0 } } : undefined);
+        }, { timeout: 900000, retry: { attempts: 0 } });
         const data = audioData(generated);
         pollingStarted = true;
         startAudioPolling(keyBook, data.job?.id);
@@ -1384,7 +1382,7 @@ function startAudioPolling(keyBook, jobId) {
             await loadBlockAudio(keyBook);
             const job = audioGroups.value.find((group) => Number(group.id) === Number(jobId));
             if (!job || ['queued', 'running'].includes(job.status)) {
-                audioStatus.value = { type: 'info', message: job?.status === 'running' ? 'Qwen is generating the WAV file…' : 'Audio generation is waiting for the TTS worker…' };
+                audioStatus.value = { type: 'info', message: job?.status === 'running' ? 'The voice engine is generating the WAV file…' : 'Audio generation is waiting for the TTS worker…' };
                 audioPollingTimer = window.setTimeout(poll, 3000);
                 return;
             }
@@ -1606,7 +1604,7 @@ function openPublishDialog(keyBook) {
 
 function openGenerateBookAudioDialog(keyBook) {
     const regenerate = _.rod(false);
-    const model = _.rod(qwenModel.value);
+    const model = _.rod(voiceEngineMode.value);
     const status = _.rod(null);
     const generate = async () => {
         if (bookAudioGenerating.value) return;
@@ -1616,7 +1614,6 @@ function openGenerateBookAudioDialog(keyBook) {
             const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio/generate-all`, {
                 ...audioEditionPayload(),
                 regenerate_existing: regenerate.value,
-                provider_key: 'qwen-local',
                 model: model.value,
             }, { timeout: 900000, retry: { attempts: 0 } });
             const result = audioData(payload);
@@ -1640,7 +1637,7 @@ function openGenerateBookAudioDialog(keyBook) {
             header: _.div(_.h3('Generate book audio'), _.span({ class: 'text-muted' }, 'Create narrated audio for every saved text block in this book.')),
             content: ({ close }) => _.div({ class: 'at-bookAudioGenerateDialog' },
                 _.Checkbox({ label: 'Regenerate audio already generated', model: regenerate }),
-                _.Select({ label: 'Qwen model', model, options: [{ value: 'fast', label: 'Fast · 0.6B' }, { value: 'quality', label: 'Quality · 1.7B' }] }),
+                _.Select({ label: 'Voice engine mode', model, options: [{ value: 'fast', label: 'Fast' }, { value: 'quality', label: 'Quality' }] }),
                 _.small({ class: 'at-bookAudioGenerateNote' }, () => regenerate.value ? 'Every block will receive a new audio master.' : 'Only blocks without a completed audio master will be generated.'),
                 () => {
                     const metrics = bookAudioMetrics();
@@ -2036,7 +2033,7 @@ function openParagraphCharacterDialog(keyBook) {
             content: ({ close }) => _.div({ class: 'at-paragraphCharacterDialog' },
                 () => characterProfiles().length ? _.div({ class: 'at-audioCharacterAssignRows' }, characterProfiles().map((profile) => _.article({ class: 'at-audioCharacterAssignRow' },
                     _.div({ class: 'at-audioCharacterIdentity' }, _.div({ class: 'at-characterIcon' }, _.Icon ? _.Icon({ name: profile.settings_json?.icon || 'person' }) : null), _.div(_.strong(profile.name), _.span(profile.notes || 'No character details'))),
-                    _.div({ class: 'at-audioCharacterVoice' }, _.span(profile.voice_id ? 'Voice ready' : 'Voice missing'), _.strong(profile.settings_json?.voice_name || profile.voice_provider || 'No voice connected'), _.small(profile.settings_json?.tone_name || (profile.settings_json?.tone_id ? `Tone #${profile.settings_json.tone_id}` : 'Default tone'))),
+                    _.div({ class: 'at-audioCharacterVoice' }, _.span(profile.voice_id ? 'Voice ready' : 'Voice missing'), _.strong(profile.settings_json?.voice_name || (profile.voice_provider ? 'AT voice' : 'No voice connected')), _.small(profile.settings_json?.tone_name || (profile.settings_json?.tone_id ? `Tone #${profile.settings_json.tone_id}` : 'Default tone'))),
                     _.div({ class: 'at-audioCharacterActions' },
                         _.Btn({ dense: true, color: 'primary', icon: 'person_add', onClick: async () => { await assignProfileToActiveBlock(keyBook, profile.id); close(); } }, 'Assign'),
                         _.Btn({ dense: true, color: 'secondary', icon: 'edit', title: `Edit ${profile.name}`, onClick: () => openCharacterDialog(keyBook, profile) }),
@@ -2433,7 +2430,7 @@ function createAudio() {
                 _.small(() => {
                     const profile = blockVoiceAssignment.value?.voice_profile;
                     if (!profile) return 'Assign a character, or choose a direct voice from your AT audio library.';
-                    return profile.role === 'character' ? (profile.voice_id ? 'Character voice configured' : 'Choose a voice in the character settings.') : `${profile.voice_provider || 'AT voice'} · ${(profile.language || '').toUpperCase()}`;
+                    return profile.role === 'character' ? (profile.voice_id ? 'Character voice configured' : 'Choose a voice in the character settings.') : `AT voice · ${(profile.language || '').toUpperCase()}`;
                 }),
             ),
             _.div({ class: 'at-audioVoiceSelectActions' },
@@ -2448,7 +2445,7 @@ function createAudio() {
         ),
         _.div({ class: 'at-audioGenerationBar' },
             _.div({ class: 'at-audioGenerationControls' },
-                _.Select({ label: 'Qwen model', model: qwenModel, options: [{ value: 'fast', label: 'Fast · 0.6B' }, { value: 'quality', label: 'Quality · 1.7B' }] }),
+                _.Select({ label: 'Voice engine mode', model: voiceEngineMode, options: [{ value: 'fast', label: 'Fast' }, { value: 'quality', label: 'Quality' }] }),
                 _.Btn({ class: 'at-audioGeneratorSettingsButton', color: 'secondary', icon: 'tune', title: 'Edit the text sent to the audio generator', onClick: () => openAudioGeneratorSettingsDialog(bookKey()) }, 'Generator settings'),
                 _.Btn({ class: 'at-audioGenerateButton', color: 'primary', icon: 'play_circle', loading: audioGenerating, onClick: () => generateSelectedAudio(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'Generate audio'),
                 () => audioGroups.value.length ? _.Btn({ class: 'at-audioListButton', color: 'secondary', icon: 'library_music', onClick: () => openAudioListDialog(window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1]) }, 'List of audio') : null,

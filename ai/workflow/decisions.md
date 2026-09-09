@@ -23,3 +23,7 @@
 - Storage file locale/S3.
 - Formato editor blocchi.
 - Sistema export ePub/PDF.
+
+## Comunicazione del motore vocale
+
+- La dashboard descrive il TTS come motore vocale interno/AT, senza esporre il provider o il modello sottostante. L'eventuale attribuzione tecnica sara' valutata e pubblicata nella documentazione del sito in una fase successiva, secondo gli obblighi di licenza applicabili.

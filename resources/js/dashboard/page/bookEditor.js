@@ -2725,7 +2725,7 @@ function voicesPanel(block, keyBook) {
             assignedProfile
                 ? _.strong(`${assignedProfile.name}${assignedProfile.voice_id ? ` · ${assignedProfile.voice_id}` : ''}`)
                 : _.strong('Not assigned'),
-            assignedProfile?.voice_provider ? _.small(`${assignedProfile.voice_provider}${assignedProfile.settings_json?.tone_id ? ` · Tone #${assignedProfile.settings_json.tone_id}` : ''}`) : null
+            assignedProfile?.voice_provider ? _.small(`AT voice${assignedProfile.settings_json?.tone_id ? ` · Tone #${assignedProfile.settings_json.tone_id}` : ''}`) : null
         ),
         () => voiceAssignmentError.value ? _.div({ class: 'at-chatError' }, voiceAssignmentError.value) : null,
         _.div({ class: 'at-rightWorkspace-actions is-top' },
@@ -2802,7 +2802,7 @@ function audioPanel(block, keyBook) {
             assignedProfile
                 ? _.strong(`${assignedProfile.name}${assignedProfile.voice_id ? ` · ${assignedProfile.voice_id}` : ''}`)
                 : _.strong('Not assigned'),
-            assignedProfile?.voice_provider ? _.small(assignedProfile.voice_provider) : null
+            assignedProfile?.voice_provider ? _.small('AT voice') : null
         ),
         () => audioError.value ? _.div({ class: 'at-chatError' }, audioError.value) : null,
         _.div({ class: 'at-rightWorkspace-actions is-top' },
@@ -2841,7 +2841,7 @@ function audioPanel(block, keyBook) {
                 _.div({ class: 'at-audioItem-meta' },
                     formatAudioDuration(segment.duration_ms),
                     segment.version_number ? ` · v${segment.version_number}${segment.is_current_version ? ' current' : ' stale'}` : '',
-                    segment.provider_key ? ` · ${segment.provider_key}` : '',
+                    segment.provider_key ? ' · AT voice engine' : '',
                     segment.model ? ` · ${segment.model}` : ''
                 ),
                 _.div({ class: 'at-audioPath' }, segment.audio_path || 'No audio file path yet'),
@@ -5744,7 +5744,7 @@ function editorText(keyBook) {
                             ),
                             _.div({ class: 'at-characterAssignVoice' },
                                 _.span(profile.voice_id ? 'Voice ready' : 'Voice missing'),
-                                _.strong(profile.settings_json?.voice_name || profile.voice_provider || 'No voice connected'),
+                                _.strong(profile.settings_json?.voice_name || (profile.voice_provider ? 'AT voice' : 'No voice connected')),
                                 _.small(profile.settings_json?.tone_name || (profile.settings_json?.tone_id ? `Tone #${profile.settings_json.tone_id}` : 'Default tone')),
                             ),
                             _.div({ class: 'at-characterAssignActions' },

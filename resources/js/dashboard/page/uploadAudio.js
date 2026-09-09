@@ -66,7 +66,7 @@ function openVoiceDialog(existing = null) {
                 _.Btn({ dense: true, color: 'danger', icon: 'delete_outline', title: 'Remove sample', onClick: () => removeSample(sample, row) }),
             ),
             _.Textarea({ label: 'Tone notes', rows: 2, model: sample.descriptionModel }),
-            _.Textarea({ label: 'Words spoken in this sample', rows: 2, model: sample.referenceTextModel, placeholder: 'Generated automatically after upload; review or correct it for accurate Qwen cloning.' }),
+            _.Textarea({ label: 'Words spoken in this sample', rows: 2, model: sample.referenceTextModel, placeholder: 'Generated automatically after upload; review or correct it for accurate voice cloning.' }),
             _.div({ class: 'at-uploadAudioToneHint' }, _.Icon({ name: 'info' }), () => selectedTone(sample)?.description || 'Select a tone to see its performance direction.'),
             sample.audio_url ? _.audio({ controls: true, src: sample.audio_url }) : null,
         );
@@ -91,7 +91,7 @@ function openVoiceDialog(existing = null) {
             const response = await _.http.request(existing ? `/dashboard/api/audio-library/voices/${existing.id}` : '/dashboard/api/audio-library/voices', { method: 'POST', body: form });
             const saved = dataOf(await response.jsonStrict()).voice;
             voices.value = [saved, ...voices.value.filter((voice) => voice.id !== saved.id)];
-            status.value = { type: 'success', message: existing ? 'Voice updated and its new samples transcribed.' : 'Voice added and its samples transcribed for Qwen cloning.' };
+            status.value = { type: 'success', message: existing ? 'Voice updated and its new samples transcribed.' : 'Voice added and its samples transcribed for voice cloning.' };
             close();
         } catch (error) { dialogStatus.value = { type: 'danger', message: error.message || 'Unable to save this voice.' }; }
         finally { saving.value = false; }
@@ -139,12 +139,12 @@ function openDesignVoiceDialog() {
         row = _.div({ class: 'at-uploadAudioSample' },
             _.div({ class: 'at-uploadAudioSampleControls' },
                 _.Select({ label: 'Tone', model: design.toneId, options: toneOptions }),
-                _.div({ class: 'at-uploadAudioDesignLabel' }, _.Icon({ name: 'auto_awesome' }), _.span('Qwen VoiceDesign · quality 1.7B')),
+                _.div({ class: 'at-uploadAudioDesignLabel' }, _.Icon({ name: 'auto_awesome' }), _.span('AT voice design · Quality')),
                 _.Btn({ dense: true, color: 'danger', icon: 'delete_outline', title: 'Remove tone design', onClick: () => removeDesign(design, row) }),
             ),
             _.Textarea({ label: 'Tone design prompt', rows: 3, model: design.prompt, placeholder: 'Example: Warm, intimate narrator voice with a calm pace and a subtle mysterious undertone.' }),
             _.Textarea({ label: 'Reference phrase to generate', rows: 2, model: design.referenceText, placeholder: 'This phrase becomes the saved reference used for later cloning.' }),
-            _.div({ class: 'at-uploadAudioToneHint' }, _.Icon({ name: 'info' }), _.span('The voice description and this tone prompt are combined before Qwen generates the reference WAV.')),
+            _.div({ class: 'at-uploadAudioToneHint' }, _.Icon({ name: 'info' }), _.span('The voice description and this tone prompt are combined before the voice engine generates the reference WAV.')),
         );
         return row;
     };
@@ -167,11 +167,11 @@ function openDesignVoiceDialog() {
     };
     _.Dialog({
         size: 'xl', stickyActions: true, slots: {
-            header: _.div(_.h3('Add design voice'), _.span({ class: 'text-muted' }, 'Describe a voice, then generate a reusable Qwen reference for each tone.')),
+            header: _.div(_.h3('Add design voice'), _.span({ class: 'text-muted' }, 'Describe a voice, then generate a reusable reference for each tone.')),
             content: () => _.div({ class: 'at-uploadAudioDialog' },
                 _.div({ class: 'at-uploadAudioVoiceFields' }, _.Input({ label: 'Voice name', model: name, icon: 'record_voice_over', placeholder: 'e.g. Elara' }), _.Select({ label: 'Voice type', model: type, options: [{ value: 'female', label: 'Female' }, { value: 'male', label: 'Male' }, { value: 'neutral', label: 'Neutral' }] }), _.Select({ label: 'Language', model: language, options: languageOptions() })),
                 _.Textarea({ class: 'cms-col-24', label: 'Voice description', model: description, rows: 3, placeholder: 'Age, accent, vocal texture, character and general performance.' }),
-                _.div({ class: 'at-uploadAudioSamplesHead' }, _.div(_.strong('Tone designs'), _.small('Each tone creates its own reference sample, ready for Qwen cloning.')), _.Btn({ color: 'secondary', icon: 'add', onClick: addDesign }, 'Add tone design')),
+                _.div({ class: 'at-uploadAudioSamplesHead' }, _.div(_.strong('Tone designs'), _.small('Each tone creates its own reference sample, ready for voice cloning.')), _.Btn({ color: 'secondary', icon: 'add', onClick: addDesign }, 'Add tone design')),
                 emptyDesigns, designList, () => dialogStatus.value ? _.Alert(dialogStatus.value) : null,
             ),
             actions: ({ close }) => _.div({ class: 'at-uploadAudioDialogActions' },

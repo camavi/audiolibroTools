@@ -2571,7 +2571,7 @@ class DashboardBookController extends Controller
         }
         if (! filled($sample->reference_text)) {
             return response()->json([
-                'message' => 'Add the words spoken in this audio sample before cloning it with Qwen.',
+                'message' => 'Add the words spoken in this audio sample before cloning this voice.',
             ], 422);
         }
 
@@ -2813,7 +2813,9 @@ class DashboardBookController extends Controller
         } catch (\Throwable $exception) {
             $job->forceFill(['status' => 'failed', 'error_message' => $exception->getMessage(), 'completed_at' => now()])->save();
 
-            return response()->json(['message' => 'Qwen TTS generation failed: '.$exception->getMessage()], 502);
+            report($exception);
+
+            return response()->json(['message' => 'Audio generation failed. Please try again.'], 502);
         }
         $totalDuration = $segments->sum(fn (BookAudioSegment $segment) => (int) $segment->duration_ms + (int) $segment->pause_after_ms);
         $job->forceFill(['result_json' => ['parts' => $segments->count(), 'duration_ms' => $totalDuration], 'completed_at' => now()])->save();
@@ -3453,7 +3455,7 @@ class DashboardBookController extends Controller
             ->when($toneId, fn ($samples) => $samples->where('tone_id', $toneId))
             ->first() ?? $libraryVoice->samples->first();
         abort_if(! $sample || ! Storage::disk('public')->exists($sample->audio_path), 422, 'This library voice needs an uploaded audio sample before it can be used.');
-        abort_if(! filled($sample->reference_text), 422, 'Add the words spoken in this audio sample before cloning it with Qwen.');
+        abort_if(! filled($sample->reference_text), 422, 'Add the words spoken in this audio sample before cloning this voice.');
         try {
             if ($libraryVoice->provider !== 'at-qwen' || ! filled($libraryVoice->provider_voice_id)) {
                 $libraryVoice->forceFill([

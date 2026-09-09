@@ -75,7 +75,9 @@ class AudioLibraryController extends Controller
                 ]);
             }
         } catch (\Throwable $exception) {
-            return response()->json(['message' => 'Qwen voice design failed: '.$exception->getMessage()], 502);
+            report($exception);
+
+            return response()->json(['message' => 'Voice design could not be completed. Please try again.'], 502);
         }
 
         return response()->json(['data' => ['voice' => $this->voice($voice->fresh('samples.toneDefinition'))]], 201);
