@@ -690,6 +690,19 @@
     margin-bottom: 12px;
 }
 
+.at-rightWorkspace-actions.at-voiceActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    text-align: initial;
+}
+
+.at-rightWorkspace-actions.at-voiceActions>button {
+    width: 100%;
+    margin-left: 0;
+    text-align: center;
+}
+
 .at-rightWorkspace-action {
     min-height: 34px;
     padding: 6px 9px;
@@ -1632,15 +1645,15 @@
     align-items: center;
     gap: 14px;
     padding: 11px 12px;
-    border: 1px solid var(--at-border);
+    border: 1px solid var(--cms-border, var(--at-border));
     border-radius: 8px;
-    background: #fbfcfe;
+    background: var(--cms-surface, var(--at-surface));
     transition: border-color 160ms ease, background 160ms ease;
 }
 
 .at-characterAssignRow:hover {
-    border-color: #b9cdf4;
-    background: #f6f9ff;
+    border-color: var(--cms-primary, #3b82f6);
+    background: var(--cms-page, var(--at-surface-subtle));
 }
 
 .at-characterAssignIdentity {
@@ -1657,8 +1670,8 @@
     flex: 0 0 34px;
     place-items: center;
     border-radius: 8px;
-    background: #eaf1ff;
-    color: #3b72e8;
+    background: color-mix(in srgb, var(--cms-primary, #3b82f6) 14%, transparent);
+    color: var(--cms-primary, #3b82f6);
 }
 
 .at-characterAssignIdentity > div:last-child {
@@ -1669,7 +1682,7 @@
 
 .at-characterAssignIdentity strong {
     overflow: hidden;
-    color: var(--at-text);
+    color: var(--cms-text, var(--at-text));
     font-size: 13px;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1677,7 +1690,7 @@
 
 .at-characterAssignIdentity span {
     overflow: hidden;
-    color: var(--at-muted);
+    color: var(--cms-text-muted, var(--at-muted));
     font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1688,11 +1701,11 @@
     min-width: 0;
     gap: 2px;
     padding-left: 12px;
-    border-left: 1px solid var(--at-border);
+    border-left: 1px solid var(--cms-border, var(--at-border));
 }
 
 .at-characterAssignVoice > span {
-    color: #3c7a57;
+    color: var(--cms-success, #3c7a57);
     font-size: 10px;
     font-weight: 800;
     letter-spacing: .04em;
@@ -1707,12 +1720,12 @@
 }
 
 .at-characterAssignVoice strong {
-    color: var(--at-text);
+    color: var(--cms-text, var(--at-text));
     font-size: 12px;
 }
 
 .at-characterAssignVoice small {
-    color: var(--at-muted);
+    color: var(--cms-text-muted, var(--at-muted));
     font-size: 11px;
 }
 
@@ -1733,6 +1746,41 @@
     justify-content: flex-end;
     gap: 8px;
     padding-top: 2px;
+}
+
+.at-characterDetectionRows {
+    display: grid;
+    gap: 8px;
+    max-height: min(52vh, 430px);
+    overflow: auto;
+    padding: 1px;
+}
+
+.at-characterDetectionRow {
+    display: grid;
+    gap: 5px;
+    padding: 11px 12px;
+    border: 1px solid var(--at-border);
+    border-radius: 8px;
+    background: var(--at-surface-subtle);
+}
+
+.at-characterDetectionRow > small {
+    color: var(--at-muted);
+    font-size: 11px;
+}
+
+.at-characterDetectionExamples {
+    display: grid;
+    gap: 3px;
+    color: var(--at-muted);
+    font-size: 11px;
+}
+
+.at-characterDetectionExamples span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .at-directVoiceRows {
@@ -1814,6 +1862,10 @@
 }
 
 @media (max-width: 720px) {
+    .at-rightWorkspace-actions.at-voiceActions {
+        grid-template-columns: 1fr;
+    }
+
     .at-characterAssignRow {
         grid-template-columns: 1fr auto;
     }

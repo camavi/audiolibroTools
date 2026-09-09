@@ -1351,6 +1351,93 @@ class DashboardBookController extends Controller
         ]);
     }
 
+    /**
+     * Finds explicit speaker labels only. Narrative attribution ("said Carlos")
+     * is intentionally not auto-assigned because it is not reliable enough to
+     * decide who owns a whole block without an AI review step.
+     */
+    public function detectCharacters(string $keyBook): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $candidates = [];
+
+        $book->blocks()->whereIn('type', ['paragraph', 'blockquote'])->get()->each(function (BookBlock $block) use (&$candidates): void {
+            $text = trim((string) $block->text_plain);
+            if ($text === '') return;
+
+            foreach (preg_split('/\\R/u', $text) ?: [] as $line) {
+                // Examples: "Carlos: Hello" and "CARLOS — Hello".
+                if (! preg_match('/^\\s*([\\p{Lu}][\\p{L}\\p{M}’\\x27.-]*(?:\\s+[\\p{Lu}][\\p{L}\\p{M}’\\x27.-]*){0,3})\\s*(?::|—|–|-)\\s*\\S/u', $line, $match)) {
+                    continue;
+                }
+
+                $name = trim($match[1]);
+                $key = mb_strtolower($name, 'UTF-8');
+                if (! isset($candidates[$key])) {
+                    $candidates[$key] = ['name' => $name, 'block_uuids' => [], 'examples' => []];
+                }
+                $candidates[$key]['block_uuids'][] = $block->block_uuid;
+                if (count($candidates[$key]['examples']) < 3) {
+                    $candidates[$key]['examples'][] = mb_strimwidth(trim($line), 0, 180, '…', 'UTF-8');
+                }
+            }
+        });
+
+        return response()->json(['data' => ['candidates' => collect($candidates)
+            ->map(fn (array $candidate) => [...$candidate, 'block_uuids' => array_values(array_unique($candidate['block_uuids'])), 'confidence' => 'high'])
+            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values()]]);
+    }
+
+    public function importDetectedCharacters(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate([
+            'candidates' => ['required', 'array', 'max:100'],
+            'candidates.*.name' => ['required', 'string', 'max:160'],
+            'candidates.*.block_uuids' => ['required', 'array', 'min:1', 'max:1000'],
+            'candidates.*.block_uuids.*' => ['required', 'string', 'max:64'],
+        ]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
+        $blocks = $book->blocks()->with('currentVersion')->get()->keyBy('block_uuid');
+        $profiles = [];
+        $assigned = 0;
+
+        DB::transaction(function () use ($validated, $book, $edition, $blocks, &$profiles, &$assigned): void {
+            foreach ($validated['candidates'] as $candidate) {
+                $name = trim($candidate['name']);
+                $profile = $book->voiceProfiles()->whereRaw('lower(name) = ?', [mb_strtolower($name, 'UTF-8')])->where('role', 'character')->first();
+                if (! $profile) {
+                    $profile = BookVoiceProfile::query()->create([
+                        'book_id' => $book->id, 'name' => $name, 'role' => 'character', 'language' => $book->lang,
+                        'settings_json' => ['icon' => 'person'], 'created_by' => auth()->id(),
+                    ]);
+                }
+                $profiles[] = $profile;
+
+                foreach (array_unique($candidate['block_uuids']) as $blockUuid) {
+                    $block = $blocks->get($blockUuid);
+                    abort_unless($block?->currentVersion, 422, 'Every detected dialogue must have a saved block version.');
+                    BookBlockVoiceAssignment::query()->updateOrCreate([
+                        'book_block_id' => $block->id,
+                        'book_block_version_id' => $block->currentVersion->id,
+                        'book_edition_id' => $edition->id,
+                    ], [
+                        'book_id' => $book->id, 'book_edition_id' => $edition->id,
+                        'book_voice_profile_id' => $profile->id, 'block_uuid' => $block->block_uuid,
+                        'source' => 'detected', 'created_by' => auth()->id(),
+                    ]);
+                    $assigned += 1;
+                }
+            }
+        });
+
+        return response()->json(['data' => [
+            'profiles' => collect($profiles)->unique('id')->map(fn (BookVoiceProfile $profile) => $this->serializeVoiceProfile($profile))->values(),
+            'assigned_blocks' => $assigned,
+        ]]);
+    }
+
     public function storeVoiceProfile(Request $request, string $keyBook, QwenTtsService $qwen): JsonResponse
     {
         $validated = $request->validate([

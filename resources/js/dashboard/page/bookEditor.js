@@ -71,6 +71,7 @@ const voiceProfiles = _.rod([]);
 const voiceProfilesStatus = _.rod('idle');
 const voiceProfilesContextKey = _.rod(null);
 const voiceProfilesError = _.rod(null);
+let voiceProfilesRequestVersion = 0;
 const voiceAssignment = _.rod(null);
 const voiceAssignmentStatus = _.rod('idle');
 const voiceAssignmentContextKey = _.rod(null);
@@ -152,6 +153,7 @@ let saveBlockVoiceAssignment = () => { };
 let clearBlockVoiceAssignment = () => { };
 let openVoiceProfileDialog = () => { };
 let openCharacterManagementDialog = () => { };
+let openCharacterDetectionDialog = () => { };
 let openDirectVoiceDialog = () => { };
 let loadBlockAudio = () => { };
 let generateBlockAudio = () => { };
@@ -175,7 +177,7 @@ const rightWorkspaceTools = [
     { id: 'chat', icon: 'forum', label: 'AI Chat' },
     { id: 'comments', icon: 'comment', label: 'Comments' },
     { id: 'correct', icon: 'auto_fix_high', label: 'Correct' },
-    { id: 'voices', icon: 'record_voice_over', label: 'Voices' },
+    { id: 'voices', icon: 'record_voice_over', label: 'Characters' },
     { id: 'audio', icon: 'graphic_eq', label: 'Audio' },
     { id: 'translate', icon: 'translate', label: 'Translate' },
     { id: 'versions', icon: 'history', label: 'Versions' },
@@ -593,10 +595,14 @@ function normalizeEditorPayload(payload) {
 }
 
 function normalizeDataPayload(payload) {
-    if (payload?.data?.data) return payload.data.data;
-    if (payload?.data) return payload.data;
+    // CMSwift's HTTP helper can wrap Laravel's { data: ... } response one
+    // additional time. Unwrap every transport layer before reading resources.
+    let data = payload;
+    while (data && typeof data === 'object' && !Array.isArray(data) && data.data && typeof data.data === 'object') {
+        data = data.data;
+    }
 
-    return payload || {};
+    return data || {};
 }
 
 function textFromNode(node) {
@@ -2696,14 +2702,14 @@ function voicesPanel(block, keyBook) {
 
     if (voiceProfilesStatus.value === 'loading') {
         return _.div({ class: 'at-rightWorkspace-section' },
-            _.h3('Characters and voices'),
+            _.h3('Characters'),
             _.p('Loading voice profiles...')
         );
     }
 
     if (voiceProfilesStatus.value === 'error') {
         return _.div({ class: 'at-rightWorkspace-section' },
-            _.h3('Characters and voices'),
+            _.h3('Characters'),
             _.p(voiceProfilesError.value || 'Unable to load voice profiles.'),
             _.div({ class: 'at-rightWorkspace-actions is-inline' },
                 _.button({
@@ -2716,19 +2722,25 @@ function voicesPanel(block, keyBook) {
     }
 
     return _.div({ class: 'at-rightWorkspace-section' },
-        _.h3('Characters and voices'),
+        _.h3('Characters'),
         !block ? _.div({ class: 'at-rightWorkspace-note warning' }, 'Select a block to assign a voice.') : null,
         block?.dirty ? _.div({ class: 'at-rightWorkspace-note warning' }, 'Save the selected block before assigning a voice.') : null,
         block && !block.current_version_id ? _.div({ class: 'at-rightWorkspace-note warning' }, 'This block needs a saved version before voice assignment can be tracked.') : null,
         _.div({ class: 'at-voiceCurrent' },
             _.span(assignedProfile?.role === 'character' ? 'Current character' : 'Current direct voice'),
             assignedProfile
-                ? _.strong(`${assignedProfile.name}${assignedProfile.voice_id ? ` · ${assignedProfile.voice_id}` : ''}`)
+                ? _.strong(assignedProfile.name)
                 : _.strong('Not assigned'),
-            assignedProfile?.voice_provider ? _.small(`AT voice${assignedProfile.settings_json?.tone_id ? ` · Tone #${assignedProfile.settings_json.tone_id}` : ''}`) : null
+            assignedProfile?.voice_provider ? _.small(`Tone: ${assignedProfile.settings_json?.tone_name || 'Default'}`) : null
         ),
         () => voiceAssignmentError.value ? _.div({ class: 'at-chatError' }, voiceAssignmentError.value) : null,
-        _.div({ class: 'at-rightWorkspace-actions is-top' },
+        _.div({ class: 'at-rightWorkspace-actions is-top at-voiceActions' },
+            _.button({
+                type: 'button',
+                class: 'at-rightWorkspace-action',
+                disabled: () => voiceAssignmentActionStatus.value !== 'idle',
+                onclick: () => openCharacterDetectionDialog(keyBook),
+            }, 'Detect characters'),
             _.button({
                 type: 'button',
                 class: 'at-rightWorkspace-action is-primary',
@@ -2800,9 +2812,9 @@ function audioPanel(block, keyBook) {
         _.div({ class: 'at-voiceCurrent' },
             _.span('Assigned voice'),
             assignedProfile
-                ? _.strong(`${assignedProfile.name}${assignedProfile.voice_id ? ` · ${assignedProfile.voice_id}` : ''}`)
+                ? _.strong(assignedProfile.name)
                 : _.strong('Not assigned'),
-            assignedProfile?.voice_provider ? _.small('AT voice') : null
+            assignedProfile?.voice_provider ? _.small(`Tone: ${assignedProfile.settings_json?.tone_name || 'Default'}`) : null
         ),
         () => audioError.value ? _.div({ class: 'at-chatError' }, audioError.value) : null,
         _.div({ class: 'at-rightWorkspace-actions is-top' },
@@ -5256,17 +5268,18 @@ function editorText(keyBook) {
         voiceProfilesContextKey.value = bookKey;
         voiceProfilesStatus.value = 'loading';
         voiceProfilesError.value = null;
+        const requestVersion = ++voiceProfilesRequestVersion;
 
-        _.http.getJSON(`/dashboard/api/books/${bookKey}/voices`)
+        return _.http.getJSON(`/dashboard/api/books/${bookKey}/voices`)
             .then((payload) => {
-                if (voiceProfilesContextKey.value !== bookKey) return;
+                if (voiceProfilesContextKey.value !== bookKey || requestVersion !== voiceProfilesRequestVersion) return;
 
                 const data = normalizeDataPayload(payload);
                 voiceProfiles.value = data.profiles || [];
                 voiceProfilesStatus.value = 'ready';
             })
             .catch((error) => {
-                if (voiceProfilesContextKey.value !== bookKey) return;
+                if (voiceProfilesContextKey.value !== bookKey || requestVersion !== voiceProfilesRequestVersion) return;
 
                 voiceProfiles.value = [];
                 voiceProfilesError.value = requestErrorMessage(error, 'Unable to load voice profiles.');
@@ -5337,7 +5350,7 @@ function editorText(keyBook) {
         voiceAssignmentActionStatus.value = 'saving';
         voiceAssignmentError.value = null;
 
-        _.http.patchJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/voice-assignment`, {
+        return _.http.patchJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/voice-assignment`, {
             voice_profile_id: Number(selectedVoiceProfileId.value),
         })
             .then((payload) => {
@@ -5612,7 +5625,7 @@ function editorText(keyBook) {
                     await loadVoiceProfiles(bookKey, { force: true });
                 }
 
-                close();
+                close(data.profile || null);
             } catch (error) {
                 voiceProfileDialogStatus.value = {
                     type: 'danger',
@@ -5666,7 +5679,7 @@ function editorText(keyBook) {
                 model: voiceProfileToneId,
                 options: () => {
                     const voice = voiceProfileLibraryVoices.value.find((item) => String(item.id) === String(voiceProfileLibraryVoiceId.value));
-                    return [{ value: '', label: 'Default tone' }, ...(voice?.samples || []).map((sample) => ({ value: String(sample.tone_id || sample.tone?.id), label: sample.tone?.name || `Tone #${sample.tone_id || sample.tone?.id}` }))];
+                    return [{ value: '', label: 'Default tone' }, ...(voice?.samples || []).map((sample) => ({ value: String(sample.tone_id || sample.tone?.id), label: sample.tone?.name || 'Unnamed tone' }))];
                 },
             }),
             _.Textarea({
@@ -5687,7 +5700,7 @@ function editorText(keyBook) {
         )
     );
 
-    openVoiceProfileDialog = (bookKey = keyBook, existing = null) => {
+    openVoiceProfileDialog = async (bookKey = keyBook, existing = null, onSaved = null) => {
         voiceProfileName.value = existing?.name || '';
         voiceProfileRole.value = existing?.role || 'character';
         voiceProfileIcon.value = existing?.settings_json?.icon || 'person';
@@ -5695,13 +5708,14 @@ function editorText(keyBook) {
         voiceProfileToneId.value = String(existing?.settings_json?.tone_id || '');
         voiceProfileNotes.value = existing?.notes || '';
         voiceProfileDialogStatus.value = null;
-        _.http.getJSON('/dashboard/api/audio-library/voices')
-            .then((payload) => {
-                const data = normalizeDataPayload(payload);
-                voiceProfileLibraryVoices.value = data.voices || [];
-                voiceProfileLibraryOptions.value = (data.voices || []).map((voice) => ({ value: String(voice.id), label: `${voice.name} · ${(voice.language || '—').toUpperCase()}` }));
-            })
-            .catch(() => { voiceProfileLibraryVoices.value = []; voiceProfileLibraryOptions.value = []; });
+        try {
+            const data = normalizeDataPayload(await _.http.getJSON('/dashboard/api/audio-library/voices'));
+            voiceProfileLibraryVoices.value = data.voices || [];
+            voiceProfileLibraryOptions.value = (data.voices || []).map((voice) => ({ value: String(voice.id), label: `${voice.name} · ${(voice.language || '—').toUpperCase()}` }));
+        } catch {
+            voiceProfileLibraryVoices.value = [];
+            voiceProfileLibraryOptions.value = [];
+        }
 
         _.Dialog({
             size: 'lg',
@@ -5711,17 +5725,46 @@ function editorText(keyBook) {
                     _.h3(existing ? 'Edit character' : 'Create voice profile'),
                     _.span({ class: 'text-muted' }, 'Define the character details and voice used in every assigned paragraph.'),
                 ),
-                content: ({ close }) => voiceProfileForm(bookKey, close, existing),
+                content: ({ close }) => voiceProfileForm(bookKey, async (profile) => {
+                    if (profile && typeof onSaved === 'function') await onSaved(profile);
+                    close();
+                }, existing),
             },
         }).open();
     };
 
-    openCharacterManagementDialog = (block, bookKey = keyBook) => {
+    openCharacterManagementDialog = async (block, bookKey = keyBook) => {
+        const dialogProfiles = _.rod([]);
+        const dialogLoading = _.rod(true);
+        const dialogRefreshing = _.rod(false);
+        const dialogError = _.rod(null);
+
+        // Keep the dialog bound to its own request result. The workspace-level
+        // cache is useful elsewhere, but must not decide what this dialog shows.
+        const refreshCharacters = async ({ initial = false } = {}) => {
+            if (initial) dialogLoading.value = true;
+            else dialogRefreshing.value = true;
+            dialogError.value = null;
+            try {
+                const payload = await _.http.getJSON(`/dashboard/api/books/${bookKey}/voices`);
+                const profiles = normalizeDataPayload(payload).profiles || [];
+                dialogProfiles.value = profiles;
+                voiceProfiles.value = profiles;
+                voiceProfilesStatus.value = 'ready';
+            } catch (error) {
+                dialogProfiles.value = [];
+                dialogError.value = requestErrorMessage(error, 'Unable to load characters.');
+            } finally {
+                dialogLoading.value = false;
+                dialogRefreshing.value = false;
+            }
+        };
+
         const removeCharacter = async (profile) => {
             if (!window.confirm(`Delete ${profile.name}? Paragraphs using this character will no longer have it assigned.`)) return;
             try {
                 await _.http.delJSON(`/dashboard/api/books/${bookKey}/voices/${profile.id}`);
-                voiceProfiles.value = voiceProfiles.value.filter((item) => Number(item.id) !== Number(profile.id));
+                await refreshCharacters();
                 if (Number(voiceAssignment.value?.voice_profile_id) === Number(profile.id)) {
                     voiceAssignment.value = null;
                     selectedVoiceProfileId.value = '';
@@ -5730,13 +5773,23 @@ function editorText(keyBook) {
                 voiceAssignmentError.value = requestErrorMessage(error, 'Unable to delete character.');
             }
         };
+        // Do not mount the dialog with an empty array and rely on a later
+        // reactive redraw. Its first render now happens after the API result.
+        await refreshCharacters({ initial: true });
+
         _.Dialog({
             size: 'lg', stickyActions: true,
             slots: {
                 header: _.div({ class: 'at-characterDialogHeader' }, _.h3('Assign character'), _.span('Manage your cast, then assign one character to this paragraph.')),
                 content: ({ close }) => _.div({ class: 'at-characterManageDialog' },
                     () => {
-                        const characters = voiceProfiles.value.filter((profile) => profile.role === 'character');
+                        if (dialogLoading.value) return _.div({ class: 'at-chatNotice' }, 'Loading characters…');
+                        if (dialogError.value) return _.div({ class: 'at-rightWorkspace-emptyState' }, _.strong('Characters unavailable'), _.p(dialogError.value), _.Btn({ color: 'secondary', icon: 'refresh', onClick: refreshCharacters }, 'Retry'));
+
+                        // This is the API result itself: do not filter it here.
+                        // A profile with a non-standard/missing role must remain
+                        // visible instead of being mistaken for a missing save.
+                        const characters = dialogProfiles.value;
                         return characters.length ? _.div({ class: 'at-characterAssignRows' }, characters.map((profile) => _.article({ class: 'at-characterAssignRow' },
                             _.div({ class: 'at-characterAssignIdentity' },
                                 _.div({ class: 'at-characterAssignIcon' }, _.Icon ? _.Icon({ name: profile.settings_json?.icon || 'person' }) : null),
@@ -5745,7 +5798,7 @@ function editorText(keyBook) {
                             _.div({ class: 'at-characterAssignVoice' },
                                 _.span(profile.voice_id ? 'Voice ready' : 'Voice missing'),
                                 _.strong(profile.settings_json?.voice_name || (profile.voice_provider ? 'AT voice' : 'No voice connected')),
-                                _.small(profile.settings_json?.tone_name || (profile.settings_json?.tone_id ? `Tone #${profile.settings_json.tone_id}` : 'Default tone')),
+                                _.small(profile.settings_json?.tone_name || (profile.settings_json?.tone_id ? 'Tone selected' : 'Default tone')),
                             ),
                             _.div({ class: 'at-characterAssignActions' },
                                 _.Btn({ dense: true, color: 'primary', icon: 'person_add', title: `Assign ${profile.name}`, onClick: () => { selectedVoiceProfileId.value = String(profile.id); saveBlockVoiceAssignment(block); close(); } }, 'Assign'),
@@ -5754,10 +5807,93 @@ function editorText(keyBook) {
                             ),
                         ))) : _.div({ class: 'at-rightWorkspace-emptyState' }, _.strong('No characters yet'), _.p('Create a character and connect its voice from the Audio Library.'));
                     },
-                    _.div({ class: 'at-characterManageActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close'), _.Btn({ color: 'primary', icon: 'person_add', onClick: () => openVoiceProfileDialog(bookKey) }, 'Create character')),
+                    _.div({ class: 'at-characterManageActions' }, _.Btn({ color: 'secondary', icon: 'refresh', loading: dialogRefreshing, onClick: refreshCharacters }, 'Refresh'), _.Btn({ color: 'secondary', onClick: close }, 'Close'), _.Btn({
+                        color: 'primary', icon: 'person_add', onClick: () => openVoiceProfileDialog(bookKey, null, async (profile) => {
+                            selectedVoiceProfileId.value = String(profile.id);
+                            await saveBlockVoiceAssignment(block);
+                            await refreshCharacters();
+                        }),
+                    }, 'Create character')),
                 ),
             },
         }).open();
+    };
+
+    openCharacterDetectionDialog = (bookKey = keyBook) => {
+        const candidates = _.rod([]);
+        const loading = _.rod(true);
+        const importing = _.rod(false);
+        const status = _.rod(null);
+
+        const detect = async () => {
+            loading.value = true;
+            status.value = null;
+            try {
+                const payload = await _.http.postJSON(`/dashboard/api/books/${bookKey}/characters/detect`, {});
+                const detected = normalizeDataPayload(payload).candidates || [];
+                CMSwift.reactive.untracked(() => {
+                    candidates.value = detected.map((candidate) => ({ ...candidate, selected: _.rod(true) }));
+                });
+            } catch (error) {
+                status.value = { type: 'danger', message: requestErrorMessage(error, 'Unable to detect characters.') };
+            } finally {
+                loading.value = false;
+            }
+        };
+
+        const save = async (close) => {
+            const selected = candidates.value
+                .filter((candidate) => candidate.selected.value)
+                .map(({ name, block_uuids }) => ({ name, block_uuids }));
+            if (!selected.length) {
+                status.value = { type: 'warning', message: 'Select at least one detected character.' };
+                return;
+            }
+            importing.value = true;
+            status.value = null;
+            try {
+                const payload = await _.http.postJSON(`/dashboard/api/books/${bookKey}/characters/import-detected`, { candidates: selected });
+                const data = normalizeDataPayload(payload);
+                await loadVoiceProfiles(bookKey, { force: true });
+                const currentBlock = activeOutlineItem();
+                if (currentBlock) loadBlockVoiceAssignment(currentBlock, { force: true });
+                close();
+                editorStatus.value = { type: 'success', message: `${data.profiles?.length || selected.length} character(s) created and ${data.assigned_blocks || 0} dialogue block(s) assigned.` };
+            } catch (error) {
+                status.value = { type: 'danger', message: requestErrorMessage(error, 'Unable to create detected characters.') };
+            } finally {
+                importing.value = false;
+            }
+        };
+
+        _.Dialog({
+            size: 'lg', stickyActions: true,
+            slots: {
+                header: _.div({ class: 'at-characterDialogHeader' },
+                    _.h3('Detect characters'),
+                    _.span('Recognizes explicit speaker labels such as “Carlos: Hello” or “Carlos — Hello”. Review the suggestions before they are created.'),
+                ),
+                content: ({ close }) => _.div({ class: 'at-characterManageDialog at-characterDetectionDialog' },
+                    () => loading.value
+                        ? _.div({ class: 'at-chatNotice' }, 'Scanning saved manuscript blocks…')
+                        : candidates.value.length
+                            ? _.div({ class: 'at-characterDetectionRows' }, candidates.value.map((candidate) => _.article({ class: 'at-characterDetectionRow' },
+                                _.Checkbox({ label: candidate.name, model: candidate.selected }),
+                                _.small(`${candidate.block_uuids.length} explicit dialogue block${candidate.block_uuids.length === 1 ? '' : 's'}`),
+                                _.div({ class: 'at-characterDetectionExamples' }, ...(candidate.examples || []).map((example) => _.span(example))),
+                            )))
+                            : _.div({ class: 'at-rightWorkspace-emptyState' }, _.strong('No explicit speakers found'), _.p('Use labels like “Carlos: …” or create the character manually.')),
+                    () => status.value ? _.Alert(status.value) : null,
+                    _.div({ class: 'at-characterManageActions' },
+                        _.Btn({ color: 'secondary', icon: 'refresh', loading, onClick: detect }, 'Scan again'),
+                        _.Btn({ color: 'secondary', onClick: close }, 'Close'),
+                        _.Btn({ color: 'primary', icon: 'person_add', loading: importing, disabled: () => loading.value || !candidates.value.length, onClick: () => save(close) }, 'Create selected'),
+                    ),
+                ),
+            },
+        }).open();
+
+        detect();
     };
 
     openDirectVoiceDialog = (block, bookKey = keyBook) => {
@@ -5781,17 +5917,19 @@ function editorText(keyBook) {
                         _.div({ class: 'at-directVoiceToneList' }, voice.samples?.length
                             ? voice.samples.map((sample) => _.div({ class: 'at-directVoiceToneRow' },
                                 _.span({ class: 'at-directVoiceToneDot', style: { backgroundColor: sample.tone?.color || '#64748b' } }),
-                                _.div({ class: 'at-directVoiceToneCopy' }, _.strong(sample.tone ? `#${sample.tone.id} · ${sample.tone.name}` : `Tone #${sample.tone_id || '—'}`), _.small(sample.description || sample.tone?.description || sample.original_name || 'Audio sample')),
+                                _.div({ class: 'at-directVoiceToneCopy' }, _.strong(sample.tone?.name || 'Unnamed tone'), _.small(sample.description || sample.tone?.description || sample.original_name || 'Audio sample')),
                                 _.audio({ controls: true, preload: 'metadata', src: sample.audio_url }),
-                                _.Btn({ dense: true, color: 'primary', icon: 'check', title: `Use ${voice.name} with ${sample.tone?.name || 'this tone'}`, onClick: async () => {
-                                try {
-                                    const payload = await _.http.postJSON(`/dashboard/api/books/${bookKey}/blocks/${encodeURIComponent(block.block_uuid)}/library-voice`, { audio_library_voice_id: voice.id, tone_id: sample.tone_id || sample.tone?.id || null });
-                                    const data = normalizeDataPayload(payload);
-                                    voiceAssignment.value = data.assignment || null;
-                                    selectedVoiceProfileId.value = data.assignment?.voice_profile_id ? String(data.assignment.voice_profile_id) : '';
-                                    close();
-                                } catch (error) { status.value = { type: 'danger', message: requestErrorMessage(error, 'Unable to assign this direct voice.') }; }
-                                } }),
+                                _.Btn({
+                                    dense: true, color: 'primary', icon: 'check', title: `Use ${voice.name} with ${sample.tone?.name || 'this tone'}`, onClick: async () => {
+                                        try {
+                                            const payload = await _.http.postJSON(`/dashboard/api/books/${bookKey}/blocks/${encodeURIComponent(block.block_uuid)}/library-voice`, { audio_library_voice_id: voice.id, tone_id: sample.tone_id || sample.tone?.id || null });
+                                            const data = normalizeDataPayload(payload);
+                                            voiceAssignment.value = data.assignment || null;
+                                            selectedVoiceProfileId.value = data.assignment?.voice_profile_id ? String(data.assignment.voice_profile_id) : '';
+                                            close();
+                                        } catch (error) { status.value = { type: 'danger', message: requestErrorMessage(error, 'Unable to assign this direct voice.') }; }
+                                    }
+                                }),
                             ))
                             : _.span({ class: 'at-directVoiceNoTone' }, 'No tone sample available'),
                         ),
@@ -6172,6 +6310,11 @@ function editorText(keyBook) {
         }
 
         syncEditorBlocks();
+        // Tiptap normalizes node attributes while mounting the saved document.
+        // Record that normalized representation as the saved baseline; otherwise
+        // a pristine block can be incorrectly flagged as dirty.
+        updateBlockMetaFromSaved(Array.from(blockMeta.values()), currentEditorBlocks);
+        syncEditorBlocks();
         updateActiveBlock();
         editorReady.value = true;
         loadBookActivity(keyBook, { force: true });
@@ -6299,6 +6442,7 @@ function editorText(keyBook) {
         saveBlockVoiceAssignment = () => { };
         clearBlockVoiceAssignment = () => { };
         openVoiceProfileDialog = () => { };
+        openCharacterDetectionDialog = () => { };
         loadBlockAudio = () => { };
         generateBlockAudio = () => { };
         loadBlockTranslations = () => { };

@@ -1,5 +1,10 @@
 # Registro Avanzamento
 
+## 2026-09-09
+
+- Rinominato il tool editor `Voices` in `Characters` e corretto il falso stato `Unsaved`: il baseline viene ora calcolato dopo la normalizzazione TipTap del documento appena caricato, quindi un blocco non modificato resta subito assegnabile.
+- Aggiunto primo rilevamento assistito dei personaggi: riconosce dialoghi con speaker esplicito (`Nome:` e `Nome —`), mostra esempi e blocchi trovati, richiede revisione dell'utente e solo dopo crea i Character e assegna i blocchi alla loro versione salvata. Le attribuzioni narrative ambigue non vengono assegnate automaticamente.
+
 ## 2026-09-07
 
 - Completato code splitting dashboard/Vite: la shell mantiene CMSwift e routing, mentre editor, studio audio e pagine dashboard vengono caricati su richiesta. Il bundle iniziale della dashboard e' sceso a circa 11 kB; il core CMSwift condiviso resta separato.

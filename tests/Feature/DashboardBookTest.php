@@ -2111,6 +2111,44 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.profiles.0.role', 'character');
     }
 
+    public function test_dashboard_detects_explicit_dialogue_speakers_and_creates_assignments_after_confirmation(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $carlos = (string) Str::uuid();
+        $maria = (string) Str::uuid();
+
+        foreach ([[$carlos, 'Carlos: Ciao, come state?'], [$maria, 'Maria — Benissimo, grazie.']] as [$blockUuid, $text]) {
+            $service->saveBlock($book, [
+                'block_uuid' => $blockUuid,
+                'type' => 'paragraph',
+                'sort_order' => 1000,
+                'content_json' => $this->paragraphJson($text),
+                'text_plain' => $text,
+            ]);
+        }
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/characters/detect")
+            ->assertOk()
+            ->assertJsonPath('data.candidates.0.name', 'Carlos')
+            ->assertJsonPath('data.candidates.0.block_uuids.0', $carlos)
+            ->assertJsonPath('data.candidates.1.name', 'Maria')
+            ->assertJsonPath('data.candidates.1.block_uuids.0', $maria);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/characters/import-detected", [
+            'candidates' => [
+                ['name' => 'Carlos', 'block_uuids' => [$carlos]],
+                ['name' => 'Maria', 'block_uuids' => [$maria]],
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.profiles.0.name', 'Carlos')
+            ->assertJsonPath('data.assigned_blocks', 2);
+
+        $this->assertDatabaseHas('book_voice_profiles', ['book_id' => $book->id, 'name' => 'Carlos', 'role' => 'character']);
+        $this->assertDatabaseCount('book_block_voice_assignments', 2);
+    }
+
     public function test_dashboard_can_assign_and_clear_voice_for_current_block_version(): void
     {
         $book = $this->createBook();
