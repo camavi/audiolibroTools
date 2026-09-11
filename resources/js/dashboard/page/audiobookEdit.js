@@ -23,6 +23,7 @@ const designFields = {
 };
 const layoutFields = { content_padding: _.rod('24'), paragraph_gap: _.rod('16'), content_width: _.rod('760') };
 const audioStatus = _.rod(null);
+const bookAudioProgress = _.rod(null);
 const publishResult = _.rod(null);
 const publishRunning = _.rod(false);
 const audioSegments = _.rod([]);
@@ -32,6 +33,8 @@ const previewingAudioGroupId = _.rod(null);
 let generatedAudioPreview = null;
 let generatedAudioPreviewTimer = null;
 let audioPollingTimer = null;
+let bookAudioProgressTimer = null;
+let restoredBookAudioProgressKey = null;
 const audioGenerating = _.rod(false);
 const voiceEngineMode = _.rod('quality');
 const bookAudioGenerating = _.rod(false);
@@ -109,6 +112,68 @@ function audioEditionQuery() {
     return edition ? `?edition=${encodeURIComponent(edition)}` : '';
 }
 
+function bookAudioProgressStorageKey(keyBook) {
+    return `audiobook-tools:audio-generation:${keyBook}:${editionId() || 'original'}`;
+}
+
+function bookAudioProgressUrl(keyBook, jobIds) {
+    const params = new URLSearchParams();
+    const edition = editionId();
+    if (edition) params.set('edition', edition);
+    jobIds.forEach((id) => params.append('job_ids[]', String(id)));
+    return `/dashboard/api/books/${encodeURIComponent(keyBook)}/audio/generation-progress?${params.toString()}`;
+}
+
+function stopBookAudioProgressPolling() {
+    window.clearTimeout(bookAudioProgressTimer);
+    bookAudioProgressTimer = null;
+}
+
+function startBookAudioProgressPolling(keyBook, jobIds) {
+    const ids = [...new Set((jobIds || []).map(Number).filter(Number.isInteger))];
+    if (!keyBook) return;
+    stopBookAudioProgressPolling();
+    if (ids.length) sessionStorage.setItem(bookAudioProgressStorageKey(keyBook), JSON.stringify(ids));
+
+    const poll = async () => {
+        try {
+            const payload = await _.http.getJSON(bookAudioProgressUrl(keyBook, ids));
+            const progress = audioData(payload);
+            if (!progress.total) {
+                bookAudioProgress.value = null;
+                return;
+            }
+            bookAudioProgress.value = progress;
+            if (progress.active) {
+                bookAudioProgressTimer = window.setTimeout(poll, 3000);
+            } else {
+                sessionStorage.removeItem(bookAudioProgressStorageKey(keyBook));
+                if (progress.failed) audioStatus.value = { type: 'warning', message: `${progress.failed} audio job${progress.failed === 1 ? '' : 's'} failed. Review the progress panel for details.` };
+                loadBlockAudio(keyBook);
+            }
+        } catch (error) {
+            bookAudioProgress.value = { ...(bookAudioProgress.value || {}), active: false, error: error.message || 'Unable to update audio generation progress.' };
+            sessionStorage.removeItem(bookAudioProgressStorageKey(keyBook));
+        }
+    };
+
+    void poll();
+}
+
+function restoreBookAudioProgress(keyBook) {
+    const storageKey = bookAudioProgressStorageKey(keyBook);
+    if (restoredBookAudioProgressKey === storageKey) return;
+    restoredBookAudioProgressKey = storageKey;
+    bookAudioProgress.value = null;
+    try {
+        const jobIds = JSON.parse(sessionStorage.getItem(storageKey) || '[]');
+        startBookAudioProgressPolling(keyBook, Array.isArray(jobIds) ? jobIds : []);
+    } catch (_) {
+        sessionStorage.removeItem(storageKey);
+        startBookAudioProgressPolling(keyBook);
+    }
+}
+
 function normalizeEqualizerBands(value = {}) {
     const gain = (key) => Math.max(-12, Math.min(12, Number(value?.[key] || 0)));
     return { low_gain_db: gain('low_gain_db'), mid_gain_db: gain('mid_gain_db'), high_gain_db: gain('high_gain_db') };
@@ -134,6 +199,30 @@ function audioMeterLabel(level) {
 
 function activeBlock() {
     return audiobookBlocks.value[activeBlockIndex.value] || null;
+}
+
+// A paragraph can override the narrator with its own character/direct voice.
+// When it does not, generation falls back to the book voice saved in Audio
+// direction. Keep this resolution in the UI aligned with the API fallback.
+function defaultVoiceProfileId() {
+    return Number(audiobookBook.value?.audio_settings_json?.default_voice_profile_id || 0) || null;
+}
+
+function defaultVoiceProfile() {
+    const profileId = defaultVoiceProfileId();
+    return profileId ? voiceProfiles.value.find((profile) => Number(profile.id) === profileId) || null : null;
+}
+
+function resolvedBlockVoice() {
+    const assignedProfile = blockVoiceAssignment.value?.voice_profile || null;
+    if (assignedProfile) return { profile: assignedProfile, source: 'block' };
+
+    const defaultProfile = defaultVoiceProfile();
+    if (defaultProfile) return { profile: defaultProfile, source: 'default' };
+
+    // The audio-settings endpoint only accepts an existing configured voice.
+    // Preserve that fallback while the profiles request is still loading.
+    return defaultVoiceProfileId() ? { profile: null, source: 'default' } : null;
 }
 
 const defaultBookDesign = () => ({
@@ -1351,8 +1440,9 @@ async function generateSelectedAudio(keyBook) {
     const block = activeBlock();
     if (!keyBook || !block?.block_uuid || audioGenerating.value) return;
     const model = voiceEngineMode.value;
+    const resolvedVoice = resolvedBlockVoice();
 
-    if (!blockVoiceAssignment.value?.voice_profile?.voice_id) {
+    if (!resolvedVoice?.profile?.voice_id && resolvedVoice?.source !== 'default') {
         audioStatus.value = { type: 'danger', message: 'Assign a direct voice, or configure a voice for the selected character before generating audio.' };
         return;
     }
@@ -1363,6 +1453,10 @@ async function generateSelectedAudio(keyBook) {
     try {
         const generated = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/blocks/${encodeURIComponent(block.block_uuid)}/audio/generate`, {
             ...audioEditionPayload(),
+            // Omitting the provider makes the API choose its non-playable
+            // mock generator. The audiobook studio must request the actual
+            // local Qwen voice engine, just like Generate book audio does.
+            provider_key: 'qwen-local',
             model,
         }, { timeout: 900000, retry: { attempts: 0 } });
         const data = audioData(generated);
@@ -1614,6 +1708,9 @@ function openGenerateBookAudioDialog(keyBook) {
             const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio/generate-all`, {
                 ...audioEditionPayload(),
                 regenerate_existing: regenerate.value,
+                // Keep batch generation on the same playable TTS provider as
+                // the single-block action; the mock provider has no WAV URL.
+                provider_key: 'qwen-local',
                 model: model.value,
             }, { timeout: 900000, retry: { attempts: 0 } });
             const result = audioData(payload);
@@ -1622,6 +1719,11 @@ function openGenerateBookAudioDialog(keyBook) {
                 type: result.failed_blocks?.length ? 'warning' : 'success',
                 message: `${result.queued_blocks || 0} blocks queued for generation${result.skipped_blocks ? ` · ${result.skipped_blocks} already available` : ''}${result.unconfigured_blocks ? ` · ${result.unconfigured_blocks} need a voice` : ''}${result.failed_blocks?.length ? ` · ${result.failed_blocks.length} failed to queue` : ''}.${firstFailure ? ` First error: ${firstFailure}` : ''}`,
             };
+            const jobIds = Array.isArray(result.job_ids) ? result.job_ids : [];
+            if (jobIds.length) {
+                bookAudioProgress.value = { total: jobIds.length, processed: 0, percent: 0, queued: jobIds.length, running: 0, completed: 0, failed: 0, active: true };
+                startBookAudioProgressPolling(keyBook, jobIds);
+            }
             await loadBlockAudio(keyBook);
         } catch (error) {
             status.value = { type: 'danger', message: error.message || 'Unable to generate the book audio.' };
@@ -1636,7 +1738,11 @@ function openGenerateBookAudioDialog(keyBook) {
         slots: {
             header: _.div(_.h3('Generate book audio'), _.span({ class: 'text-muted' }, 'Create narrated audio for every saved text block in this book.')),
             content: ({ close }) => _.div({ class: 'at-bookAudioGenerateDialog' },
-                _.Checkbox({ label: 'Regenerate audio already generated', model: regenerate }),
+                _.Toggle({
+                    label: 'Regenerate audio already generated',
+                    color: 'warning',
+                    model: regenerate,
+                }),
                 _.Select({ label: 'Voice engine mode', model, options: [{ value: 'fast', label: 'Fast' }, { value: 'quality', label: 'Quality' }] }),
                 _.small({ class: 'at-bookAudioGenerateNote' }, () => regenerate.value ? 'Every block will receive a new audio master.' : 'Only blocks without a completed audio master will be generated.'),
                 () => {
@@ -1653,6 +1759,90 @@ function openGenerateBookAudioDialog(keyBook) {
             ),
         },
     }).open();
+}
+
+function cancelBookAudioGeneration(keyBook) {
+    const progress = bookAudioProgress.value;
+    const jobIds = Array.isArray(progress?.job_ids) ? progress.job_ids : [];
+    if (!jobIds.length) return;
+    const cancelling = _.rod(false);
+    const status = _.rod(null);
+    const cancel = async (close) => {
+        if (cancelling.value) return;
+        cancelling.value = true;
+        status.value = null;
+        try {
+            const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio/generation-cancel`, {
+                ...audioEditionPayload(),
+                job_ids: jobIds,
+            });
+            const result = audioData(payload);
+            stopBookAudioProgressPolling();
+            audioStatus.value = { type: 'warning', message: `${result.cancelled || 0} audio job${result.cancelled === 1 ? '' : 's'} cancelled. Completed audio remains available.` };
+            close();
+            startBookAudioProgressPolling(keyBook, jobIds);
+        } catch (error) {
+            status.value = { type: 'danger', message: error.message || 'Unable to cancel audio generation.' };
+        } finally { cancelling.value = false; }
+    };
+
+    _.Dialog({
+        size: 'sm',
+        stickyActions: true,
+        slots: {
+            header: _.div(_.h3('Cancel book audio generation?'), _.span({ class: 'text-muted' }, 'This action stops the current background batch.')),
+            content: ({ close }) => _.div({ class: 'at-bookAudioCancelDialog' },
+                _.Alert({ type: 'warning', title: 'Pending audio will not be generated', message: 'Waiting jobs are cancelled immediately. A clip already being synthesized may finish its current request, but the unfinished master will be discarded. Audio completed before this action is kept.' }),
+                () => status.value ? _.Alert(status.value) : null,
+            ),
+            actions: ({ close }) => [
+                _.Btn({ color: 'secondary', onClick: close }, 'Keep generating'),
+                _.Btn({ color: 'danger', icon: 'cancel', loading: cancelling, onClick: () => cancel(close) }, 'Cancel generation'),
+            ],
+        },
+    }).open();
+}
+
+function bookAudioProgressCard(keyBook) {
+    return () => {
+        const progress = bookAudioProgress.value;
+        if (!progress) return null;
+        const percent = Math.max(0, Math.min(100, Number(progress.percent || 0)));
+        const complete = !progress.active && !progress.error;
+        const title = progress.error
+            ? 'Audio generation status unavailable'
+            : complete
+                ? (progress.failed ? 'Audio generation completed with errors' : 'Book audio generated')
+                : 'Generating book audio';
+        const detail = progress.error
+            ? progress.error
+            : `${progress.processed || 0} of ${progress.total || 0} blocks processed · ${progress.running || 0} generating · ${progress.queued || 0} waiting${progress.failed ? ` · ${progress.failed} failed` : ''}${progress.cancelled ? ` · ${progress.cancelled} cancelled` : ''}`;
+        const failedJobs = Array.isArray(progress.failed_jobs) ? progress.failed_jobs : [];
+
+        return _.section({ class: `at-bookAudioProgress ${progress.failed ? 'has-errors' : ''} ${complete ? 'is-complete' : ''}` },
+            _.div({ class: 'at-bookAudioProgressHead' },
+                _.div(_.strong(title), _.small(detail)),
+                _.div({ class: 'at-bookAudioProgressActions' },
+                    _.strong({ class: 'at-bookAudioProgressPercent' }, `${percent}%`),
+                    progress.active ? _.Btn({ dense: true, color: 'danger', icon: 'cancel', onClick: () => cancelBookAudioGeneration(keyBook) }, 'Cancel') : null,
+                ),
+            ),
+            _.div({ class: 'at-bookAudioProgressTrack', role: 'progressbar', ariaLabel: 'Book audio generation progress', ariaValueMin: 0, ariaValueMax: 100, ariaValueNow: percent },
+                _.div({ class: 'at-bookAudioProgressFill', style: { width: `${percent}%` } }),
+            ),
+            progress.failed ? _.div({ class: 'at-bookAudioFailedJobs' },
+                _.small({ class: 'at-bookAudioProgressError' }, `${progress.failed} block${progress.failed === 1 ? '' : 's'} could not be generated. Select one to review and retry it.`),
+                ...failedJobs.map((job) => {
+                    const index = audiobookBlocks.value.findIndex((block) => block.block_uuid === job.block_uuid);
+                    const label = index >= 0 ? `Block ${index + 1}` : 'Failed paragraph';
+                    return _.div({ class: 'at-bookAudioFailedJob' },
+                        _.Btn({ dense: true, color: 'warning', icon: 'error_outline', onClick: () => { if (index >= 0) selectAudiobookBlock(index, keyBook); } }, label),
+                        _.small(job.message || 'The audio worker could not complete this paragraph.'),
+                    );
+                }),
+            ) : null,
+        );
+    };
 }
 
 function openInsertAllAudioDialog(keyBook) {
@@ -2425,11 +2615,19 @@ function createAudio() {
         ),
         _.div({ class: 'at-audioVoiceSelect' },
             _.div({ class: 'at-audioVoiceSelectCopy' },
-                _.span(() => blockVoiceAssignment.value?.voice_profile?.role === 'character' ? 'Character' : 'AT voice'),
-                _.strong(() => blockVoiceAssignment.value?.voice_profile?.name || 'No voice selected'),
+                _.span(() => {
+                    const voice = resolvedBlockVoice();
+                    if (voice?.source === 'default') return 'Book default voice';
+                    return voice?.profile?.role === 'character' ? 'Character' : 'AT voice';
+                }),
+                _.strong(() => resolvedBlockVoice()?.profile?.name || (resolvedBlockVoice()?.source === 'default' ? 'Default voice' : 'No voice selected')),
                 _.small(() => {
-                    const profile = blockVoiceAssignment.value?.voice_profile;
-                    if (!profile) return 'Assign a character, or choose a direct voice from your AT audio library.';
+                    const voice = resolvedBlockVoice();
+                    const profile = voice?.profile;
+                    if (voice?.source === 'default') return profile
+                        ? `Book default · ${(profile.language || '').toUpperCase()}`
+                        : 'Using the book default voice.';
+                    if (!profile) return 'Assign a character, choose a direct voice, or set a book default voice in Audio direction.';
                     return profile.role === 'character' ? (profile.voice_id ? 'Character voice configured' : 'Choose a voice in the character settings.') : `AT voice · ${(profile.language || '').toUpperCase()}`;
                 }),
             ),
@@ -2991,6 +3189,7 @@ export default function audiobookEdit(ctx) {
     const keyBook = bookKey(ctx);
     loadAudiobook(keyBook); loadTimeline(keyBook);
     loadBlockAudio(keyBook);
+    restoreBookAudioProgress(keyBook);
     window.AudiobookTools?.setPageHeaderActions?.([
         bookPanelButton(keyBook),
         audioReleaseManagerButton(keyBook),
@@ -3009,6 +3208,7 @@ export default function audiobookEdit(ctx) {
             ),
         ),
         () => audioStatus.value ? _.Alert({ type: audioStatus.value.type, message: audioStatus.value.message }) : null,
+        bookAudioProgressCard(keyBook),
         _.div({ class: 'at-audiobookWorkspace' },
             editorCard(),
             previewCard(),

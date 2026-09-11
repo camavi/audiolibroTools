@@ -3025,7 +3025,9 @@ class DashboardBookController extends Controller
         $edition = $this->audioEdition($request, $book);
         $regenerate = (bool) ($validated['regenerate_existing'] ?? false);
         $defaultProfileId = $this->editionAudioSettings($book, $edition)['default_voice_profile_id'] ?? null;
-        $hasDefaultVoice = $edition->is_original && $defaultProfileId && $book->voiceProfiles()->whereKey($defaultProfileId)->whereNotNull('voice_id')->exists();
+        // Audio direction is saved per edition. A configured default narrator
+        // must therefore apply to every edition, not only the original one.
+        $hasDefaultVoice = $defaultProfileId && $book->voiceProfiles()->whereKey($defaultProfileId)->whereNotNull('voice_id')->exists();
         $blocks = $book->blocks()
             ->where('status', '!=', 'deleted')
             ->with(['currentVersion', 'voiceAssignments.voiceProfile'])
@@ -3045,6 +3047,7 @@ class DashboardBookController extends Controller
             ->flip();
         $targets = $configuredBlocks->filter(fn (BookBlock $block) => $regenerate || ! $existingVersions->has($block->current_version_id))->values();
         $queued = 0;
+        $jobIds = [];
         $skipped = $configuredBlocks->count() - $targets->count();
         $unconfigured = $blocks->count() - $configuredBlocks->count();
         $failed = [];
@@ -3067,6 +3070,8 @@ class DashboardBookController extends Controller
             $response = $this->generateBlockAudio($generationRequest, $keyBook, $block->block_uuid, $qwen);
             if ($response->getStatusCode() < 300) {
                 $queued++;
+                $jobId = data_get($response->getData(true), 'data.job.id');
+                if ($jobId) $jobIds[] = (int) $jobId;
             } else {
                 $failed[] = ['block_uuid' => $block->block_uuid, 'message' => $response->getData(true)['message'] ?? 'Generation failed.'];
             }
@@ -3076,12 +3081,86 @@ class DashboardBookController extends Controller
             'total_blocks' => $blocks->count(),
             'target_blocks' => $targets->count(),
             'queued_blocks' => $queued,
+            'job_ids' => $jobIds,
             // Kept for older clients. Queued audio is not completed yet.
             'completed_blocks' => 0,
             'skipped_blocks' => $skipped,
             'unconfigured_blocks' => $unconfigured,
             'failed_blocks' => $failed,
         ]]);
+    }
+
+    public function audioGenerationProgress(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate([
+            'job_ids' => ['nullable', 'array', 'min:1', 'max:1000'],
+            'job_ids.*' => ['integer', 'distinct'],
+        ]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
+        $jobQuery = $book->audioJobs()->where('book_edition_id', $edition->id);
+        $jobIds = $validated['job_ids'] ?? [];
+        if ($jobIds) {
+            $jobs = $jobQuery->whereIn('id', $jobIds)->get(['id', 'status', 'error_message']);
+            abort_unless($jobs->count() === count($jobIds), 404, 'One or more audio jobs are unavailable.');
+        } else {
+            // A page opened after a batch has started does not know its job
+            // IDs yet. Use the oldest active job as the beginning of the
+            // currently running batch and include its finished siblings.
+            $startedAt = (clone $jobQuery)
+                ->whereIn('status', ['queued', 'running'])
+                ->min('created_at');
+            $jobs = $startedAt
+                ? $jobQuery->where('created_at', '>=', $startedAt)->get(['id', 'status', 'error_message'])
+                : collect();
+        }
+
+        $counts = collect(['queued', 'running', 'completed', 'failed', 'cancelled'])
+            ->mapWithKeys(fn (string $status) => [$status => $jobs->where('status', $status)->count()])
+            ->all();
+        $total = $jobs->count();
+        $processed = $counts['completed'] + $counts['failed'] + $counts['cancelled'];
+
+        return response()->json(['data' => [
+            'total' => $total,
+            'processed' => $processed,
+            'percent' => $total ? (int) round($processed / $total * 100) : 0,
+            'active' => $counts['queued'] + $counts['running'] > 0,
+            ...$counts,
+            'job_ids' => $jobs->pluck('id')->map(fn (int $id) => $id)->values(),
+            'failed_jobs' => $jobs->where('status', 'failed')->map(fn (BookAudioJob $job) => [
+                'id' => $job->id,
+                'block_uuid' => $job->block_uuid,
+                'message' => $job->error_message,
+            ])->values(),
+        ]]);
+    }
+
+    public function cancelAudioGeneration(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate([
+            'job_ids' => ['required', 'array', 'min:1', 'max:1000'],
+            'job_ids.*' => ['integer', 'distinct'],
+        ]);
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $edition = $this->audioEdition($request, $book);
+        $jobs = $book->audioJobs()
+            ->where('book_edition_id', $edition->id)
+            ->whereIn('id', $validated['job_ids'])
+            ->whereIn('status', ['queued', 'running'])
+            ->get(['id']);
+
+        DB::transaction(function () use ($jobs): void {
+            $jobIds = $jobs->pluck('id');
+            BookAudioSegment::query()->whereIn('book_audio_job_id', $jobIds)->delete();
+            BookAudioJob::query()->whereIn('id', $jobIds)->update([
+                'status' => 'cancelled',
+                'error_message' => 'Cancelled by the user.',
+                'completed_at' => now(),
+            ]);
+        });
+
+        return response()->json(['data' => ['cancelled' => $jobs->count()]]);
     }
 
     public function updateAudioSettings(Request $request, string $keyBook): JsonResponse

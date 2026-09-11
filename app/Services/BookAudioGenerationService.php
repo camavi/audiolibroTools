@@ -26,6 +26,8 @@ class BookAudioGenerationService
 
         try {
             foreach ($parts as $index => $part) {
+                $job->refresh();
+                if ($job->status === 'cancelled') return;
                 $toneId = $request['split_tones'][$index] ?? $request['tone_id'] ?? null;
                 $voiceId = $this->voiceId($job, $request, $toneId, $qwen);
                 $durationMs = max(700, mb_strlen((string) ($part['text'] ?? '')) * 45);
@@ -37,6 +39,14 @@ class BookAudioGenerationService
                     $audioPath = "audiobooks/{$job->book->key_book}/segments/".Str::uuid().'.wav';
                     Storage::disk('public')->put($audioPath, $qwen->download($result['audio_url']));
                     $durationMs = (int) ($result['duration_ms'] ?? $durationMs);
+                }
+
+                $job->refresh();
+                if ($job->status === 'cancelled') {
+                    if ($job->provider_key === 'qwen-local' && Storage::disk('public')->exists($audioPath)) {
+                        Storage::disk('public')->delete($audioPath);
+                    }
+                    return;
                 }
 
                 $segments->push(BookAudioSegment::query()->create([
@@ -66,9 +76,13 @@ class BookAudioGenerationService
                 ]));
             }
 
+            $job->refresh();
+            if ($job->status === 'cancelled') return;
             $duration = $segments->sum(fn (BookAudioSegment $segment) => (int) $segment->duration_ms + (int) $segment->pause_after_ms);
             $job->forceFill(['status' => 'completed', 'result_json' => ['parts' => $segments->count(), 'duration_ms' => $duration], 'completed_at' => now()])->save();
         } catch (Throwable $exception) {
+            $job->refresh();
+            if ($job->status === 'cancelled') return;
             $job->forceFill(['status' => 'failed', 'error_message' => $exception->getMessage(), 'completed_at' => now()])->save();
             throw $exception;
         }

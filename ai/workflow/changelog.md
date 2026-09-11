@@ -11,6 +11,7 @@
 - Il dialog di rilevamento Characters permette ora di inserire i caratteri separatori usati nel proprio libro; il backend applica esattamente quelli alla scansione.
 - Normalizzato l'import manoscritti DOCX/TXT/PDF: le entità HTML residue dagli export, come `&quot;`, vengono decodificate sia nella review sia nei blocchi salvati.
 - Aggiunta gestione sicura dalla libreria Books: delete definitivo con conferma per libri senza release e pausa delle release pubbliche per libri pubblicati; i libri con release non sono eliminabili.
+- Rimosso l'accesso alle `Audio AI settings` dal tool Audio: la configurazione mostrata era solo mockup. Le impostazioni AI condivise restano disponibili esclusivamente per gli strumenti che le usano davvero.
 
 ## 2026-09-07
 

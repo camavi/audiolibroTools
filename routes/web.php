@@ -205,6 +205,8 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
     Route::post('/books/{keyBook}/blocks/{blockUuid}/audio/generate', [DashboardBookController::class, 'generateBlockAudio'])->name('books.blocks.audio.generate');
     Route::patch('/books/{keyBook}/audio-settings', [DashboardBookController::class, 'updateAudioSettings'])->name('books.audio-settings.update');
     Route::post('/books/{keyBook}/audio/generate-all', [DashboardBookController::class, 'generateBookAudio'])->name('books.audio.generate-all');
+    Route::get('/books/{keyBook}/audio/generation-progress', [DashboardBookController::class, 'audioGenerationProgress'])->name('books.audio.generation-progress');
+    Route::post('/books/{keyBook}/audio/generation-cancel', [DashboardBookController::class, 'cancelAudioGeneration'])->name('books.audio.generation-cancel');
     Route::get('/books/{keyBook}/audio/insert-all-summary', [DashboardBookController::class, 'insertAllAudioSummary'])->name('books.audio.insert-all.summary');
     Route::post('/books/{keyBook}/audio/insert-all', [DashboardBookController::class, 'insertAllAudioTimeline'])->name('books.audio.insert-all');
     Route::delete('/books/{keyBook}/blocks/{blockUuid}/audio/{job}', [DashboardBookController::class, 'deleteAudioGroup'])->name('books.blocks.audio.delete');

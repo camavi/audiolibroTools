@@ -2336,6 +2336,95 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.groups.0.status', 'completed');
     }
 
+    public function test_dashboard_generates_all_translated_edition_blocks_with_its_default_voice(): void
+    {
+        Queue::fake();
+        $book = $this->createBook();
+        $blockUuid = (string) Str::uuid();
+        $saved = app(BookBlockService::class)->saveBlock($book, [
+            'block_uuid' => $blockUuid,
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Original paragraph.'),
+            'text_plain' => 'Original paragraph.',
+        ]);
+        $edition = BookEdition::query()->create([
+            'book_id' => $book->id,
+            'locale' => 'es',
+            'name' => 'Spanish edition',
+            'status' => 'ready',
+            'is_original' => false,
+        ]);
+        BookBlockTranslation::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $saved['block']->id,
+            'source_book_block_version_id' => $saved['version']->id,
+            'block_uuid' => $blockUuid,
+            'target_locale' => 'es',
+            'status' => 'approved',
+            'source_text' => 'Original paragraph.',
+            'translated_text' => 'Párrafo traducido.',
+        ]);
+        $profile = BookVoiceProfile::query()->create([
+            'book_id' => $book->id,
+            'name' => 'Book narrator',
+            'role' => 'narrator',
+            'voice_provider' => 'mock',
+            'voice_id' => 'book-narrator',
+        ]);
+
+        $this->patchJson("/dashboard/api/books/{$book->key_book}/audio-settings", [
+            'edition' => $edition->id,
+            'default_voice_profile_id' => $profile->id,
+        ])->assertOk();
+
+        $generation = $this->postJson("/dashboard/api/books/{$book->key_book}/audio/generate-all", [
+            'edition' => $edition->id,
+            'provider_key' => 'mock',
+            'model' => 'mock-tts-v1',
+        ]);
+        $generation
+            ->assertOk()
+            ->assertJsonPath('data.total_blocks', 1)
+            ->assertJsonPath('data.queued_blocks', 1)
+            ->assertJsonPath('data.unconfigured_blocks', 0);
+
+        $jobId = $generation->json('data.job_ids.0');
+        $this->assertNotNull($jobId);
+        $this->getJson("/dashboard/api/books/{$book->key_book}/audio/generation-progress?edition={$edition->id}&job_ids[]={$jobId}")
+            ->assertOk()
+            ->assertJsonPath('data.total', 1)
+            ->assertJsonPath('data.queued', 1)
+            ->assertJsonPath('data.percent', 0)
+            ->assertJsonPath('data.active', true);
+        $this->getJson("/dashboard/api/books/{$book->key_book}/audio/generation-progress?edition={$edition->id}")
+            ->assertOk()
+            ->assertJsonPath('data.total', 1)
+            ->assertJsonPath('data.queued', 1)
+            ->assertJsonPath('data.active', true);
+
+        $this->assertDatabaseHas('book_audio_jobs', [
+            'book_id' => $book->id,
+            'book_edition_id' => $edition->id,
+            'book_block_id' => $saved['block']->id,
+            'book_voice_profile_id' => $profile->id,
+            'status' => 'queued',
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/audio/generation-cancel", [
+            'edition' => $edition->id,
+            'job_ids' => [$jobId],
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.cancelled', 1);
+        $this->getJson("/dashboard/api/books/{$book->key_book}/audio/generation-progress?edition={$edition->id}&job_ids[]={$jobId}")
+            ->assertOk()
+            ->assertJsonPath('data.cancelled', 1)
+            ->assertJsonPath('data.percent', 100)
+            ->assertJsonPath('data.active', false);
+        $this->assertDatabaseHas('book_audio_jobs', ['id' => $jobId, 'status' => 'cancelled']);
+    }
+
     public function test_qwen_audio_adds_a_trailing_pause_after_the_last_sentence(): void
     {
         Queue::fake();

@@ -110,6 +110,98 @@
     font-size: .74rem;
 }
 
+.at-bookAudioProgress {
+    display: grid;
+    gap: .7rem;
+    margin: .75rem 0;
+    padding: .85rem 1rem;
+    border: 1px solid #315fba;
+    border-radius: .7rem;
+    background: #14284b;
+}
+
+.at-bookAudioProgress.is-complete {
+    border-color: #27835d;
+    background: #123b31;
+}
+
+.at-bookAudioProgress.has-errors {
+    border-color: #b97919;
+    background: #4b3513;
+}
+
+.at-bookAudioProgressHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.at-bookAudioProgressHead div {
+    display: grid;
+    gap: .15rem;
+}
+
+.at-bookAudioProgressHead .at-bookAudioProgressActions {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+}
+
+.at-bookAudioProgressHead small {
+    color: #c5d3ec;
+}
+
+.at-bookAudioProgressPercent {
+    color: #f8fbff;
+    font-variant-numeric: tabular-nums;
+}
+
+.at-bookAudioProgressTrack {
+    height: .55rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgb(2 6 23 / 52%);
+}
+
+.at-bookAudioProgressFill {
+    height: 100%;
+    min-width: 0;
+    border-radius: inherit;
+    background: #3b82f6;
+    transition: width .35s ease;
+}
+
+.at-bookAudioProgress.is-complete .at-bookAudioProgressFill {
+    background: #34d399;
+}
+
+.at-bookAudioProgress.has-errors .at-bookAudioProgressFill {
+    background: #f5b942;
+}
+
+.at-bookAudioProgressError {
+    color: #fde68a;
+}
+
+.at-bookAudioFailedJobs {
+    display: grid;
+    gap: .45rem;
+}
+
+.at-bookAudioFailedJob {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    min-width: 0;
+}
+
+.at-bookAudioFailedJob small {
+    min-width: 0;
+    color: #fde68a;
+    overflow-wrap: anywhere;
+}
+
 .at-audioDirectionDialog {
     display: grid;
     gap: 1rem;
