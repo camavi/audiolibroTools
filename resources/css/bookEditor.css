@@ -543,6 +543,12 @@
     min-width: 0;
 }
 
+.at-rightWorkspace-headerActions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
 .at-rightWorkspace-title {
     display: flex;
     align-items: center;

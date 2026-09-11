@@ -109,6 +109,7 @@ class DashboardAiController extends Controller
             'model' => ['required', 'string', 'max:120'],
             'api_key' => ['nullable', 'string', 'max:5000'],
             'system_prompt' => ['nullable', 'string', 'max:12000'],
+            'correction_instructions' => ['nullable', 'string', 'max:12000'],
         ]);
 
         $accountId = auth()->id();
@@ -133,6 +134,9 @@ class DashboardAiController extends Controller
         $systemPrompt = array_key_exists('system_prompt', $validated)
             ? trim((string) ($validated['system_prompt'] ?? ''))
             : ($existingSetting?->options_json['system_prompt'] ?? $this->defaultSystemPrompt($validated['service']));
+        $correctionInstructions = array_key_exists('correction_instructions', $validated)
+            ? trim((string) ($validated['correction_instructions'] ?? ''))
+            : ($existingSetting?->options_json['correction_instructions'] ?? $this->defaultCorrectionInstructions($validated['service']));
 
         $setting = AiServiceSetting::query()->updateOrCreate([
             'account_id' => $accountId,
@@ -148,6 +152,7 @@ class DashboardAiController extends Controller
                 'connection_mode' => $provider['connection_mode'],
                 'supports_background_jobs' => $provider['supports_background_jobs'],
                 'system_prompt' => $systemPrompt,
+                'correction_instructions' => $correctionInstructions,
             ],
         ]);
 
@@ -243,6 +248,7 @@ class DashboardAiController extends Controller
             'provider_key' => $defaultProvider['provider_key'] ?? 'mock',
             'model' => $defaultModel,
             'system_prompt' => $this->defaultSystemPrompt($service),
+            'correction_instructions' => $this->defaultCorrectionInstructions($service),
         ];
     }
 
@@ -276,13 +282,14 @@ class DashboardAiController extends Controller
             'connection_mode' => $setting->options_json['connection_mode'] ?? 'byok',
             'supports_background_jobs' => (bool) ($setting->options_json['supports_background_jobs'] ?? false),
             'system_prompt' => $setting->options_json['system_prompt'] ?? $this->defaultSystemPrompt($setting->service),
+            'correction_instructions' => $setting->options_json['correction_instructions'] ?? $this->defaultCorrectionInstructions($setting->service),
         ];
     }
 
     private function defaultSystemPrompt(string $service): string
     {
         return match ($service) {
-            'correction', 'rewrite' => 'You are a professional book editor. Return only the corrected text, with no explanation.',
+            'correction', 'rewrite' => 'You are a professional book editor. Your entire response must consist only of the corrected text requested by the user. Never add commentary, explanations, summaries, labels, greetings, Markdown, quotation marks, or follow-up questions.',
             'translate' => 'You are a literary translator. Preserve meaning, voice, rhythm and paragraph structure.',
             'chat' => 'You are an editorial assistant for this book. Use the selected context and answer clearly.',
             'comments' => 'You are an editorial reviewer. Write concise comments tied to the selected block.',
@@ -290,6 +297,13 @@ class DashboardAiController extends Controller
             'versions' => 'You are an editorial history assistant. Compare versions and explain changes clearly.',
             default => 'You are an expert assistant for this book project.',
         };
+    }
+
+    private function defaultCorrectionInstructions(string $service): string
+    {
+        return in_array($service, ['correction', 'rewrite'], true)
+            ? 'Revise the text for grammar, style, continuity and readability while preserving its meaning, voice and language.'
+            : '';
     }
 
     private function services(): array

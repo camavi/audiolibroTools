@@ -937,7 +937,8 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.setting.service', 'correction')
             ->assertJsonPath('data.setting.provider_key', 'mock')
             ->assertJsonPath('data.setting.model', 'mock-correction-v1')
-            ->assertJsonPath('data.setting.system_prompt', 'You are a professional book editor. Return only the corrected text, with no explanation.')
+            ->assertJsonPath('data.setting.system_prompt', 'You are a professional book editor. Your entire response must consist only of the corrected text requested by the user. Never add commentary, explanations, summaries, labels, greetings, Markdown, quotation marks, or follow-up questions.')
+            ->assertJsonPath('data.setting.correction_instructions', 'Revise the text for grammar, style, continuity and readability while preserving its meaning, voice and language.')
             ->assertJsonPath('data.providers.0.provider_key', 'mock')
             ->assertJsonPath('data.services.2.key', 'correction')
             ->assertJsonPath('data.services.6.key', 'versions');
@@ -967,12 +968,14 @@ class DashboardBookTest extends TestCase
             'model' => 'local-fast',
             'api_key' => 'local-secret-key-updated',
             'system_prompt' => 'Correct this novel with a dry, concise style.',
+            'correction_instructions' => 'Correct grammar only. Preserve every deliberate stylistic choice.',
         ])
             ->assertOk()
             ->assertJsonPath('data.setting.service', 'correction')
             ->assertJsonPath('data.setting.provider_key', $providerKey)
             ->assertJsonPath('data.setting.model', 'local-fast')
-            ->assertJsonPath('data.setting.system_prompt', 'Correct this novel with a dry, concise style.');
+            ->assertJsonPath('data.setting.system_prompt', 'Correct this novel with a dry, concise style.')
+            ->assertJsonPath('data.setting.correction_instructions', 'Correct grammar only. Preserve every deliberate stylistic choice.');
 
         $providersPayload = $this->getJson("/dashboard/api/ai/providers?service=correction&key_book={$book->key_book}")
             ->assertOk()
@@ -1004,6 +1007,10 @@ class DashboardBookTest extends TestCase
         $this->assertSame(
             'Correct this novel with a dry, concise style.',
             json_decode($optionsJson, true)['system_prompt'] ?? null
+        );
+        $this->assertSame(
+            'Correct grammar only. Preserve every deliberate stylistic choice.',
+            json_decode($optionsJson, true)['correction_instructions'] ?? null
         );
 
         $encryptedKey = $this->getConnection()

@@ -62,6 +62,7 @@ class EditorAiCorrectionService
             'model' => $resolvedModel,
             'api_key' => $credential?->api_key,
             'system_prompt' => $setting?->options_json['system_prompt'] ?? $this->defaultSystemPrompt(),
+            'correction_instructions' => $setting?->options_json['correction_instructions'] ?? $this->defaultCorrectionInstructions(),
         ];
     }
 
@@ -128,7 +129,7 @@ class EditorAiCorrectionService
             $this->fail('api_key', 'Save an API key before using OpenAI corrections.');
         }
 
-        $prompt = $this->correctionPrompt($originalText, $type);
+        $prompt = $this->correctionPrompt($originalText, $type, $provider['correction_instructions']);
         $baseUrl = rtrim($provider['base_url'] ?: 'https://api.openai.com/v1', '/');
         $response = Http::withToken($provider['api_key'])
             ->acceptJson()
@@ -187,14 +188,19 @@ class EditorAiCorrectionService
         ];
     }
 
-    private function correctionPrompt(string $text, string $type): string
+    private function correctionPrompt(string $text, string $type, string $instructions): string
     {
-        return "Correction type: {$type}\n\nEdit the following book paragraph for grammar, style, continuity and readability while preserving meaning, voice and language. Return only the corrected paragraph.\n\n{$text}";
+        return "Correction type: {$type}\n\nEditorial instructions:\n{$instructions}\n\nOutput requirements (mandatory):\n- Return only the final corrected paragraph.\n- Do not add an introduction, conclusion, explanation, summary, note, label, quotation marks or Markdown.\n- Do not describe what you corrected and do not ask for more text.\n\nParagraph:\n{$text}";
     }
 
     private function defaultSystemPrompt(): string
     {
-        return 'You are a professional book editor. Return only the corrected text, with no explanation.';
+        return 'You are a professional book editor. Your entire response must consist only of the corrected text requested by the user. Never add commentary, explanations, summaries, labels, greetings, Markdown, quotation marks, or follow-up questions.';
+    }
+
+    private function defaultCorrectionInstructions(): string
+    {
+        return 'Revise the text for grammar, style, continuity and readability while preserving its meaning, voice and language.';
     }
 
     private function extractResponseText(array $payload): string

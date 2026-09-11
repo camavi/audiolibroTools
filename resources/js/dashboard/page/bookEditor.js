@@ -116,6 +116,7 @@ const aiModelModel = _.rod('mock-correction-v1');
 const aiProviderApiKey = _.rod('');
 const loadingAiProviderModels = _.rod(false);
 const aiProviderSystemPrompt = _.rod('');
+const aiProviderCorrectionInstructions = _.rod('');
 const customProviderName = _.rod('');
 const customProviderBaseUrl = _.rod('');
 const customProviderModels = _.rod('');
@@ -724,6 +725,18 @@ function correctionAiSetting() {
     };
 }
 
+function defaultSystemPromptForService(service) {
+    return service === 'correction' || service === 'rewrite'
+        ? 'You are a professional book editor. Your entire response must consist only of the corrected text requested by the user. Never add commentary, explanations, summaries, labels, greetings, Markdown, quotation marks, or follow-up questions.'
+        : 'You are an expert assistant for this book project.';
+}
+
+function defaultCorrectionInstructionsForService(service) {
+    return service === 'correction' || service === 'rewrite'
+        ? 'Revise the text for grammar, style, continuity and readability while preserving its meaning, voice and language.'
+        : '';
+}
+
 function correctionAiSummary() {
     const setting = correctionAiSetting();
     const provider = providerByKey(setting.provider_key);
@@ -854,6 +867,7 @@ function setAiProviderSetting(nextSetting) {
         provider_key: nextSetting.provider_key || 'mock',
         model: nextSetting.model || 'mock-correction-v1',
         system_prompt: nextSetting.system_prompt || '',
+        correction_instructions: nextSetting.correction_instructions || defaultCorrectionInstructionsForService(nextSetting.service),
     };
 
     const current = aiProviderSetting.value;
@@ -862,11 +876,13 @@ function setAiProviderSetting(nextSetting) {
         || current.provider_key !== normalized.provider_key
         || current.model !== normalized.model
         || current.system_prompt !== normalized.system_prompt
+        || current.correction_instructions !== normalized.correction_instructions
     ) {
         aiProviderSetting.value = normalized;
     }
 
     if (aiProviderSystemPrompt.value !== normalized.system_prompt) aiProviderSystemPrompt.value = normalized.system_prompt;
+    if (aiProviderCorrectionInstructions.value !== normalized.correction_instructions) aiProviderCorrectionInstructions.value = normalized.correction_instructions;
     syncAiSettingModels(normalized);
 }
 
@@ -1839,6 +1855,7 @@ function indexBook() {
 
 function rightWorkspaceHeader(tool, block, keyBook) {
     const service = aiServiceForTool(tool.id);
+    const hasAiSettings = !['activity', 'settings', 'voices', 'audio'].includes(tool.id);
 
     return _.div({ class: 'at-rightWorkspace-header' },
         _.div({ class: 'at-rightWorkspace-headerTop' },
@@ -1846,12 +1863,20 @@ function rightWorkspaceHeader(tool, block, keyBook) {
                 _.Icon ? _.Icon({ name: tool.icon, class: 'at-rightWorkspace-titleIcon' }) : null,
                 _.span(tool.label)
             ),
-            !['activity', 'settings', 'voices'].includes(tool.id) ? _.button({
-                type: 'button',
-                class: 'at-rightWorkspace-toolSettings',
-                title: `${tool.label} AI settings`,
-                onclick: () => openToolAiSettingsDialog(keyBook, service, tool.label),
-            }, _.Icon ? _.Icon({ name: 'settings', class: 'at-rightWorkspace-toolSettingsIcon' }) : 'Settings') : null
+            hasAiSettings ? _.div({ class: 'at-rightWorkspace-headerActions' },
+                tool.id === 'correct' ? _.button({
+                    type: 'button',
+                    class: 'at-rightWorkspace-toolSettings',
+                    title: 'System prompt',
+                    onclick: () => openSystemPromptDialog(keyBook, 'correction'),
+                }, _.Icon ? _.Icon({ name: 'terminal', class: 'at-rightWorkspace-toolSettingsIcon' }) : 'Prompt') : null,
+                _.button({
+                    type: 'button',
+                    class: 'at-rightWorkspace-toolSettings',
+                    title: `${tool.label} AI settings`,
+                    onclick: () => openToolAiSettingsDialog(keyBook, service, tool.label),
+                }, _.Icon ? _.Icon({ name: 'settings', class: 'at-rightWorkspace-toolSettingsIcon' }) : 'Settings')
+            ) : null
         ),
         _.div({ class: 'at-rightWorkspace-context' }, block
             ? `${outlineKindLabel(block)} · ${block.label}`
@@ -2802,11 +2827,6 @@ function audioPanel(block, keyBook) {
                 _.span('Provider'),
                 _.strong(`${aiSummary.providerName}${aiSummary.model ? ` · ${aiSummary.model}` : ''}`)
             ),
-            aiSummary.missingApiKey ? _.button({
-                type: 'button',
-                class: 'at-correctionProvider-action',
-                onclick: () => openToolAiSettingsDialog(keyBook, 'audio', 'Audio'),
-            }, 'Configure AI settings') : null
         ),
         _.div({ class: 'at-voiceCurrent' },
             _.span('Assigned voice'),
@@ -4389,6 +4409,7 @@ function editorText(keyBook) {
             provider_key: data.setting?.provider_key || 'mock',
             model: data.setting?.model || 'mock-correction-v1',
             system_prompt: data.setting?.system_prompt || '',
+            correction_instructions: data.setting?.correction_instructions || defaultCorrectionInstructionsForService(service),
         });
         aiServiceSettings.value = {
             ...aiServiceSettings.value,
@@ -4457,6 +4478,7 @@ function editorText(keyBook) {
                 model: aiProviderSetting.value.model,
                 api_key: aiProviderApiKey.value.trim() || null,
                 system_prompt: aiProviderSystemPrompt.value.trim(),
+                correction_instructions: aiProviderCorrectionInstructions.value.trim(),
             });
             const data = normalizeDataPayload(payload);
 
@@ -4587,8 +4609,26 @@ function editorText(keyBook) {
         }).open();
     };
 
-    openSystemPromptDialog = (bookKey = keyBook, service = 'correction') => {
-        loadAiProviders(bookKey, service);
+    openSystemPromptDialog = async (bookKey = keyBook, service = 'correction') => {
+        await loadAiProviders(bookKey, service, { force: true });
+
+        const promptTemplates = _.rod([]);
+        const loadingPromptTemplates = _.rod(true);
+        const promptTemplatesError = _.rod(null);
+        const selectedPromptTemplateId = _.rod('');
+        const promptText = _.rod(aiProviderSystemPrompt.value);
+        const correctionInstructionsText = _.rod(aiProviderCorrectionInstructions.value || defaultCorrectionInstructionsForService(service));
+
+        _.http.getJSON('/dashboard/api/prompts')
+            .then((payload) => {
+                promptTemplates.value = normalizeDataPayload(payload).prompts || [];
+            })
+            .catch((error) => {
+                promptTemplatesError.value = requestErrorMessage(error, 'Unable to load saved prompts.');
+            })
+            .finally(() => {
+                loadingPromptTemplates.value = false;
+            });
 
         _.Dialog({
             size: 'lg',
@@ -4599,19 +4639,65 @@ function editorText(keyBook) {
                     _.span({ class: 'text-muted' }, 'Instruction used by this AI tool before the selected book content.'),
                 ),
                 content: ({ close }) => _.div({ class: 'at-systemPromptDialog' },
+                    _.Select({
+                        label: () => loadingPromptTemplates.value ? 'Loading saved prompts...' : 'Saved prompts',
+                        icon: 'bookmark',
+                        model: selectedPromptTemplateId,
+                        options: () => [
+                            { value: '', label: 'Current / custom prompt' },
+                            ...promptTemplates.value.map((prompt) => ({
+                                value: String(prompt.id),
+                                label: prompt.category ? `${prompt.title} · ${prompt.category}` : prompt.title,
+                            })),
+                        ],
+                        onChange: (value) => {
+                            const templateId = selectChangeValue(value, selectedPromptTemplateId.value);
+                            selectedPromptTemplateId.value = templateId;
+                            const template = promptTemplates.value.find((prompt) => String(prompt.id) === String(templateId));
+                            if (template?.prompt) promptText.value = template.prompt;
+                        },
+                    }),
+                    () => promptTemplatesError.value ? _.Alert({ type: 'warning', message: promptTemplatesError.value }) : null,
                     _.Textarea({
-                        label: 'Prompt',
+                        label: 'System prompt',
                         icon: 'terminal',
                         rows: 10,
-                        model: aiProviderSystemPrompt,
+                        model: promptText,
                     }),
+                    service === 'correction' ? _.Textarea({
+                        label: 'Editing instructions',
+                        icon: 'edit_note',
+                        rows: 5,
+                        model: correctionInstructionsText,
+                        placeholder: 'Describe what the editor should check or preserve.',
+                        hint: 'The output rule is protected: the AI can return only the corrected paragraph.',
+                    }) : null,
                     _.div({ class: 'at-systemPromptActions' },
+                        _.Btn({
+                            type: 'button',
+                            color: 'secondary',
+                            icon: 'restart_alt',
+                            onClick: () => {
+                                selectedPromptTemplateId.value = '';
+                                promptText.value = defaultSystemPromptForService(service);
+                            },
+                        }, 'Reset to default'),
+                        service === 'correction' ? _.Btn({
+                            type: 'button',
+                            color: 'secondary',
+                            icon: 'restart_alt',
+                            onClick: () => {
+                                correctionInstructionsText.value = defaultCorrectionInstructionsForService(service);
+                            },
+                        }, 'Reset instructions') : null,
                         _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Close'),
                         _.Btn({
                             type: 'button',
                             color: 'primary',
                             loading: savingAiSetting,
                             onClick: async () => {
+                                aiProviderSystemPrompt.value = promptText.value;
+                                aiProviderCorrectionInstructions.value = correctionInstructionsText.value;
                                 await saveAiProviderSetting(bookKey);
                                 close();
                             },

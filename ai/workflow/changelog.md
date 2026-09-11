@@ -2,6 +2,9 @@
 
 ## 2026-09-09
 
+- Nel tool Correct dell'editor aggiunto accesso diretto al dialog System prompt: mostra la libreria di prompt salvati, copia il prompt scelto nell'editor modificabile, permette il reset al prompt predefinito e salva l'override per il libro corrente.
+- Rafforzate le istruzioni di Correct: system e user prompt richiedono esclusivamente il paragrafo revisionato, vietando commenti, spiegazioni, saluti, etichette, Markdown e richieste di altri testi.
+- Il dialog System prompt di Correct permette ora di configurare anche le istruzioni editoriali inviate con il blocco; il contratto di output che impone il solo paragrafo corretto resta fisso lato backend.
 - Rinominato il tool editor `Voices` in `Characters` e corretto il falso stato `Unsaved`: il baseline viene ora calcolato dopo la normalizzazione TipTap del documento appena caricato, quindi un blocco non modificato resta subito assegnabile.
 - Aggiunto primo rilevamento assistito dei personaggi: riconosce dialoghi con speaker esplicito (`Nome:` e `Nome —`), mostra esempi e blocchi trovati, richiede revisione dell'utente e solo dopo crea i Character e assegna i blocchi alla loro versione salvata. Le attribuzioni narrative ambigue non vengono assegnate automaticamente.
 - Rimosse le AI settings dal tool `Characters`: il rilevamento corrente è deterministico e non usa un LLM. Il servizio AI `voices` non viene più esposto nella dashboard; il dialog e i relativi stili condivisi restano disponibili agli strumenti AI che li usano.
