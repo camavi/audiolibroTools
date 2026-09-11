@@ -133,6 +133,22 @@ function writeBookForm(close) {
 function uploadBook() {
     const importPreview = _.rod(null);
     const confirmingImport = _.rod(false);
+    const importProcessingStage = _.rod(null);
+    let importProcessingTimer = null;
+
+    const clearImportProcessingState = () => {
+        if (importProcessingTimer) window.clearTimeout(importProcessingTimer);
+        importProcessingTimer = null;
+        importProcessingStage.value = null;
+    };
+
+    const startImportProcessingState = () => {
+        clearImportProcessingState();
+        importProcessingStage.value = 'uploading';
+        importProcessingTimer = window.setTimeout(() => {
+            importProcessingStage.value = 'analysing';
+        }, 1200);
+    };
     const manuscriptUpload = _.Upload({
         class: 'at-newBookUploadArea',
         label: 'Manuscript',
@@ -148,7 +164,11 @@ function uploadBook() {
             Accept: 'application/json',
             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
         },
-        onStart: () => { importingManuscript.value = true; formStatus.value = null; },
+        onStart: () => {
+            importingManuscript.value = true;
+            formStatus.value = null;
+            startImportProcessingState();
+        },
         onSuccess: (item, { response }) => {
             const payload = JSON.parse(response.text || '{}');
             const preview = payload?.data?.data || payload?.data;
@@ -166,7 +186,10 @@ function uploadBook() {
             try { message = JSON.parse(error.response?.text || '{}').message || message; } catch (_) { /* Keep the upload error. */ }
             formStatus.value = { type: 'danger', title: 'Preview failed', message };
         },
-        onFinish: () => { importingManuscript.value = false; },
+        onFinish: () => {
+            importingManuscript.value = false;
+            clearImportProcessingState();
+        },
     });
 
     const submitImport = async () => {
@@ -214,6 +237,21 @@ function uploadBook() {
             }),
             _.div({ class: 'cms-col-24' }, manuscriptUpload),
             _.div({ class: 'cms-col-24' }, () => {
+                const stage = importProcessingStage.value;
+                if (!stage) return null;
+
+                const isAnalysing = stage === 'analysing';
+                return _.div({ class: 'at-newBookImportProgress', role: 'status', ariaLive: 'polite' },
+                    _.span({ class: 'at-newBookImportSpinner', ariaHidden: 'true' }),
+                    _.div(
+                        _.strong(isAnalysing ? 'Reviewing your manuscript' : 'Uploading your manuscript'),
+                        _.span(isAnalysing
+                            ? 'The server is extracting chapters and preparing the review. Larger books can take a little longer—please keep this window open.'
+                            : 'Your file is on its way to the server. The review will open automatically when it is ready.'),
+                    ),
+                );
+            }),
+            _.div({ class: 'cms-col-24' }, () => {
                 const preview = importPreview.value;
                 if (!preview) return null;
                 const summary = preview.summary || {};
@@ -234,10 +272,10 @@ function uploadBook() {
     return {
         content,
         actions: (close) => _.div({ class: 'at-newBookDialogActions' },
-            _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Cancel'),
+            _.Btn({ type: 'button', color: 'secondary', onClick: () => { clearImportProcessingState(); close(); } }, 'Cancel'),
             () => importPreview.value
                 ? _.Btn({ type: 'button', color: 'primary', icon: 'auto_stories', loading: confirmingImport, onClick: () => confirmImport(close) }, 'Confirm and create book')
-                : _.Btn({ type: 'button', color: 'primary', icon: 'preview', loading: importingManuscript, onClick: submitImport }, 'Review manuscript'),
+                : _.Btn({ type: 'button', color: 'primary', icon: 'preview', loading: importingManuscript, onClick: submitImport }, () => importingManuscript.value ? 'Reviewing manuscript…' : 'Review manuscript'),
         ),
     };
 }

@@ -1314,3 +1314,19 @@
     border-color: var(--at-border-strong);
     background: rgb(16 24 39 / 52%);
 }
+
+/* Manuscript import: the processing notice must remain part of the dark panel. */
+:root[data-theme="dark"] .at-newBookImportProgress {
+    border-color: var(--at-border-strong);
+    background: var(--at-accent-soft);
+    color: var(--at-text);
+}
+
+:root[data-theme="dark"] .at-newBookImportSpinner {
+    border-color: rgba(96, 165, 250, .28);
+    border-top-color: #60a5fa;
+}
+
+:root[data-theme="dark"] .at-newBookImportProgress span {
+    color: var(--at-muted);
+}
