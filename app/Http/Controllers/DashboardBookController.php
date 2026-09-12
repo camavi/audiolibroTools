@@ -2616,7 +2616,13 @@ class DashboardBookController extends Controller
         return ['channels' => $channels, 'duration_ms' => max(array_column($channels, 'duration_ms'))];
     }
 
-    /** Render masters once per saved timeline fingerprint and reuse them for the reader preview. */
+    /**
+     * Return an existing preview master without ever rendering one during playback.
+     *
+     * A reader preview must stay responsive even for a book with thousands of
+     * clips. Rendering a master belongs exclusively to the explicit publish
+     * action, not to opening the player.
+     */
     public function previewAudioTimeline(Request $request, string $keyBook): JsonResponse
     {
         $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
@@ -2634,12 +2640,13 @@ class DashboardBookController extends Controller
             return response()->json(['data' => [...$cached, 'channels' => $this->previewChannelUrls($request, $keyBook, $cached['channels']), 'cached' => true]]);
         }
 
-        $rendered = $this->publishAudioTimeline($request, $keyBook)->getData(true)['data'];
-        $preview = ['fingerprint' => $fingerprint, 'channels' => $rendered['channels'], 'duration_ms' => $rendered['duration_ms'], 'generated_at' => now()->toIso8601String()];
-        $edition->metadata_json = [...($edition->metadata_json ?? []), 'audio_preview' => $preview];
-        $edition->save();
-
-        return response()->json(['data' => [...$preview, 'channels' => $this->previewChannelUrls($request, $keyBook, $preview['channels']), 'cached' => false]]);
+        return response()->json(['data' => [
+            'fingerprint' => $fingerprint,
+            'channels' => collect(['voice', 'music', 'fx'])->mapWithKeys(fn (string $track) => [$track => ['status' => 'not_rendered', 'duration_ms' => 0, 'url' => null]])->all(),
+            'duration_ms' => $items->max(fn (BookAudioTimelineItem $item): int => (int) $item->start_ms + (int) $item->duration_ms) ?? 0,
+            'cached' => false,
+            'requires_render' => true,
+        ]]);
     }
 
     public function streamAudioPreview(Request $request, string $keyBook, string $track)

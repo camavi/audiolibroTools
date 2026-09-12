@@ -7,6 +7,7 @@
 - Il canvas della timeline resta alla larghezza del viewport: la finestra temporale limita la durata disegnata, evitando bitmap enormi e canvas bianchi nei libri molto lunghi.
 - Il righello della timeline sceglie ora intervalli in base alla durata e alla larghezza disponibile, con etichette `mm:ss` o `hh:mm:ss`, evitando sovrapposizioni nei libri lunghi.
 - Le timeline lunghe aprono una finestra iniziale di circa dieci minuti, anziche' comprimere l'intero libro: zoom e barra di navigazione spostano la finestra lungo la durata completa, e la vista segue il playhead in riproduzione.
+- Il Preview player riproduce in sequenza i segmenti Voice gia' presenti nella timeline e non richiede piu' il render del master. L'endpoint `audio-preview` e' ora di sola lettura: puo' restituire una cache gia' valida ma non avvia FFmpeg; il render dei master resta esclusivamente nel comando Publish audiobook.
 - La dialog Generate book audio si chiude appena il batch e' accodato; il comando principale resta disabilitato e mostra `Generating book audio…` fino al termine o annullamento del processo.
 
 ## 2026-09-09

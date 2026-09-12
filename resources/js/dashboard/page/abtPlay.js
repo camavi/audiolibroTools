@@ -5,8 +5,6 @@ const playerBook = _.rod(null);
 const playerBlocks = _.rod([]);
 const playerItems = _.rod([]);
 const loading = _.rod(false);
-const previewRendering = _.rod(false);
-const previewMasters = _.rod(null);
 const error = _.rod(null);
 const readingMode = _.rod(localStorage.getItem('audiobook-tools:reader-mode') || 'cover');
 const activeItemIndex = _.rod(0);
@@ -18,12 +16,8 @@ const bookmark = _.rod(null);
 const sleepMinutes = _.rod(0);
 const volume = _.rod({ voice: Number(localStorage.getItem('audiobook-tools:volume-voice') || 100), music: Number(localStorage.getItem('audiobook-tools:volume-music') || 70), fx: Number(localStorage.getItem('audiobook-tools:volume-fx') || 70) });
 let audio = null;
-let musicAudio = null;
-let fxAudio = null;
 let sleepTimer = null;
-let nextItemTimer = null;
 let lastCenteredTarget = null;
-let pendingSeek = null;
 
 function keyBook(ctx) { return ctx?.params?.key_book || window.location.pathname.match(/\/dashboard\/book\/([^/]+)/)?.[1] || null; }
 function editionQuery() { const value = new URLSearchParams(window.location.search).get('edition'); return value ? `?edition=${encodeURIComponent(value)}` : ''; }
@@ -54,10 +48,20 @@ function timelineAudioParts(item) {
     });
 }
 
+function timelineAudioUrl(item) {
+    const path = item?.audio_path;
+    if (!path || path.startsWith('mock://')) return null;
+    if (/^https?:\/\//.test(path)) return path;
+    return path.startsWith('/') ? path : `/storage/${path.replace(/^storage\//, '')}`;
+}
+
+function timelineDuration() {
+    return Math.max(0, ...playerItems.value.map((item) => (Number(item.start_ms || 0) + Number(item.duration_ms || 0)) / 1000));
+}
+
 function stopAudio() {
-    if (nextItemTimer) { window.clearTimeout(nextItemTimer); nextItemTimer = null; }
     readingPlayback.value = null;
-    [audio, musicAudio, fxAudio].filter(Boolean).forEach((player) => player.pause());
+    audio?.pause();
     isPlaying.value = false;
 }
 
@@ -110,79 +114,72 @@ function syncTransport(currentTime) {
     if (readingMode.value !== 'cover') window.requestAnimationFrame(() => centerReadingTarget(item));
 }
 
-function prepareMasterPlayers() {
-    const channels = previewMasters.value?.channels || {};
-    if (!channels.voice?.url) return false;
-    if (!audio) {
-        audio = new Audio(channels.voice.url); audio.preload = 'auto';
-        audio.addEventListener('loadedmetadata', () => {
-            if (!pendingSeek) return;
-            const { target, autoplay } = pendingSeek;
-            pendingSeek = null;
-            setMasterPosition(target);
-            if (autoplay) startMasterPlayback();
-        });
-        audio.addEventListener('timeupdate', () => { progress.value = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0; syncTransport(audio.currentTime); });
-        audio.addEventListener('ended', stopAudio);
-        musicAudio = channels.music?.url ? new Audio(channels.music.url) : null;
-        fxAudio = channels.fx?.url ? new Audio(channels.fx.url) : null;
-    }
+function playItem(index = activeItemIndex.value, offset = 0, autoplay = true) {
+    const item = playerItems.value[index];
+    const url = timelineAudioUrl(item);
+    if (!item || !url) return false;
+    audio?.pause();
+    audio = new Audio(url);
+    audio.preload = 'metadata';
+    audio.volume = volume.value.voice / 100;
+    audio.playbackRate = speed.value;
+    activeItemIndex.value = index;
+    const start = Number(item.start_ms || 0) / 1000;
+    const safeOffset = Math.max(0, Math.min(Math.max(0, Number(item.duration_ms || 0) / 1000 - .01), Number(offset) || 0));
+    const setPosition = () => {
+        try { audio.currentTime = Number(item.media_offset_ms || 0) / 1000 + safeOffset; } catch (_) { /* Wait for media metadata. */ }
+        const position = start + safeOffset;
+        progress.value = timelineDuration() ? (position / timelineDuration()) * 100 : 0;
+        syncTransport(position);
+        if (autoplay) {
+            audio.play().then(() => { isPlaying.value = true; }).catch(() => { error.value = 'Playback was blocked by the browser. Select play again to continue.'; });
+        }
+    };
+    audio.addEventListener('loadedmetadata', setPosition, { once: true });
+    audio.addEventListener('timeupdate', () => {
+        const position = start + Math.max(0, audio.currentTime - Number(item.media_offset_ms || 0) / 1000);
+        progress.value = timelineDuration() ? (position / timelineDuration()) * 100 : 0;
+        syncTransport(position);
+    });
+    audio.addEventListener('ended', () => {
+        const next = index + 1;
+        if (next < playerItems.value.length) playItem(next);
+        else stopAudio();
+    });
     return true;
 }
 
-function setMasterPosition(target) {
-    [['voice', audio], ['music', musicAudio], ['fx', fxAudio]].filter(([, player]) => player).forEach(([, player]) => {
-        const duration = Number(player.duration);
-        const channelTarget = Number.isFinite(duration) && duration > 0 ? Math.min(target, Math.max(0, duration - .01)) : target;
-        try { player.currentTime = channelTarget; } catch (_) { /* The channel will receive the position once metadata is available. */ }
-    });
-    progress.value = audio?.duration ? (target / audio.duration) * 100 : progress.value;
-    syncTransport(target);
-}
-
-function startMasterPlayback() {
-    [[audio, volume.value.voice], [musicAudio, volume.value.music], [fxAudio, volume.value.fx]].filter(([player]) => player).forEach(([player, playerVolume]) => {
-        player.volume = playerVolume / 100;
-        player.playbackRate = speed.value;
-        player.play().catch(() => { error.value = 'Playback was blocked by the browser. Select play again to continue.'; });
-    });
-    isPlaying.value = true;
-}
-
-function playItem(index = activeItemIndex.value) {
-    if (!prepareMasterPlayers()) return;
-    const item = playerItems.value[index];
-    if (item) audio.currentTime = Number(item.start_ms || 0) / 1000;
-    [[audio, volume.value.voice], [musicAudio, volume.value.music], [fxAudio, volume.value.fx]].filter(([player]) => player).forEach(([player, playerVolume]) => {
-        player.currentTime = audio.currentTime; player.playbackRate = speed.value;
-        player.volume = playerVolume / 100;
-        player.play().catch(() => { error.value = 'Playback was blocked by the browser. Select play again to continue.'; });
-    });
-    isPlaying.value = true;
+function playAtTimelineTime(target, autoplay = false) {
+    const seconds = Math.max(0, Math.min(timelineDuration(), Number(target) || 0));
+    const index = playerItems.value.findIndex((item) => seconds >= Number(item.start_ms || 0) / 1000 && seconds < (Number(item.start_ms || 0) + Number(item.duration_ms || 0)) / 1000);
+    const nextIndex = index >= 0 ? index : playerItems.value.findIndex((item) => Number(item.start_ms || 0) / 1000 >= seconds);
+    const itemIndex = nextIndex >= 0 ? nextIndex : Math.max(0, playerItems.value.length - 1);
+    const item = playerItems.value[itemIndex];
+    return playItem(itemIndex, Math.max(0, seconds - Number(item?.start_ms || 0) / 1000), autoplay);
 }
 
 function togglePlay() {
     if (isPlaying.value) { stopAudio(); return; }
-    if (audio) {
-        startMasterPlayback();
+    if (audio && audio.paused) {
+        audio.play().then(() => { isPlaying.value = true; }).catch(() => { error.value = 'Playback was blocked by the browser. Select play again to continue.'; });
         return;
     }
     playItem();
 }
 function seekTransport(percent) {
-    if (!audio && !prepareMasterPlayers()) return;
-    const duration = Number(audio.duration || (previewMasters.value?.duration_ms || 0) / 1000);
+    const duration = timelineDuration();
     if (!Number.isFinite(duration) || duration <= 0) return;
     const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
     const target = Math.min(Math.max(0, duration - .01), duration * safePercent / 100);
     progress.value = safePercent;
-    if (audio.readyState < HTMLMediaElement.HAVE_METADATA) {
-        pendingSeek = { target, autoplay: false };
-        return;
-    }
-    setMasterPosition(target);
+    playAtTimelineTime(target, isPlaying.value);
 }
-function seek(seconds) { if (!audio) { playItem(); return; } seekTransport(((audio.currentTime + seconds) / Math.max(.01, audio.duration)) * 100); }
+function seek(seconds) {
+    const current = activeItem();
+    const position = Number(current?.start_ms || 0) / 1000 + Math.max(0, (audio?.currentTime || 0) - Number(current?.media_offset_ms || 0) / 1000);
+    const duration = timelineDuration();
+    if (duration > 0) seekTransport(((position + seconds) / duration) * 100);
+}
 function nextItem() { const next = Math.min(playerItems.value.length - 1, activeItemIndex.value + 1); if (next !== activeItemIndex.value) playItem(next); }
 function previousItem() { playItem(Math.max(0, activeItemIndex.value - 1)); }
 function setSpeed() { const values = [.5, 1, 1.5]; speed.value = values[(values.indexOf(speed.value) + 1) % values.length]; localStorage.setItem('audiobook-tools:reader-speed', String(speed.value)); if (audio) audio.playbackRate = speed.value; }
@@ -192,7 +189,7 @@ function openVolumeDialog() {
     const save = (close) => {
         volume.value = { voice: Number(voice.value), music: Number(music.value), fx: Number(fx.value) };
         Object.entries(volume.value).forEach(([key, value]) => localStorage.setItem(`audiobook-tools:volume-${key}`, String(value)));
-        if (audio) playItem(activeItemIndex.value); close();
+        if (audio) audio.volume = volume.value.voice / 100; close();
     };
     _.Dialog({ size: 'sm', slots: { header: _.div(_.span('Audio controls'), _.h3('Volume')), content: ({ close }) => _.div({ class: 'at-abtVolumeDialog' }, _.Input({ label: 'Voice', type: 'range', min: 0, max: 100, model: voice }), _.Input({ label: 'Music', type: 'range', min: 0, max: 100, model: music }), _.Input({ label: 'Sound effects', type: 'range', min: 0, max: 100, model: fx }), _.div({ class: 'at-abtDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Cancel'), _.Btn({ color: 'primary', icon: 'save', onClick: () => save(close) }, 'Save'))) } }).open();
 }
@@ -224,11 +221,8 @@ async function load(key) {
             .filter((item) => item.audio_path && !item.muted)
             .sort((a, b) => a.start_ms - b.start_ms);
         activeItemIndex.value = 0;
-        previewRendering.value = true;
-        const previewPayload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(key)}/audio-preview${editionQuery()}`, {});
-        previewMasters.value = dataOf(previewPayload);
     } catch (requestError) { error.value = requestError.message || 'Unable to load this audiobook preview.'; }
-    finally { loading.value = false; previewRendering.value = false; }
+    finally { loading.value = false; }
 }
 
 function cover() {
@@ -288,7 +282,7 @@ export default function abtPlay(ctx) {
         _.section({ class: 'at-abtWorkspace' },
             _.section({ class: 'at-abtPlayer' },
                 _.header({ class: 'at-abtHeader' }, _.span(() => modeLabel()), _.Btn({ dense: true, textGradient: true, color: 'secondary', icon: 'format_list_bulleted', title: 'Chapters', onClick: () => document.querySelector('.at-abtChapters')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) })),
-                _.div({ class: 'at-abtReading' }, () => loading.value || previewRendering.value ? _.div({ class: 'at-abtLoading' }, previewRendering.value ? 'Generating preview masters: Voice, Music and FX…' : 'Loading audiobook…') : reader()),
+                _.div({ class: 'at-abtReading' }, () => loading.value ? _.div({ class: 'at-abtLoading' }, 'Loading audiobook…') : reader()),
                 _.div({ class: 'at-abtProgress' }, () => [
                     _.div({ class: 'at-abtProgressLine', style: `width:${progress.value}%` }),
                     _.div({ class: 'at-abtProgressThumb', style: `left:${progress.value}%`, ariaHidden: 'true' }),
