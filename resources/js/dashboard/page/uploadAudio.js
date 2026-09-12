@@ -122,52 +122,96 @@ function openVoiceDialog(existing = null) {
 }
 
 function defaultDesignReference(language) {
-    return language === 'it'
-        ? 'Questa è una breve frase di riferimento per creare una voce naturale e riconoscibile.'
-        : 'This is a short reference sentence used to create a natural and recognizable voice.';
+    return {
+        it: 'Questa è una breve frase di riferimento per creare una voce naturale e riconoscibile.',
+        en: 'This is a short reference sentence used to create a natural and recognizable voice.',
+        es: 'Esta es una breve frase de referencia para crear una voz natural y reconocible.',
+        fr: 'Ceci est une courte phrase de référence pour créer une voix naturelle et reconnaissable.',
+        de: 'Dies ist ein kurzer Referenzsatz, um eine natürliche und wiedererkennbare Stimme zu erstellen.',
+        pt: 'Esta é uma breve frase de referência para criar uma voz natural e reconhecível.',
+    }[language] || 'This is a short reference sentence used to create a natural and recognizable voice.';
 }
 
-function openDesignVoiceDialog() {
-    const name = _.rod(''); const type = _.rod('female'); const language = _.rod('it'); const description = _.rod('');
-    const dialogStatus = _.rod(null); let designs = [];
+function openDesignVoiceDialog(existing = null) {
+    const initial = CMSwift.reactive.untracked(() => ({
+        name: existing?.name || '', type: existing?.type || 'female', language: existing?.language || 'it', description: existing?.description || '',
+    }));
+    const name = _.rod(initial.name); const type = _.rod(initial.type); const language = _.rod(initial.language); const description = _.rod(initial.description);
+    const dialogStatus = _.rod(null);
+    let designs = CMSwift.reactive.untracked(() => (existing?.samples || []).map((sample) => ({
+        sampleId: sample.id || null,
+        audioUrl: _.rod(sample.audio_url || null),
+        toneId: _.rod(Number(sample.tone_id || sample.tone?.id || tones.value[0]?.id || 3)),
+        prompt: _.rod(sample.design_prompt || sample.description || ''),
+        referenceText: _.rod(sample.reference_text || ''),
+    })));
     const designList = _.div({ class: 'at-uploadAudioSamples' });
     const emptyDesigns = _.div({ class: 'at-uploadAudioEmptySamples' }, 'Add at least one tone design to generate this voice.');
     const syncDesignList = () => { emptyDesigns.hidden = designs.length > 0; };
-    const removeDesign = (design, row) => { designs = designs.filter((item) => item !== design); row.remove(); syncDesignList(); };
+    const removeDesign = async (design, row) => {
+        if (existing && design.sampleId) {
+            try {
+                await _.http.delJSON(`/dashboard/api/audio-library/design-voices/${existing.id}/tones/${design.sampleId}`);
+                voices.value = voices.value.map((voice) => voice.id === existing.id ? { ...voice, samples: voice.samples.filter((sample) => sample.id !== design.sampleId) } : voice);
+            } catch (error) { dialogStatus.value = { type: 'danger', message: error.message || 'Unable to remove this tone design.' }; return; }
+        }
+        designs = designs.filter((item) => item !== design); row.remove(); syncDesignList();
+    };
     const createDesignRow = (design) => {
         let row;
         row = _.div({ class: 'at-uploadAudioSample' },
-            _.div({ class: 'at-uploadAudioSampleControls' },
+            _.div({ class: 'at-uploadAudioSampleControls at-uploadAudioDesignControls' },
                 _.Select({ label: 'Tone', model: design.toneId, options: toneOptions }),
                 _.div({ class: 'at-uploadAudioDesignLabel' }, _.Icon({ name: 'auto_awesome' }), _.span('AT voice design · Quality')),
+                _.Btn({ dense: true, color: 'primary', icon: 'auto_awesome', title: 'Regenerate this tone', onClick: () => regenerateDesign(design) }, 'Regenerate tone'),
                 _.Btn({ dense: true, color: 'danger', icon: 'delete_outline', title: 'Remove tone design', onClick: () => removeDesign(design, row) }),
             ),
             _.Textarea({ label: 'Tone design prompt', rows: 3, model: design.prompt, placeholder: 'Example: Warm, intimate narrator voice with a calm pace and a subtle mysterious undertone.' }),
             _.Textarea({ label: 'Reference phrase to generate', rows: 2, model: design.referenceText, placeholder: 'This phrase becomes the saved reference used for later cloning.' }),
+            () => design.audioUrl.value ? _.div({ class: 'at-uploadAudioDesignPreview' }, _.small('Tone preview'), _.audio({ controls: true, preload: 'metadata', src: design.audioUrl.value })) : null,
             _.div({ class: 'at-uploadAudioToneHint' }, _.Icon({ name: 'info' }), _.span('The voice description and this tone prompt are combined before the voice engine generates the reference WAV.')),
         );
         return row;
     };
     const addDesign = () => {
-        const design = { toneId: _.rod(CMSwift.reactive.untracked(() => tones.value[0]?.id || 3)), prompt: _.rod(''), referenceText: _.rod(CMSwift.reactive.untracked(() => defaultDesignReference(language.value))) };
+        const design = { sampleId: null, audioUrl: _.rod(null), toneId: _.rod(CMSwift.reactive.untracked(() => tones.value[0]?.id || 3)), prompt: _.rod(''), referenceText: _.rod(CMSwift.reactive.untracked(() => defaultDesignReference(language.value))) };
         designs.push(design); designList.appendChild(createDesignRow(design)); syncDesignList();
+    };
+    designs.forEach((design) => designList.appendChild(createDesignRow(design)));
+    syncDesignList();
+    const detailsPayload = () => ({ name: name.value.trim(), type: type.value, language: language.value, description: description.value.trim() || null });
+    const regenerateDesign = async (design) => {
+        if (!existing) { dialogStatus.value = { type: 'warning', message: 'Create the voice before regenerating an individual tone.' }; return; }
+        if (!design.prompt.value.trim() || !design.referenceText.value.trim()) { dialogStatus.value = { type: 'warning', message: 'Add both a design prompt and a reference phrase for this tone.' }; return; }
+        saving.value = true; dialogStatus.value = null;
+        try {
+            const payload = await _.http.postJSON(`/dashboard/api/audio-library/design-voices/${existing.id}/tones`, { ...detailsPayload(), tone: { id: design.sampleId, tone_id: Number(design.toneId.value), design_prompt: design.prompt.value.trim(), reference_text: design.referenceText.value.trim() } }, { timeout: 900000, retry: { attempts: 0 } });
+            const saved = dataOf(payload).voice;
+            const savedSample = saved.samples.find((sample) => sample.id === design.sampleId || (sample.tone_id === Number(design.toneId.value) && sample.design_prompt === design.prompt.value.trim()));
+            design.sampleId = savedSample?.id || design.sampleId;
+            design.audioUrl.value = savedSample?.audio_url || design.audioUrl.value;
+            voices.value = [saved, ...voices.value.filter((voice) => voice.id !== saved.id)];
+            status.value = { type: 'success', message: 'Tone reference regenerated.' };
+        } catch (error) { dialogStatus.value = { type: 'danger', message: error.message || 'Unable to regenerate this tone.' }; }
+        finally { saving.value = false; }
     };
     const save = async (close) => {
         if (!name.value.trim()) { dialogStatus.value = { type: 'warning', message: 'Voice name is required.' }; return; }
-        if (!designs.length) { dialogStatus.value = { type: 'warning', message: 'Add at least one tone design.' }; return; }
-        if (designs.some((design) => !design.prompt.value.trim() || !design.referenceText.value.trim())) { dialogStatus.value = { type: 'warning', message: 'Every tone needs both a design prompt and a reference phrase.' }; return; }
+        if (!existing && !designs.length) { dialogStatus.value = { type: 'warning', message: 'Add at least one tone design.' }; return; }
+        if (!existing && designs.some((design) => !design.prompt.value.trim() || !design.referenceText.value.trim())) { dialogStatus.value = { type: 'warning', message: 'Every tone needs both a design prompt and a reference phrase.' }; return; }
         saving.value = true; dialogStatus.value = null;
         try {
-            const payload = await _.http.postJSON('/dashboard/api/audio-library/design-voices', { name: name.value.trim(), type: type.value, language: language.value, description: description.value.trim() || null, tones: designs.map((design) => ({ tone_id: Number(design.toneId.value), design_prompt: design.prompt.value.trim(), reference_text: design.referenceText.value.trim() })) }, { timeout: 900000, retry: { attempts: 0 } });
+            const endpoint = existing ? `/dashboard/api/audio-library/design-voices/${existing.id}` : '/dashboard/api/audio-library/design-voices';
+            const payload = await _.http.postJSON(endpoint, existing ? detailsPayload() : { ...detailsPayload(), tones: designs.map((design) => ({ tone_id: Number(design.toneId.value), design_prompt: design.prompt.value.trim(), reference_text: design.referenceText.value.trim() })) }, { timeout: 900000, retry: { attempts: 0 } });
             const saved = dataOf(payload).voice;
             voices.value = [saved, ...voices.value.filter((voice) => voice.id !== saved.id)];
-            status.value = { type: 'success', message: 'Designed voice generated and added to the audio library.' }; close();
-        } catch (error) { dialogStatus.value = { type: 'danger', message: error.message || 'Unable to generate the designed voice.' }; }
+            status.value = { type: 'success', message: existing ? 'Voice details updated.' : 'Designed voice generated and added to the audio library.' }; close();
+        } catch (error) { dialogStatus.value = { type: 'danger', message: error.message || `Unable to ${existing ? 'update' : 'generate'} the designed voice.` }; }
         finally { saving.value = false; }
     };
     _.Dialog({
         size: 'xl', stickyActions: true, slots: {
-            header: _.div(_.h3('Add design voice'), _.span({ class: 'text-muted' }, 'Describe a voice, then generate a reusable reference for each tone.')),
+            header: _.div(_.h3(existing ? 'Edit design voice' : 'Add design voice'), _.span({ class: 'text-muted' }, existing ? 'Regenerate each tone separately when its prompt or reference phrase changes.' : 'Describe a voice, then generate a reusable reference for each tone.')),
             content: () => _.div({ class: 'at-uploadAudioDialog' },
                 _.div({ class: 'at-uploadAudioVoiceFields' }, _.Input({ label: 'Voice name', model: name, icon: 'record_voice_over', placeholder: 'e.g. Elara' }), _.Select({ label: 'Voice type', model: type, options: [{ value: 'female', label: 'Female' }, { value: 'male', label: 'Male' }, { value: 'neutral', label: 'Neutral' }] }), _.Select({ label: 'Language', model: language, options: languageOptions() })),
                 _.Textarea({ class: 'cms-col-24', label: 'Voice description', model: description, rows: 3, placeholder: 'Age, accent, vocal texture, character and general performance.' }),
@@ -176,11 +220,11 @@ function openDesignVoiceDialog() {
             ),
             actions: ({ close }) => _.div({ class: 'at-uploadAudioDialogActions' },
                 _.Btn({ color: 'secondary', onClick: close }, 'Cancel'),
-                _.Btn({ color: 'primary', loading: saving, icon: 'auto_awesome', onClick: () => save(close) }, 'Generate design voice'),
+                _.Btn({ color: 'primary', loading: saving, icon: existing ? 'save' : 'auto_awesome', onClick: () => save(close) }, existing ? 'Save voice details' : 'Generate design voice'),
             ),
         }
     }).open();
-    addDesign();
+    if (!designs.length) addDesign();
 }
 
 async function deleteVoice(voice) {
@@ -207,7 +251,7 @@ export default function uploadAudio() {
                     _.audio({ controls: true, preload: 'metadata', src: sample.audio_url }),
                 )) : _.small('No tone samples uploaded yet.')),
                 _.div({ class: 'at-uploadAudioVoiceActions' },
-                    _.Btn({ dense: true, color: 'secondary', icon: 'edit', title: 'Edit voice', onClick: () => openVoiceDialog(voice) }),
+                    _.Btn({ dense: true, color: 'secondary', icon: 'edit', title: voice.provider === 'at-qwen-design' ? 'Edit design voice' : 'Edit voice', onClick: () => voice.provider === 'at-qwen-design' ? openDesignVoiceDialog(voice) : openVoiceDialog(voice) }),
                     _.Btn({ dense: true, color: 'danger', icon: 'delete_outline', title: 'Delete voice', onClick: () => deleteVoice(voice) }),
                 ),
             ))) : _.div({ class: 'at-uploadAudioEmpty' }, _.Icon ? _.Icon({ name: 'library_music' }) : '◌', _.h3('Your audio library is empty'), _.p('Add a voice and upload its tone samples to reuse it across books.'), _.Btn({ color: 'primary', icon: 'add', onClick: () => openVoiceDialog() }, 'Add first voice')),

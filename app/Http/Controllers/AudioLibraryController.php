@@ -37,11 +37,21 @@ class AudioLibraryController extends Controller
 
     public function storeDesignedVoice(Request $request, QwenTtsService $qwen): JsonResponse
     {
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:160'],
-            'type' => ['required', 'in:male,female,neutral'],
-            'language' => ['required', 'string', 'max:20'],
-            'description' => ['nullable', 'string', 'max:5000'],
+        return $this->saveDesignedVoice($request, new AudioLibraryVoice, $qwen, 201);
+    }
+
+    public function updateDesignedVoice(Request $request, AudioLibraryVoice $voice, QwenTtsService $qwen): JsonResponse
+    {
+        abort_unless($voice->account_id === auth()->id() && $voice->provider === 'at-qwen-design', 404);
+        $data = $this->validateDesignedVoiceDetails($request);
+        $voice->fill($data)->save();
+
+        return response()->json(['data' => ['voice' => $this->voice($voice->fresh('samples.toneDefinition'))]]);
+    }
+
+    private function saveDesignedVoice(Request $request, AudioLibraryVoice $voice, QwenTtsService $qwen, int $status = 200): JsonResponse
+    {
+        $data = $this->validateDesignedVoiceDetails($request) + $request->validate([
             'tones' => ['required', 'array', 'min:1', 'max:20'],
             'tones.*.tone_id' => ['required', 'integer', 'exists:audio_library_tones,id'],
             'tones.*.design_prompt' => ['required', 'string', 'max:5000'],
@@ -49,30 +59,13 @@ class AudioLibraryController extends Controller
         ]);
 
         try {
-            $voice = AudioLibraryVoice::query()->create([
+            $voice->fill([
                 ...collect($data)->only(['name', 'type', 'language', 'description'])->all(),
-                'account_id' => auth()->id(),
+                'account_id' => $voice->account_id ?: auth()->id(),
                 'provider' => 'at-qwen-design',
-            ]);
+            ])->save();
             foreach ($data['tones'] as $toneData) {
-                $tone = AudioLibraryTone::query()->findOrFail($toneData['tone_id']);
-                $instruct = trim(implode("\n\n", array_filter([
-                    $data['description'] ?? null,
-                    $toneData['design_prompt'],
-                ])));
-                $result = $qwen->designVoice($toneData['reference_text'], $data['language'], $instruct);
-                $audioPath = "audio-library/{$voice->id}/design-".Str::uuid().'.wav';
-                Storage::disk('public')->put($audioPath, $qwen->download($result['audio_url']));
-                $voice->samples()->create([
-                    'tone_id' => $tone->id,
-                    'tone' => $tone->name,
-                    'description' => $toneData['design_prompt'],
-                    'design_prompt' => $toneData['design_prompt'],
-                    'reference_text' => $toneData['reference_text'],
-                    'audio_path' => $audioPath,
-                    'original_name' => 'qwen-voice-design.wav',
-                    'duration_ms' => $result['duration_ms'] ?? null,
-                ]);
+                $this->generateDesignedTone($voice, $data, $toneData, null, $qwen);
             }
         } catch (\Throwable $exception) {
             report($exception);
@@ -80,7 +73,84 @@ class AudioLibraryController extends Controller
             return response()->json(['message' => 'Voice design could not be completed. Please try again.'], 502);
         }
 
-        return response()->json(['data' => ['voice' => $this->voice($voice->fresh('samples.toneDefinition'))]], 201);
+        return response()->json(['data' => ['voice' => $this->voice($voice->fresh('samples.toneDefinition'))]], $status);
+    }
+
+    public function regenerateDesignedTone(Request $request, AudioLibraryVoice $voice, QwenTtsService $qwen): JsonResponse
+    {
+        abort_unless($voice->account_id === auth()->id() && $voice->provider === 'at-qwen-design', 404);
+        $data = $this->validateDesignedVoiceDetails($request) + $request->validate([
+            'tone.id' => ['nullable', 'integer'],
+            'tone.tone_id' => ['required', 'integer', 'exists:audio_library_tones,id'],
+            'tone.design_prompt' => ['required', 'string', 'max:5000'],
+            'tone.reference_text' => ['required', 'string', 'max:1000'],
+        ]);
+        $sample = filled($data['tone']['id'] ?? null) ? $voice->samples()->findOrFail($data['tone']['id']) : null;
+
+        try {
+            $voice->fill(collect($data)->only(['name', 'type', 'language', 'description'])->all())->save();
+            $this->generateDesignedTone($voice, $data, $data['tone'], $sample, $qwen);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return response()->json(['message' => 'Tone design could not be completed. Please try again.'], 502);
+        }
+
+        return response()->json(['data' => ['voice' => $this->voice($voice->fresh('samples.toneDefinition'))]]);
+    }
+
+    public function destroyDesignedTone(AudioLibraryVoice $voice, AudioLibraryVoiceSample $sample): JsonResponse
+    {
+        abort_unless($voice->account_id === auth()->id() && $voice->provider === 'at-qwen-design' && $sample->audio_library_voice_id === $voice->id, 404);
+        Storage::disk('public')->delete($sample->audio_path);
+        $sample->delete();
+
+        return response()->json(['data' => ['deleted' => true]]);
+    }
+
+    private function validateDesignedVoiceDetails(Request $request): array
+    {
+        return $request->validate([
+            'name' => ['required', 'string', 'max:160'],
+            'type' => ['required', 'in:male,female,neutral'],
+            'language' => ['required', 'string', 'max:20'],
+            'description' => ['nullable', 'string', 'max:5000'],
+        ]);
+    }
+
+    private function generateDesignedTone(AudioLibraryVoice $voice, array $voiceData, array $toneData, ?AudioLibraryVoiceSample $sample, QwenTtsService $qwen): void
+    {
+        $tone = AudioLibraryTone::query()->findOrFail($toneData['tone_id']);
+        $instruct = trim(implode("\n\n", array_filter([
+            $this->designGenderInstruction($voiceData['type']), $this->designLanguageInstruction($voiceData['language']), $voiceData['description'] ?? null, $toneData['design_prompt'],
+        ])));
+        $result = $qwen->designVoice($toneData['reference_text'], $voiceData['language'], $instruct);
+        $audioPath = "audio-library/{$voice->id}/design-".Str::uuid().'.wav';
+        Storage::disk('public')->put($audioPath, $qwen->download($result['audio_url']));
+        $previousPath = $sample?->audio_path;
+        ($sample ?: new AudioLibraryVoiceSample(['audio_library_voice_id' => $voice->id]))->fill([
+            'tone_id' => $tone->id, 'tone' => $tone->name, 'description' => $toneData['design_prompt'], 'design_prompt' => $toneData['design_prompt'], 'reference_text' => $toneData['reference_text'], 'audio_path' => $audioPath, 'original_name' => 'qwen-voice-design.wav', 'duration_ms' => $result['duration_ms'] ?? null,
+        ])->save();
+        if ($previousPath) Storage::disk('public')->delete($previousPath);
+    }
+
+    private function designGenderInstruction(string $type): string
+    {
+        return match ($type) {
+            'male' => 'Voice gender requirement: male. Generate a clearly masculine adult male voice; never a female voice.',
+            'female' => 'Voice gender requirement: female. Generate a clearly feminine adult female voice; never a male voice.',
+            default => 'Voice gender requirement: neutral. Generate an androgynous, gender-neutral adult voice.',
+        };
+    }
+
+    private function designLanguageInstruction(string $language): string
+    {
+        $name = [
+            'it' => 'Italian', 'en' => 'English', 'es' => 'Spanish',
+            'fr' => 'French', 'de' => 'German', 'pt' => 'Portuguese',
+        ][$language] ?? $language;
+
+        return "Voice language requirement: {$name} ({$language}). Speak only in {$name}; do not use English unless {$name} is English.";
     }
 
     public function update(Request $request, AudioLibraryVoice $voice, QwenTtsService $qwen): JsonResponse

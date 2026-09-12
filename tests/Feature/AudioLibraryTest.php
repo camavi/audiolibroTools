@@ -113,6 +113,52 @@ class AudioLibraryTest extends TestCase
         $sample = AudioLibraryVoice::query()->firstOrFail()->samples()->firstOrFail();
         Storage::disk('public')->assertExists($sample->audio_path);
         Http::assertSent(fn ($request) => str_ends_with($request->url(), '/v1/voice-design')
-            && $request['instruct'] === "Italian adult narrator with a warm, clear voice.\n\nCalm, evocative and intimate documentary narration.");
+            && $request['instruct'] === "Voice gender requirement: female. Generate a clearly feminine adult female voice; never a male voice.\n\nVoice language requirement: Italian (it). Speak only in Italian; do not use English unless Italian is English.\n\nItalian adult narrator with a warm, clear voice.\n\nCalm, evocative and intimate documentary narration.");
+    }
+
+    public function test_qwen_designed_voice_can_save_details_and_regenerate_one_tone_without_an_audio_upload(): void
+    {
+        Storage::fake('public');
+        Http::fake([
+            'http://127.0.0.1:8020/v1/voice-design' => Http::response([
+                'data' => ['audio_url' => '/v1/audio/designed-voice', 'duration_ms' => 3600],
+            ], 201),
+            'http://127.0.0.1:8020/v1/audio/designed-voice' => Http::response('generated-wav'),
+        ]);
+        $voice = AudioLibraryVoice::query()->create([
+            'account_id' => auth()->id(), 'name' => 'Old design', 'type' => 'female', 'language' => 'it', 'provider' => 'at-qwen-design',
+        ]);
+        $oldSample = $voice->samples()->create([
+            'tone_id' => 1, 'tone' => 'whisper', 'audio_path' => "audio-library/{$voice->id}/old.wav", 'original_name' => 'old.wav',
+        ]);
+        Storage::disk('public')->put($oldSample->audio_path, 'old-wav');
+
+        $this->postJson("/dashboard/api/audio-library/design-voices/{$voice->id}", [
+            'name' => 'Updated design',
+            'type' => 'neutral',
+            'language' => 'en',
+            'description' => 'Clear, young adult narrator.',
+        ])->assertOk()
+            ->assertJsonPath('data.voice.name', 'Updated design');
+
+        Storage::disk('public')->assertExists($oldSample->audio_path);
+
+        $this->postJson("/dashboard/api/audio-library/design-voices/{$voice->id}/tones", [
+            'name' => 'Updated design',
+            'type' => 'neutral',
+            'language' => 'en',
+            'description' => 'Clear, young adult narrator.',
+            'tone' => [
+                'id' => $oldSample->id,
+                'tone_id' => 32,
+                'design_prompt' => 'Relaxed, measured and reassuring.',
+                'reference_text' => 'This is the new reference phrase.',
+            ],
+        ])->assertOk()
+            ->assertJsonPath('data.voice.samples.0.tone.id', 32)
+            ->assertJsonPath('data.voice.samples.0.design_prompt', 'Relaxed, measured and reassuring.');
+
+        Storage::disk('public')->assertMissing($oldSample->audio_path);
+        $this->assertDatabaseCount('audio_library_voice_samples', 1);
     }
 }

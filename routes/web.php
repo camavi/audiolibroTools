@@ -113,6 +113,9 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
     Route::get('/audio-library/voices', [AudioLibraryController::class, 'index'])->name('audio-library.voices');
     Route::post('/audio-library/voices', [AudioLibraryController::class, 'store'])->name('audio-library.voices.store');
     Route::post('/audio-library/design-voices', [AudioLibraryController::class, 'storeDesignedVoice'])->middleware('throttle:qwen')->name('audio-library.design-voices.store');
+    Route::post('/audio-library/design-voices/{voice}', [AudioLibraryController::class, 'updateDesignedVoice'])->middleware('throttle:qwen')->name('audio-library.design-voices.update');
+    Route::post('/audio-library/design-voices/{voice}/tones', [AudioLibraryController::class, 'regenerateDesignedTone'])->middleware('throttle:qwen')->name('audio-library.design-voices.tones.regenerate');
+    Route::delete('/audio-library/design-voices/{voice}/tones/{sample}', [AudioLibraryController::class, 'destroyDesignedTone'])->name('audio-library.design-voices.tones.destroy');
     Route::get('/audio-library/samples/{sample}/stream', [AudioLibraryController::class, 'stream'])->name('audio-library.samples.stream');
     Route::post('/audio-library/voices/{voice}', [AudioLibraryController::class, 'update'])->name('audio-library.voices.update');
     Route::delete('/audio-library/voices/{voice}', [AudioLibraryController::class, 'destroy'])->name('audio-library.voices.destroy');

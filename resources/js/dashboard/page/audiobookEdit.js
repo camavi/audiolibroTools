@@ -129,6 +129,10 @@ function stopBookAudioProgressPolling() {
     bookAudioProgressTimer = null;
 }
 
+function bookAudioGenerationIsActive() {
+    return bookAudioGenerating.value || Boolean(bookAudioProgress.value?.active);
+}
+
 function startBookAudioProgressPolling(keyBook, jobIds) {
     const ids = [...new Set((jobIds || []).map(Number).filter(Number.isInteger))];
     if (!keyBook) return;
@@ -1697,11 +1701,12 @@ function openPublishDialog(keyBook) {
 }
 
 function openGenerateBookAudioDialog(keyBook) {
+    if (bookAudioGenerationIsActive()) return;
     const regenerate = _.rod(false);
     const model = _.rod(voiceEngineMode.value);
     const status = _.rod(null);
-    const generate = async () => {
-        if (bookAudioGenerating.value) return;
+    const generate = async (close) => {
+        if (bookAudioGenerationIsActive()) return;
         bookAudioGenerating.value = true;
         status.value = null;
         try {
@@ -1724,6 +1729,7 @@ function openGenerateBookAudioDialog(keyBook) {
                 bookAudioProgress.value = { total: jobIds.length, processed: 0, percent: 0, queued: jobIds.length, running: 0, completed: 0, failed: 0, active: true };
                 startBookAudioProgressPolling(keyBook, jobIds);
             }
+            close();
             await loadBlockAudio(keyBook);
         } catch (error) {
             status.value = { type: 'danger', message: error.message || 'Unable to generate the book audio.' };
@@ -1755,7 +1761,7 @@ function openGenerateBookAudioDialog(keyBook) {
                     );
                 },
                 () => status.value ? _.Alert(status.value) : null,
-                _.div({ class: 'at-characterDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close'), _.Btn({ color: 'primary', icon: 'play_circle', loading: bookAudioGenerating, onClick: generate }, 'Generate book audio')),
+                _.div({ class: 'at-characterDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close'), _.Btn({ color: 'primary', icon: 'play_circle', loading: bookAudioGenerating, onClick: () => generate(close) }, 'Generate book audio')),
             ),
         },
     }).open();
@@ -3202,7 +3208,7 @@ export default function audiobookEdit(ctx) {
             _.div(_.span({ class: 'at-audiobookEyebrow' }, 'Audiobook studio'), _.h2(() => audiobookBook.value?.name || 'Loading audiobook…')),
             _.div({ class: 'at-audiobookTopbarActions' },
                 _.Btn({ color: 'secondary', icon: 'graphic_eq', onClick: openAudioDirectionDialog }, 'Audio direction'),
-                _.Btn({ color: 'secondary', icon: 'queue_play_next', loading: bookAudioGenerating, onClick: () => openGenerateBookAudioDialog(keyBook) }, 'Generate book audio'),
+                _.Btn({ color: 'secondary', icon: 'queue_play_next', loading: () => bookAudioGenerationIsActive(), disabled: () => bookAudioGenerationIsActive(), onClick: () => openGenerateBookAudioDialog(keyBook) }, () => bookAudioGenerationIsActive() ? 'Generating book audio…' : 'Generate book audio'),
                 _.Btn({ color: 'secondary', icon: 'playlist_add', loading: allAudioInserting, onClick: () => openInsertAllAudioDialog(keyBook) }, 'Insert all audio'),
                 _.Btn({ color: 'secondary', icon: 'format_list_bulleted', onClick: (event) => openAudiobookIndexMenu(event.currentTarget, keyBook) }, 'Book index'),
             ),

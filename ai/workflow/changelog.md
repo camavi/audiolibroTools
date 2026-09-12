@@ -1,5 +1,10 @@
 # Registro Avanzamento
 
+## 2026-09-12
+
+- Corretto l'editor delle voci progettate nella libreria Audio: il comando Edit riconosce il provider `at-qwen-design`, mostra i prompt, le frasi di riferimento e un player per il sample salvato senza upload file e rigenera ogni sample singolarmente. Il footer salva solo i dettagli della voce. I requisiti di genere (maschile, femminile o neutro) e lingua vengono ora inviati esplicitamente al motore Qwen; le nuove frasi di riferimento predefinite sono localizzate per ogni lingua supportata.
+- La dialog Generate book audio si chiude appena il batch e' accodato; il comando principale resta disabilitato e mostra `Generating book audio…` fino al termine o annullamento del processo.
+
 ## 2026-09-09
 
 - Collegato LM Studio al tool Correct: le correzioni locali usano `chat/completions`, con prompt e metadata coerenti con gli altri provider.
