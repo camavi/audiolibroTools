@@ -3,6 +3,10 @@
 ## 2026-09-12
 
 - Corretto l'editor delle voci progettate nella libreria Audio: il comando Edit riconosce il provider `at-qwen-design`, mostra i prompt, le frasi di riferimento e un player per il sample salvato senza upload file e rigenera ogni sample singolarmente. Il footer salva solo i dettagli della voce. I requisiti di genere (maschile, femminile o neutro) e lingua vengono ora inviati esplicitamente al motore Qwen; le nuove frasi di riferimento predefinite sono localizzate per ogni lingua supportata.
+- La timeline non scarica piu' tutte le waveform e tutti i player al caricamento: la waveform viene richiesta solo selezionando un clip o aprendo un gruppo, con al massimo due download simultanei; i player vengono creati quando il playhead raggiunge il relativo audio.
+- Il canvas della timeline resta alla larghezza del viewport: la finestra temporale limita la durata disegnata, evitando bitmap enormi e canvas bianchi nei libri molto lunghi.
+- Il righello della timeline sceglie ora intervalli in base alla durata e alla larghezza disponibile, con etichette `mm:ss` o `hh:mm:ss`, evitando sovrapposizioni nei libri lunghi.
+- Le timeline lunghe aprono una finestra iniziale di circa dieci minuti, anziche' comprimere l'intero libro: zoom e barra di navigazione spostano la finestra lungo la durata completa, e la vista segue il playhead in riproduzione.
 - La dialog Generate book audio si chiude appena il batch e' accodato; il comando principale resta disabilitato e mostra `Generating book audio…` fino al termine o annullamento del processo.
 
 ## 2026-09-09

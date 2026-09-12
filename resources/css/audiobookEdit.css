@@ -110,6 +110,69 @@
     font-size: .74rem;
 }
 
+.at-audioTimelineNavigator {
+    width: 100%;
+    height: 1.5rem;
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    cursor: ew-resize;
+}
+
+.at-audioTimelineNavigator::-webkit-slider-runnable-track {
+    height: .42rem;
+    border: 1px solid #516176;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #3b82f6 0 var(--at-navigation-progress, 0%), #26364c var(--at-navigation-progress, 0%) 100%);
+    box-shadow: inset 0 1px 2px rgb(2 6 23 / 70%);
+}
+
+.at-audioTimelineNavigator::-webkit-slider-thumb {
+    width: 1rem;
+    height: 1rem;
+    margin-top: calc((.42rem - 1rem) / 2);
+    appearance: none;
+    -webkit-appearance: none;
+    border: 2px solid #bfdbfe;
+    border-radius: 50%;
+    background: #2563eb;
+    box-shadow: 0 1px 5px rgb(2 6 23 / 75%);
+}
+
+.at-audioTimelineNavigator::-moz-range-track {
+    height: .42rem;
+    border: 1px solid #516176;
+    border-radius: 999px;
+    background: #26364c;
+    box-shadow: inset 0 1px 2px rgb(2 6 23 / 70%);
+}
+
+.at-audioTimelineNavigator::-moz-range-progress {
+    height: .42rem;
+    border-radius: 999px;
+    background: #3b82f6;
+}
+
+.at-audioTimelineNavigator::-moz-range-thumb {
+    width: .78rem;
+    height: .78rem;
+    border: 2px solid #bfdbfe;
+    border-radius: 50%;
+    background: #2563eb;
+    box-shadow: 0 1px 5px rgb(2 6 23 / 75%);
+}
+
+.at-audioTimelineNavigator:hover::-webkit-slider-thumb,
+.at-audioTimelineNavigator:focus-visible::-webkit-slider-thumb {
+    border-color: #fff;
+    background: #60a5fa;
+}
+
+.at-audioTimelineNavigator:focus-visible {
+    outline: none;
+}
+
 .at-bookAudioProgress {
     display: grid;
     gap: .7rem;
@@ -1818,9 +1881,48 @@
 
 .at-audioTimelineFrame {
     display: flex;
-    height: min(48vh, 360px);
+    height: min(calc(48vh - 2.35rem), 324px);
     overflow: hidden;
     background: var(--at-text)
+}
+
+.at-audioTimelineNavigation {
+    display: grid;
+    grid-template-columns: 170px minmax(0, 1fr);
+    align-items: center;
+    height: 2.35rem;
+    padding: .2rem .7rem .35rem 0;
+    border-top: 1px solid #29384d;
+    background: #111a29;
+}
+
+.at-audioTimelineNavigationControl {
+    display: grid;
+    grid-template-columns: auto minmax(4rem, 1fr) auto;
+    align-items: center;
+    gap: .6rem;
+    min-width: 0;
+    padding: .08rem .55rem;
+    border: 1px solid #314157;
+    border-radius: .42rem;
+    background: #0d1522;
+}
+
+.at-audioTimelineNavigationWindow,
+.at-audioTimelineNavigationTotal {
+    color: #9fb3cc;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .66rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.at-audioTimelineNavigationTotal {
+    color: #d5dfed;
+}
+
+.at-audioTimelineNavigation .at-audioTimelineNavigator {
+    min-width: 0;
 }
 
 .at-audioTimelineChannelViewport {

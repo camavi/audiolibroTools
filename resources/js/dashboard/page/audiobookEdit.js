@@ -46,6 +46,7 @@ const generatorSettings = _.rod(null);
 const voiceProfilesLoading = _.rod(false);
 const timelineCues = _.rod([]);
 const timelineZoom = _.rod(1);
+const timelineViewStart = _.rod(0);
 const timelineItems = _.rod([]);
 const timelinePlayhead = _.rod(0);
 const timelineLoopRange = _.rod(null);
@@ -66,6 +67,9 @@ const timelineMeterLevel = _.rod(0);
 const timelineTrackMeterLevels = _.rod({ voice: 0, music: 0, fx: 0 });
 const timelineWaveforms = new Map();
 const pendingTimelineWaveforms = new Set();
+const queuedTimelineWaveforms = [];
+let activeTimelineWaveformLoads = 0;
+const maxTimelineWaveformLoads = 2;
 let timelineAudioContext = null;
 let timelineMasterLimiter = null;
 let timelineMeterAnalyser = null;
@@ -363,6 +367,9 @@ async function loadTimeline(keyBook) {
         const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/audio-timeline${audioEditionQuery()}`);
         const data = audioData(payload);
         timelineItems.value = data.items || [];
+        const overview = timelineOverviewDuration();
+        timelineZoom.value = overview > 600 ? Math.min(64, Math.ceil(overview / 600)) : 1;
+        timelineViewStart.value = 0;
         timelineEqualizer.value = normalizeTimelineEqualizer(data.equalizer);
         selectedTimelineItemKey.value = null;
         selectedTimelineItemKeys.value = [];
@@ -876,36 +883,48 @@ function timelinePlayableParts(item) {
 function timelineWaveform(url) {
     if (!url || timelineWaveforms.has(url) || pendingTimelineWaveforms.has(url)) return timelineWaveforms.get(url) || null;
     pendingTimelineWaveforms.add(url);
+    queuedTimelineWaveforms.push(url);
+    processTimelineWaveformQueue();
+    return null;
+}
+
+function processTimelineWaveformQueue() {
+    while (activeTimelineWaveformLoads < maxTimelineWaveformLoads && queuedTimelineWaveforms.length) {
+        const url = queuedTimelineWaveforms.shift();
+        if (!pendingTimelineWaveforms.has(url)) continue;
+        activeTimelineWaveformLoads += 1;
     // CMSwift's JSON helpers intentionally parse response bodies. A WAV must be
     // decoded as an ArrayBuffer by the browser Web Audio API, so this is the
     // one technical use of fetch in the dashboard.
-    fetch(url)
-        .then((response) => {
-            if (!response.ok) throw new Error(`Unable to read audio (${response.status})`);
-            return response.arrayBuffer();
-        })
-        .then(async (buffer) => {
-            timelineAudioContext ||= new (window.AudioContext || window.webkitAudioContext)();
-            const decoded = await timelineAudioContext.decodeAudioData(buffer.slice(0));
-            const buckets = Math.min(360, Math.max(48, Math.ceil(decoded.duration * 90)));
-            const samples = Array.from({ length: buckets }, (_, bucket) => {
-                const start = Math.floor((bucket / buckets) * decoded.length);
-                const end = Math.max(start + 1, Math.floor(((bucket + 1) / buckets) * decoded.length));
-                let peak = 0;
-                for (let channel = 0; channel < decoded.numberOfChannels; channel += 1) {
-                    const channelData = decoded.getChannelData(channel);
-                    for (let index = start; index < end; index += 1) peak = Math.max(peak, Math.abs(channelData[index] || 0));
-                }
-                return peak;
+        fetch(url)
+            .then((response) => {
+                if (!response.ok) throw new Error(`Unable to read audio (${response.status})`);
+                return response.arrayBuffer();
+            })
+            .then(async (buffer) => {
+                timelineAudioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+                const decoded = await timelineAudioContext.decodeAudioData(buffer.slice(0));
+                const buckets = Math.min(360, Math.max(48, Math.ceil(decoded.duration * 90)));
+                const samples = Array.from({ length: buckets }, (_, bucket) => {
+                    const start = Math.floor((bucket / buckets) * decoded.length);
+                    const end = Math.max(start + 1, Math.floor(((bucket + 1) / buckets) * decoded.length));
+                    let peak = 0;
+                    for (let channel = 0; channel < decoded.numberOfChannels; channel += 1) {
+                        const channelData = decoded.getChannelData(channel);
+                        for (let index = start; index < end; index += 1) peak = Math.max(peak, Math.abs(channelData[index] || 0));
+                    }
+                    return peak;
+                });
+                timelineWaveforms.set(url, samples);
+            })
+            .catch(() => timelineWaveforms.set(url, []))
+            .finally(() => {
+                activeTimelineWaveformLoads -= 1;
+                pendingTimelineWaveforms.delete(url);
+                renderTimeline?.();
+                processTimelineWaveformQueue();
             });
-            timelineWaveforms.set(url, samples);
-        })
-        .catch(() => timelineWaveforms.set(url, []))
-        .finally(() => {
-            pendingTimelineWaveforms.delete(url);
-            renderTimeline?.();
-        });
-    return null;
+    }
 }
 
 function drawWaveform(ctx, samples, x, y, width, height, tint) {
@@ -945,10 +964,40 @@ function drawTimelineClipWaveforms(ctx, item, x, y, width, height) {
 }
 function timelineContentEnd() { return Math.max(0, ...timelineItems.value.map((item) => (item.start_ms + item.duration_ms) / 1000)); }
 function timelineEnd() { return Math.max(90, timelineContentEnd()); }
-function timelineDisplayDuration() { return Math.max(90 / timelineZoom.value, timelineContentEnd() + 5); }
+function timelineOverviewDuration() { return Math.max(90, timelineContentEnd() + 5); }
+function timelineDisplayDuration() { return Math.max(30, timelineOverviewDuration() / timelineZoom.value); }
+function maxTimelineViewStart() { return Math.max(0, timelineOverviewDuration() - timelineDisplayDuration()); }
+function clampTimelineViewStart(value) { return Math.max(0, Math.min(maxTimelineViewStart(), Number(value) || 0)); }
+function setTimelineZoom(value) {
+    const previousDuration = timelineDisplayDuration();
+    const focus = Math.max(timelineViewStart.value, Math.min(timelineViewStart.value + previousDuration, timelinePlayhead.value));
+    const focusRatio = previousDuration ? (focus - timelineViewStart.value) / previousDuration : .5;
+    timelineZoom.value = Math.max(1, Math.min(64, value));
+    timelineViewStart.value = clampTimelineViewStart(focus - timelineDisplayDuration() * focusRatio);
+}
+function keepTimelinePlayheadVisible() {
+    const duration = timelineDisplayDuration();
+    const margin = duration * .18;
+    if (timelinePlayhead.value < timelineViewStart.value + margin || timelinePlayhead.value > timelineViewStart.value + duration - margin) {
+        timelineViewStart.value = clampTimelineViewStart(timelinePlayhead.value - duration / 2);
+    }
+}
 function timelineCanvasWidth(canvas, duration) {
     const viewportWidth = Math.max(1, canvas.parentElement?.clientWidth || canvas.clientWidth || 1);
-    return Math.ceil(Math.max(viewportWidth, viewportWidth * timelineZoom.value * duration / 90));
+    return Math.ceil(viewportWidth);
+}
+function timelineRulerStep(duration, width) {
+    const target = Math.max(1, duration / Math.max(1, Math.floor(width / 96)));
+    return [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600].find((step) => step >= target) || 3600;
+}
+function formatTimelineRulerTime(seconds) {
+    const total = Math.max(0, Math.floor(seconds));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const remainder = total % 60;
+    return hours
+        ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+        : `${minutes}:${String(remainder).padStart(2, '0')}`;
 }
 function timelineClipGainY(clipY, clipHeight, volume) {
     const level = Math.max(0, Math.min(1, Number(volume ?? 100) / 100));
@@ -1154,12 +1203,6 @@ function seekTimelinePlayer(audio, mediaTime) {
     audio._atSeekFallback = window.setTimeout(() => resumeTimelinePlayerAfterSeek(audio), 180);
     return false;
 }
-function preloadTimelinePlayers() {
-    timelineItems.value.forEach((item) => timelinePlayableParts(item).forEach((part) => {
-        const url = timelineAudioUrl(part);
-        if (url) prepareTimelinePlayer(timelinePartPlayerKey(item, part), url);
-    }));
-}
 function syncTimelinePlayers(playhead, seek = false) {
     const activeKeys = new Set();
     let nextReading = null;
@@ -1252,9 +1295,6 @@ function startTimelinePlayback(render) {
     timelinePausedAt = null;
     const available = timelineItems.value.some((item) => timelineAudioUrl(item));
     if (!available) audioStatus.value = { type: 'info', message: 'The playhead is running. There are no playable audio files in the timeline yet.' };
-    // The voice engine creates many short WAV parts. Preloading them prevents a network
-    // and decoder gap each time playback moves to the next spoken segment.
-    preloadTimelinePlayers();
     timelineIsPlaying.value = true;
     timelineStartedAt = performance.now() - timelinePlayhead.value * 1000;
     const tick = (now) => {
@@ -1267,6 +1307,7 @@ function startTimelinePlayback(render) {
         }
         if (next >= timelineEnd()) { timelinePlayhead.value = timelineEnd(); pauseTimelinePlayback(); render(); return; }
         timelinePlayhead.value = next;
+        keepTimelinePlayheadVisible();
         syncTimelinePlayers(next);
         render();
         timelineFrame = window.requestAnimationFrame(tick);
@@ -2768,6 +2809,8 @@ function drawTimeline(canvas, labelCanvas) {
     const rulerHeight = 34;
     const requestedHeight = Math.max(330, rulerHeight + lanes.length * 100);
     const duration = timelineDisplayDuration();
+    const viewStart = clampTimelineViewStart(timelineViewStart.value);
+    const viewEnd = viewStart + duration;
     const requestedWidth = timelineCanvasWidth(canvas, duration);
     if (Math.round(canvas.getBoundingClientRect().height) !== requestedHeight) canvas.style.height = `${requestedHeight}px`;
     if (Math.round(canvas.getBoundingClientRect().width) !== requestedWidth) canvas.style.width = `${requestedWidth}px`;
@@ -2786,18 +2829,19 @@ function drawTimeline(canvas, labelCanvas) {
     ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, width, height);
     ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, width, rulerHeight);
     ctx.font = '11px Inter, sans-serif'; ctx.textBaseline = 'middle';
-    for (let second = 0; second <= duration; second += 5) {
-        const x = width * second / duration;
-        ctx.strokeStyle = second % 10 === 0 ? 'rgba(148,163,184,.34)' : 'rgba(148,163,184,.16)';
+    const rulerStep = timelineRulerStep(duration, width);
+    for (let second = Math.ceil(viewStart / rulerStep) * rulerStep; second <= viewEnd; second += rulerStep) {
+        const x = width * (second - viewStart) / duration;
+        ctx.strokeStyle = 'rgba(148,163,184,.34)';
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
-        ctx.fillStyle = '#94a3b8'; ctx.fillText(`${second}s`, x + 4, 17);
+        ctx.fillStyle = '#94a3b8'; ctx.fillText(formatTimelineRulerTime(second), x + 4, 17);
     }
     lanes.forEach(({ key: trackKey, label: name, color, lane }, index) => {
         const y = rulerHeight + index * rowHeight;
         ctx.fillStyle = timelineLaneBackground(trackKey, lane); ctx.fillRect(0, y, width, rowHeight - 1);
-        timelineItems.value.filter((item) => item.track === trackKey && Number(item.lane || 0) === lane).forEach((item) => {
-            const x = width * (item.start_ms / 1000) / duration;
-            const clipWidth = Math.max(28, width * (item.duration_ms / 1000) / duration);
+        timelineItems.value.filter((item) => item.track === trackKey && Number(item.lane || 0) === lane && (item.start_ms + item.duration_ms) / 1000 >= viewStart && item.start_ms / 1000 <= viewEnd).forEach((item) => {
+            const x = width * (item.start_ms / 1000 - viewStart) / duration;
+            const clipWidth = Math.max(3, width * (item.duration_ms / 1000) / duration);
             const selected = selectedTimelineItemKeys.value.includes(timelineItemKey(item));
             const expanded = isTimelineGroupExpanded(item);
             const clipY = y + 9;
@@ -2817,7 +2861,7 @@ function drawTimeline(canvas, labelCanvas) {
                         ctx.fillText(`${partIndex + 1}`, partX + 6, y + rowHeight / 2);
                     }
                 });
-            } else {
+            } else if (selected) {
                 drawTimelineClipWaveforms(ctx, item, x, clipY, clipWidth, clipHeight);
             }
             if (selected) {
@@ -2855,25 +2899,26 @@ function drawTimeline(canvas, labelCanvas) {
                     ctx.beginPath(); ctx.moveTo(dividerX, y + 11); ctx.lineTo(dividerX, y + rowHeight - 12); ctx.stroke();
                 });
             }
-            if (!expanded) {
+            if (!expanded && clipWidth > 70) {
                 ctx.fillStyle = 'rgba(255,255,255,.82)'; ctx.fillText(item.label, x + 6, y + rowHeight / 2);
             }
         });
     });
     timelineCues.value.forEach((cue) => {
-        const x = width * cue / duration;
+        if (cue < viewStart || cue > viewEnd) return;
+        const x = width * (cue - viewStart) / duration;
         ctx.fillStyle = '#fbbf24'; ctx.beginPath(); ctx.moveTo(x - 4, 0); ctx.lineTo(x + 4, 0); ctx.lineTo(x, 7); ctx.closePath(); ctx.fill();
     });
     const loop = timelineLoopRange.value;
     if (loop) {
-        const loopStartX = width * loop.start / duration;
-        const loopEndX = width * loop.end / duration;
+        const loopStartX = width * (loop.start - viewStart) / duration;
+        const loopEndX = width * (loop.end - viewStart) / duration;
         ctx.fillStyle = 'rgba(59,130,246,.13)'; ctx.fillRect(loopStartX, rulerHeight, Math.max(1, loopEndX - loopStartX), height - rulerHeight);
         ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.moveTo(loopStartX, 0); ctx.lineTo(loopStartX, height); ctx.moveTo(loopEndX, 0); ctx.lineTo(loopEndX, height); ctx.stroke();
         ctx.fillStyle = '#bfdbfe'; ctx.fillText('LOOP', loopStartX + 5, 17);
     }
-    const playheadX = width * timelinePlayhead.value / duration;
+    const playheadX = width * (timelinePlayhead.value - viewStart) / duration;
     ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(playheadX, 0); ctx.lineTo(playheadX, height); ctx.stroke();
 }
 
@@ -2890,7 +2935,39 @@ function timelineCard() {
     scroller.tabIndex = 0;
     scroller.setAttribute('aria-label', 'Scrollable audio timeline');
     scroller.append(canvas);
-    const render = () => drawTimeline(canvas, labelCanvas);
+    const navigator = document.createElement('input');
+    navigator.type = 'range';
+    navigator.className = 'at-audioTimelineNavigator';
+    navigator.setAttribute('aria-label', 'Timeline position');
+    navigator.addEventListener('input', () => { timelineViewStart.value = clampTimelineViewStart(navigator.value); render(); });
+    const navigatorWindow = document.createElement('span');
+    navigatorWindow.className = 'at-audioTimelineNavigationWindow';
+    const navigatorTotal = document.createElement('span');
+    navigatorTotal.className = 'at-audioTimelineNavigationTotal';
+    const navigatorControl = document.createElement('div');
+    navigatorControl.className = 'at-audioTimelineNavigationControl';
+    navigatorControl.append(navigatorWindow, navigator, navigatorTotal);
+    const render = () => {
+        const maximum = maxTimelineViewStart();
+        const viewStart = clampTimelineViewStart(timelineViewStart.value);
+        const viewEnd = Math.min(timelineOverviewDuration(), viewStart + timelineDisplayDuration());
+        navigator.max = String(maximum);
+        navigator.value = String(viewStart);
+        navigator.disabled = maximum <= 0;
+        navigator.style.setProperty('--at-navigation-progress', `${maximum ? (viewStart / maximum) * 100 : 0}%`);
+        navigatorWindow.textContent = `${formatTimelineRulerTime(viewStart)} – ${formatTimelineRulerTime(viewEnd)}`;
+        navigatorTotal.textContent = formatTimelineRulerTime(timelineOverviewDuration());
+        drawTimeline(canvas, labelCanvas);
+    };
+    scroller.addEventListener('wheel', (event) => {
+        if (event.ctrlKey || event.metaKey || maxTimelineViewStart() <= 0) return;
+        const horizontalDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+        if (!horizontalDelta) return;
+        event.preventDefault();
+        const width = Math.max(1, canvas.getBoundingClientRect().width);
+        timelineViewStart.value = clampTimelineViewStart(timelineViewStart.value + horizontalDelta * timelineDisplayDuration() / width);
+        render();
+    }, { passive: false });
     renderTimeline = render;
     renderTimelineMeters = () => {
         const rect = labelCanvas.getBoundingClientRect();
@@ -2906,7 +2983,7 @@ function timelineCard() {
         const rowHeight = (rect.height - 34) / lanes.length;
         const laneIndex = Math.max(0, Math.min(lanes.length - 1, Math.floor((event.clientY - rect.top - 34) / rowHeight)));
         const laneData = lanes[laneIndex];
-        const seconds = ((event.clientX - rect.left) / rect.width) * duration;
+        const seconds = timelineViewStart.value + ((event.clientX - rect.left) / rect.width) * duration;
         return { rect, duration, rowHeight, track: laneData.key, lane: laneData.lane, seconds };
     };
     labelCanvas.addEventListener('pointerdown', (event) => {
@@ -3124,8 +3201,8 @@ function timelineCard() {
                     _.Btn({ dense: true, color: 'secondary', icon: 'redo', title: 'Redo (Ctrl/Cmd + Shift + Z)', disabled: () => !timelineRedoStack.value.length, onClick: () => redoTimeline(bookKey()) }),
                 ),
                 _.div({ class: 'at-audioToolbarGroup', title: 'Timeline zoom' },
-                    _.Btn({ dense: true, color: 'secondary', icon: 'zoom_out', title: 'Zoom out', onClick: () => { timelineZoom.value = Math.max(.5, timelineZoom.value - .25); render(); } }),
-                    _.Btn({ dense: true, color: 'secondary', icon: 'zoom_in', title: 'Zoom in', onClick: () => { timelineZoom.value = Math.min(2, timelineZoom.value + .25); render(); } }),
+                    _.Btn({ dense: true, color: 'secondary', icon: 'zoom_out', title: 'Zoom out', onClick: () => { setTimelineZoom(timelineZoom.value / 2); render(); } }),
+                    _.Btn({ dense: true, color: 'secondary', icon: 'zoom_in', title: 'Zoom in', onClick: () => { setTimelineZoom(timelineZoom.value * 2); render(); } }),
                 ),
                 _.div({ class: 'at-audioToolbarGroup', title: 'Add media' },
                     _.Btn({ dense: true, color: 'secondary', icon: 'library_music', title: 'Choose music from audio library', onClick: () => openTimelineMediaDialog('music') }),
@@ -3188,6 +3265,7 @@ function timelineCard() {
             );
         })() : _.div({ class: 'at-audioTimelineEmptySelection' }, _.Icon ? _.Icon({ name: 'ads_click' }) : null, _.span('Select a clip to edit its level, fades and grouping.'))),
         _.div({ class: 'at-audioTimelineFrame' }, channelViewport, scroller),
+        _.div({ class: 'at-audioTimelineNavigation' }, _.span(), navigatorControl),
     );
 }
 
