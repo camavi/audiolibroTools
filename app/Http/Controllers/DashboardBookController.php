@@ -2584,7 +2584,7 @@ class DashboardBookController extends Controller
     }
 
     /** Render a previously frozen release snapshot. Voice is mandatory; music and FX remain optional. */
-    public function renderFrozenAudioTimeline(Book $book, array $snapshot, int $releaseVersion): array
+    public function renderFrozenAudioTimeline(Book $book, array $snapshot, int $releaseVersion, ?callable $progress = null): array
     {
         $entries = ['voice' => [], 'music' => [], 'fx' => []];
         foreach (($snapshot['entries'] ?? []) as $entry) {
@@ -2600,6 +2600,8 @@ class DashboardBookController extends Controller
             throw ValidationException::withMessages(['release' => 'A ready Voice master is required before creating an audiobook release.']);
         }
 
+        $renderTracks = array_values(array_filter(['voice', 'music', 'fx'], fn (string $track): bool => count($entries[$track]) > 0));
+        $renderedTracks = 0;
         $channels = [];
         foreach (['voice', 'music', 'fx'] as $track) {
             if (! count($entries[$track])) {
@@ -2608,9 +2610,17 @@ class DashboardBookController extends Controller
             }
             $filename = "audiobooks/{$book->key_book}/releases/v{$releaseVersion}/{$track}.wav";
             Storage::disk('public')->makeDirectory(dirname($filename));
-            $this->renderAudioChannel($entries[$track], Storage::disk('public')->path($filename), data_get($snapshot, "equalizer.tracks.{$track}", []));
-            $durationMs = max(array_map(fn (array $entry): int => $entry['startMs'] + $entry['durationMs'], $entries[$track]));
-            $channels[$track] = ['status' => 'ready', 'duration_ms' => $durationMs, 'path' => $filename];
+            $trackDurationMs = max(array_map(fn (array $entry): int => $entry['startMs'] + $entry['durationMs'], $entries[$track]));
+            $this->renderAudioChannel($entries[$track], Storage::disk('public')->path($filename), data_get($snapshot, "equalizer.tracks.{$track}", []), function (float $trackProgress) use ($progress, $renderedTracks, $renderTracks): void {
+                if ($progress) {
+                    $progress((int) floor((($renderedTracks + $trackProgress) / max(1, count($renderTracks))) * 100));
+                }
+            });
+            $renderedTracks += 1;
+            if ($progress) {
+                $progress((int) floor(($renderedTracks / max(1, count($renderTracks))) * 100));
+            }
+            $channels[$track] = ['status' => 'ready', 'duration_ms' => $trackDurationMs, 'path' => $filename];
         }
 
         return ['channels' => $channels, 'duration_ms' => max(array_column($channels, 'duration_ms'))];
@@ -2669,7 +2679,7 @@ class DashboardBookController extends Controller
     }
 
     /** @param array<int, array<string, mixed>> $entries */
-    private function renderAudioChannel(array $entries, string $output, ?array $masterEqualizer = null): void
+    private function renderAudioChannel(array $entries, string $output, ?array $masterEqualizer = null, ?callable $progress = null): void
     {
         $arguments = [config('audiobook.ffmpeg_binary', env('FFMPEG_BINARY', 'ffmpeg')), '-y'];
         $filters = [];
@@ -2697,10 +2707,25 @@ class DashboardBookController extends Controller
         // every published master. `level=0` preserves normal material and
         // only limits peaks that cross the 0.95 ceiling.
         $filters[] = implode('', $labels).'amix=inputs='.count($labels).':duration=longest:normalize=0,aresample=async=1:first_pts=0'.$this->audioEqualizerFilter($masterEqualizer).',alimiter=limit=0.95:level=0[mix]';
-        $arguments = array_merge($arguments, ['-filter_complex', implode(';', $filters), '-map', '[mix]', '-ac', '2', '-ar', '44100', '-c:a', 'pcm_s16le', $output]);
+        $durationSeconds = max(1, max(array_map(fn (array $entry): float => ((float) $entry['startMs'] + (float) $entry['durationMs']) / 1000, $entries)));
+        $arguments = array_merge($arguments, ['-filter_complex', implode(';', $filters), '-map', '[mix]', '-ac', '2', '-ar', '44100', '-c:a', 'pcm_s16le', '-progress', 'pipe:1', '-nostats', $output]);
         $process = new Process($arguments);
         $process->setTimeout(0);
-        $process->run();
+        $progressBuffer = '';
+        $process->run(function (string $type, string $buffer) use (&$progressBuffer, $progress, $durationSeconds): void {
+            if (! $progress || $type !== Process::OUT) {
+                return;
+            }
+            $progressBuffer .= $buffer;
+            while (($newline = strpos($progressBuffer, "\n")) !== false) {
+                $line = trim(substr($progressBuffer, 0, $newline));
+                $progressBuffer = substr($progressBuffer, $newline + 1);
+                if (str_starts_with($line, 'out_time_us=')) {
+                    $seconds = (float) substr($line, strlen('out_time_us=')) / 1000000;
+                    $progress(max(0, min(1, $seconds / $durationSeconds)));
+                }
+            }
+        });
         if (! $process->isSuccessful()) {
             throw new \RuntimeException('Audio mixdown failed: '.trim($process->getErrorOutput() ?: $process->getOutput()));
         }

@@ -41,11 +41,12 @@ LARAVEL_PID=$!
 npm run dev &
 FRONT_PID=$!
 
-# La sintesi audio viene accodata sulla coda dedicata "tts": il worker la
-# esegue fuori dalla richiesta HTTP, così la dashboard resta utilizzabile.
+# La sintesi audio e il render delle release vengono accodati fuori dalla
+# richiesta HTTP, così la dashboard resta utilizzabile. Il render di un libro
+# completo può richiedere più di 30 minuti.
 # In sviluppo `queue:listen` ricarica Laravel fra un job e l'altro, quindi
 # modifiche ai servizi TTS diventano effettive senza dover riavviare lo stack.
-php artisan queue:listen database --queue=tts --timeout=1800 --tries=1 &
+php artisan queue:listen database --queue=tts,audio-release --timeout=7200 --tries=1 &
 TTS_WORKER_PID=$!
 
 # Le correzioni e le traduzioni batch restano in coda anche se il browser

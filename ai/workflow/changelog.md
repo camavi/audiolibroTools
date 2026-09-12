@@ -8,6 +8,8 @@
 - Il righello della timeline sceglie ora intervalli in base alla durata e alla larghezza disponibile, con etichette `mm:ss` o `hh:mm:ss`, evitando sovrapposizioni nei libri lunghi.
 - Le timeline lunghe aprono una finestra iniziale di circa dieci minuti, anziche' comprimere l'intero libro: zoom e barra di navigazione spostano la finestra lungo la durata completa, e la vista segue il playhead in riproduzione.
 - Il Preview player riproduce in sequenza i segmenti Voice gia' presenti nella timeline e non richiede piu' il render del master. L'endpoint `audio-preview` e' ora di sola lettura: puo' restituire una cache gia' valida ma non avvia FFmpeg; il render dei master resta esclusivamente nel comando Publish audiobook.
+- Le release audio sono ora renderizzate da un job in background: la dialog torna subito utilizzabile, la lista aggiorna automaticamente lo stato `Queued`/`Building` e mostra la percentuale del render. Il job conserva lo snapshot della timeline e completa o fallisce la release senza bloccare PHP; la notifica e' interna alla lista release, mentre l'invio email richiede un canale mail dedicato e configurato.
+- Ogni master WAV di una release pronta puo' ora essere esportato anche in MP3 su richiesta: il primo click apre un dialog con avanzamento, avvia un job separato e conserva l'MP3 nella stessa release; i download successivi riusano il file gia' creato.
 - La dialog Generate book audio si chiude appena il batch e' accodato; il comando principale resta disabilitato e mostra `Generating book audio…` fino al termine o annullamento del processo.
 
 ## 2026-09-09

@@ -176,6 +176,7 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
     Route::get('/books/{keyBook}/audio-releases', [BookAudioPublicationController::class, 'index'])->name('books.audio-releases.index');
     Route::post('/books/{keyBook}/audio-releases', [BookAudioPublicationController::class, 'store'])->name('books.audio-releases.store');
     Route::post('/books/{keyBook}/audio-releases/{release}/retry', [BookAudioPublicationController::class, 'retry'])->name('books.audio-releases.retry');
+    Route::post('/books/{keyBook}/audio-releases/{release}/mp3', [BookAudioPublicationController::class, 'requestMp3'])->name('books.audio-releases.mp3.request');
     Route::patch('/books/{keyBook}/audio-releases/{release}/availability', [BookAudioPublicationController::class, 'updateAvailability'])->name('books.audio-releases.availability.update');
     Route::get('/books/{keyBook}/audio-releases/{release}/{track}', [BookAudioPublicationController::class, 'download'])->whereIn('track', ['voice', 'music', 'fx'])->name('books.audio-releases.download');
     Route::post('/books/{keyBook}/audio-preview', [DashboardBookController::class, 'previewAudioTimeline'])->name('books.audio-preview');

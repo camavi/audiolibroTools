@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Jobs\ProcessBookAudioJob;
 use App\Jobs\ProcessBookCorrectionJob;
 use App\Jobs\ProcessBookTranslationJob;
+use App\Jobs\EncodeBookAudioPublicationMp3;
+use App\Jobs\RenderBookAudioPublication;
 use App\Http\Controllers\DashboardBookController;
 use App\Models\AccountCreditBalance;
 use App\Models\AiChatMessage;
@@ -2841,22 +2843,25 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.duration_ms', 0);
     }
 
-    public function test_dashboard_records_a_failed_audiobook_release_without_voice_master(): void
+    public function test_dashboard_queues_an_audiobook_release_without_blocking_the_request(): void
     {
         $book = $this->createBook();
+        Queue::fake();
 
         $release = $this->postJson("/dashboard/api/books/{$book->key_book}/audio-releases", ['label' => 'Narrated first edition'])
-            ->assertUnprocessable()
+            ->assertAccepted()
             ->assertJsonPath('data.release.version_number', 1)
             ->assertJsonPath('data.release.label', 'Narrated first edition')
-            ->assertJsonPath('data.release.status', 'failed')
+            ->assertJsonPath('data.release.status', 'queued')
+            ->assertJsonPath('data.release.progress_percent', 0)
             ->assertJsonPath('data.release.public_url', null)
             ->json('data.release');
 
         $this->patchJson("/dashboard/api/books/{$book->key_book}/audio-releases/{$release['id']}/availability", ['is_online' => false])
             ->assertUnprocessable();
 
-        $this->assertDatabaseHas('book_audio_publications', ['book_id' => $book->id, 'version_number' => 1, 'is_online' => false, 'status' => 'failed']);
+        Queue::assertPushed(RenderBookAudioPublication::class, fn (RenderBookAudioPublication $job) => $job->releaseId === $release['id']);
+        $this->assertDatabaseHas('book_audio_publications', ['book_id' => $book->id, 'version_number' => 1, 'is_online' => true, 'status' => 'queued']);
         $this->getJson("/dashboard/api/books/{$book->key_book}/audio-releases")
             ->assertOk()
             ->assertJsonPath('data.releases.0.id', $release['id']);
@@ -2877,6 +2882,34 @@ class DashboardBookTest extends TestCase
 
         $release->update(['is_online' => false]);
         $this->get("/listen/{$book->key_book}/{$release->id}")->assertNotFound();
+    }
+
+    public function test_dashboard_queues_a_reusable_mp3_export_for_a_ready_audio_release(): void
+    {
+        Storage::fake('public');
+        Queue::fake();
+        $book = $this->createBook();
+        $wav = "audiobooks/{$book->key_book}/releases/v1/voice.wav";
+        Storage::disk('public')->put($wav, 'RIFF test wav master');
+        $release = BookAudioPublication::query()->create([
+            'book_id' => $book->id, 'version_number' => 1, 'status' => 'ready', 'is_online' => true,
+            'timeline_snapshot_json' => [], 'masters_json' => ['voice' => ['path' => $wav, 'duration_ms' => 1_000]], 'duration_ms' => 1_000,
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/audio-releases/{$release->id}/mp3")
+            ->assertAccepted()
+            ->assertJsonPath('data.release.mp3_status', 'queued')
+            ->assertJsonPath('data.release.mp3_progress_percent', 0)
+            ->assertJsonPath('data.release.masters.voice.wav.size_bytes', strlen('RIFF test wav master'))
+            ->assertJsonPath('data.release.masters.voice.mp3', null);
+        Queue::assertPushed(EncodeBookAudioPublicationMp3::class, fn (EncodeBookAudioPublicationMp3 $job) => $job->releaseId === $release->id);
+
+        $mp3 = "audiobooks/{$book->key_book}/releases/v1/voice.mp3";
+        Storage::disk('public')->put($mp3, 'ID3 test mp3 export');
+        $release->update(['mp3_status' => 'ready', 'mp3_progress_percent' => 100, 'masters_json' => ['voice' => ['path' => $wav, 'duration_ms' => 1_000, 'mp3_path' => $mp3]]]);
+        $this->get("/dashboard/api/books/{$book->key_book}/audio-releases/{$release->id}/voice?format=mp3")
+            ->assertOk()
+            ->assertHeader('content-type', 'audio/mpeg');
     }
 
     public function test_public_book_delivery_protects_private_and_invite_releases(): void
