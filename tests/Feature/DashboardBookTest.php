@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Jobs\ProcessBookAudioJob;
+use App\Jobs\ProcessBookCorrectionJob;
 use App\Jobs\ProcessBookTranslationJob;
 use App\Http\Controllers\DashboardBookController;
 use App\Models\AccountCreditBalance;
@@ -17,6 +18,7 @@ use App\Models\BookAudioTimelineItem;
 use App\Models\BookBlock;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
+use App\Models\BookCorrectionJob;
 use App\Models\BookBlockTranslation;
 use App\Models\BookBlockVoiceAssignment;
 use App\Models\BookCategory;
@@ -28,6 +30,7 @@ use App\Models\BookTranslationJob;
 use App\Models\BookVoiceProfile;
 use App\Models\User;
 use App\Services\Ai\EditorAiTranslationService;
+use App\Services\Ai\EditorAiCorrectionService;
 use App\Services\BookAudioGenerationService;
 use App\Services\BookBlockService;
 use App\Services\Credits\TranslationCreditService;
@@ -1432,6 +1435,199 @@ class DashboardBookTest extends TestCase
             'source' => 'mock-ai',
             'status' => 'draft',
         ]);
+    }
+
+    public function test_dashboard_can_apply_reject_and_delete_all_current_correction_drafts(): void
+    {
+        $book = $this->createBook();
+        $service = app(BookBlockService::class);
+        $first = $service->saveBlock($book, [
+            'block_uuid' => (string) Str::uuid(),
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('First original paragraph.'),
+            'text_plain' => 'First original paragraph.',
+        ]);
+        $second = $service->saveBlock($book, [
+            'block_uuid' => (string) Str::uuid(),
+            'type' => 'paragraph',
+            'sort_order' => 2000,
+            'content_json' => $this->paragraphJson('Second original paragraph.'),
+            'text_plain' => 'Second original paragraph.',
+        ]);
+
+        $firstOlderDraft = BookBlockReview::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $first['block']->id,
+            'book_block_version_id' => $first['version']->id,
+            'type' => 'grammar', 'status' => 'draft', 'source' => 'ai',
+            'original_text' => 'First original paragraph.',
+            'suggested_text' => 'First older proposal.',
+        ]);
+        $firstLatestDraft = BookBlockReview::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $first['block']->id,
+            'book_block_version_id' => $first['version']->id,
+            'type' => 'grammar', 'status' => 'draft', 'source' => 'ai',
+            'original_text' => 'First original paragraph.',
+            'suggested_text' => 'First latest proposal.',
+        ]);
+        $secondDraft = BookBlockReview::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $second['block']->id,
+            'book_block_version_id' => $second['version']->id,
+            'type' => 'grammar', 'status' => 'draft', 'source' => 'ai',
+            'original_text' => 'Second original paragraph.',
+            'suggested_text' => 'Second applied proposal.',
+        ]);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/correction-reviews/bulk-summary")
+            ->assertOk()
+            ->assertJsonPath('data.draft_count', 3)
+            ->assertJsonPath('data.applyable_count', 2)
+            ->assertJsonPath('data.has_active_correction_job', false);
+
+        $this->getJson("/dashboard/api/books/{$book->key_book}/correction-reviews/queue")
+            ->assertOk()
+            ->assertJsonCount(2, 'data.items')
+            ->assertJsonPath('data.items.0.block_uuid', $first['block']->block_uuid)
+            ->assertJsonPath('data.items.0.draft_count', 2)
+            ->assertJsonPath('data.items.1.block_uuid', $second['block']->block_uuid)
+            ->assertJsonPath('data.items.1.draft_count', 1);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/correction-reviews/bulk", [
+            'action' => 'apply',
+            'confirmed' => true,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.selected_count', 2)
+            ->assertJsonPath('data.processed_count', 2)
+            ->assertJsonPath('data.failed_count', 0);
+
+        $first['block']->refresh();
+        $second['block']->refresh();
+        $this->assertSame('First latest proposal.', $first['block']->text_plain);
+        $this->assertSame('Second applied proposal.', $second['block']->text_plain);
+        $this->assertDatabaseHas('book_block_reviews', ['id' => $firstLatestDraft->id, 'status' => 'applied']);
+        $this->assertDatabaseHas('book_block_reviews', ['id' => $secondDraft->id, 'status' => 'applied']);
+        $this->assertDatabaseHas('book_block_reviews', ['id' => $firstOlderDraft->id, 'status' => 'draft']);
+
+        $rejected = BookBlockReview::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $first['block']->id,
+            'book_block_version_id' => $first['block']->current_version_id,
+            'type' => 'grammar', 'status' => 'draft', 'source' => 'ai',
+            'original_text' => 'First latest proposal.',
+            'suggested_text' => 'First rejected proposal.',
+        ]);
+        $this->postJson("/dashboard/api/books/{$book->key_book}/correction-reviews/bulk", [
+            'action' => 'reject',
+            'confirmed' => true,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.processed_count', 1);
+        $this->assertDatabaseHas('book_block_reviews', ['id' => $rejected->id, 'status' => 'rejected']);
+
+        $deleted = BookBlockReview::query()->create([
+            'book_id' => $book->id,
+            'book_block_id' => $first['block']->id,
+            'book_block_version_id' => $first['block']->current_version_id,
+            'type' => 'grammar', 'status' => 'draft', 'source' => 'ai',
+            'original_text' => 'First latest proposal.',
+            'suggested_text' => 'First deleted proposal.',
+        ]);
+        $this->postJson("/dashboard/api/books/{$book->key_book}/correction-reviews/bulk", [
+            'action' => 'delete',
+            'confirmed' => true,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.processed_count', 1);
+        $this->assertDatabaseMissing('book_block_reviews', ['id' => $deleted->id]);
+
+        BookCorrectionJob::query()->create([
+            'book_id' => $book->id,
+            'status' => 'running',
+            'provider_key' => 'mock',
+            'model' => 'mock-correction-v1',
+            'total_blocks' => 1,
+            'request_json' => ['scope' => 'missing', 'block_uuids' => []],
+            'created_by' => $this->user->id,
+        ]);
+        $this->postJson("/dashboard/api/books/{$book->key_book}/correction-reviews/bulk", [
+            'action' => 'reject',
+            'confirmed' => true,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Wait for the active correction process before changing all drafts.');
+    }
+
+    public function test_correction_batch_processes_one_block_per_queue_job_and_recovers_stalled_work(): void
+    {
+        Queue::fake();
+
+        $book = $this->createBook();
+        $blocks = collect([
+            'First paragraph  , ready for correction.',
+            'Second paragraph  , ready for correction.',
+        ])->map(function (string $text, int $index) use ($book) {
+            return app(BookBlockService::class)->saveBlock($book, [
+                'block_uuid' => (string) Str::uuid(),
+                'type' => 'paragraph',
+                'sort_order' => ($index + 1) * 1000,
+                'content_json' => $this->paragraphJson($text),
+                'text_plain' => $text,
+            ])['block'];
+        });
+
+        $job = BookCorrectionJob::query()->create([
+            'book_id' => $book->id,
+            'status' => 'queued',
+            'provider_key' => 'mock',
+            'model' => 'mock-correction-v1',
+            'total_blocks' => $blocks->count(),
+            'request_json' => [
+                'scope' => 'missing',
+                'block_uuids' => $blocks->pluck('block_uuid')->all(),
+            ],
+            'created_by' => $this->user->id,
+        ]);
+
+        $process = new ProcessBookCorrectionJob($job->id);
+        $process->handle(app(EditorAiCorrectionService::class));
+
+        $job->refresh();
+        $this->assertSame('running', $job->status);
+        $this->assertSame(1, $job->completed_blocks);
+        $this->assertDatabaseCount('book_block_reviews', 1);
+        Queue::assertPushed(ProcessBookCorrectionJob::class, fn (ProcessBookCorrectionJob $next) => $next->correctionJobId === $job->id);
+
+        (new ProcessBookCorrectionJob($job->id, data_get($job->request_json, 'dispatch_token')))
+            ->handle(app(EditorAiCorrectionService::class));
+
+        $job->refresh();
+        $this->assertSame('completed', $job->status);
+        $this->assertSame(2, $job->completed_blocks);
+        $this->assertDatabaseCount('book_block_reviews', 2);
+
+        $recovery = BookCorrectionJob::query()->create([
+            'book_id' => $book->id,
+            'status' => 'running',
+            'provider_key' => 'mock',
+            'model' => 'mock-correction-v1',
+            'total_blocks' => 1,
+            'request_json' => ['scope' => 'missing', 'block_uuids' => [$blocks->first()->block_uuid]],
+            'created_by' => $this->user->id,
+        ]);
+        $recovery->forceFill(['updated_at' => now()->subMinutes(7)])->save();
+
+        $this->artisan('corrections:recover-stalled')
+            ->expectsOutput('Recovered 1 stalled correction job(s).')
+            ->assertExitCode(0);
+
+        $recovery->refresh();
+        $this->assertSame('queued', $recovery->status);
+        $this->assertSame(0, $recovery->completed_blocks);
+        Queue::assertPushed(ProcessBookCorrectionJob::class, fn (ProcessBookCorrectionJob $next) => $next->correctionJobId === $recovery->id);
     }
 
     public function test_dashboard_can_create_openai_editor_block_review(): void

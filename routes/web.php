@@ -221,8 +221,18 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
     Route::post('/books/{keyBook}/blocks/{blockUuid}/comments', [DashboardBookController::class, 'storeBlockComment'])->name('books.blocks.comments.store');
     Route::patch('/books/{keyBook}/blocks/{blockUuid}/comments/{comment}', [DashboardBookController::class, 'updateBlockComment'])->name('books.blocks.comments.update');
     Route::get('/books/{keyBook}/blocks/{blockUuid}/reviews', [DashboardBookController::class, 'blockReviews'])->name('books.blocks.reviews');
+    Route::get('/books/{keyBook}/correction-progress', [DashboardBookController::class, 'correctionProgress'])->name('books.correction-progress');
+    Route::get('/books/{keyBook}/correction-reviews/queue', [DashboardBookController::class, 'correctionReviewQueue'])->name('books.correction-reviews.queue');
+    Route::get('/books/{keyBook}/correction-reviews/bulk-summary', [DashboardBookController::class, 'correctionReviewBulkSummary'])->name('books.correction-reviews.bulk-summary');
+    Route::post('/books/{keyBook}/correction-reviews/bulk', [DashboardBookController::class, 'bulkCorrectionReviews'])->name('books.correction-reviews.bulk');
+    Route::get('/books/{keyBook}/correction-jobs/current', [DashboardBookController::class, 'correctionJob'])->name('books.correction-jobs.current');
+    Route::post('/books/{keyBook}/correction-jobs', [DashboardBookController::class, 'startCorrectionJob'])->name('books.correction-jobs.store');
+    Route::patch('/books/{keyBook}/correction-jobs/{job}/cancel', [DashboardBookController::class, 'cancelCorrectionJob'])->name('books.correction-jobs.cancel');
+    Route::get('/books/{keyBook}/correction-jobs/{job}/failures', [DashboardBookController::class, 'correctionJobFailures'])->name('books.correction-jobs.failures');
+    Route::post('/books/{keyBook}/correction-jobs/{job}/retry-failed', [DashboardBookController::class, 'retryCorrectionJobFailures'])->name('books.correction-jobs.retry-failed');
     Route::post('/books/{keyBook}/blocks/{blockUuid}/reviews', [DashboardBookController::class, 'storeBlockReview'])->name('books.blocks.reviews.store');
     Route::patch('/books/{keyBook}/blocks/{blockUuid}/reviews/{review}', [DashboardBookController::class, 'updateBlockReview'])->name('books.blocks.reviews.update');
+    Route::delete('/books/{keyBook}/blocks/{blockUuid}/reviews/{review}', [DashboardBookController::class, 'destroyBlockReview'])->name('books.blocks.reviews.destroy');
     Route::patch('/books/{keyBook}/blocks', [DashboardBookController::class, 'updateBlocks'])->name('books.blocks.update');
 });
 Route::get('/dashboard/{any?}', function () {

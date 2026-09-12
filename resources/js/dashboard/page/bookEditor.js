@@ -51,6 +51,18 @@ const blockReviewsStatus = _.rod('idle');
 const blockReviewsContextKey = _.rod(null);
 const blockReviewsError = _.rod(null);
 const blockReviewActionStatus = _.rod('idle');
+const expandedBlockReviewIds = _.rod([]);
+const blockReviewBatchStatus = _.rod('idle');
+const blockReviewBatchProgress = _.rod({ completed: 0, total: 0, failed: 0 });
+const blockReviewBatchError = _.rod(null);
+const correctionBatchJob = _.rod(null);
+const correctionJobStarting = _.rod(false);
+const correctionJobCancelling = _.rod(false);
+const correctionBulkActionStatus = _.rod('idle');
+const correctionReviewQueue = _.rod([]);
+const correctionReviewQueueStatus = _.rod('idle');
+const correctionReviewQueueContextKey = _.rod(null);
+const correctionReviewQueueError = _.rod(null);
 const blockComments = _.rod([]);
 const bookCommentsQueue = _.rod([]);
 const bookCommentsQueueStatus = _.rod('idle');
@@ -136,8 +148,20 @@ let restoreBlockVersion = () => { };
 let explainBlockVersion = () => { };
 let loadBlockReviews = () => { };
 let createBlockReview = () => { };
+let createAllBlockReviews = () => { };
+let openCorrectAllDialog = () => { };
+let openCorrectionOperationsMenu = () => { };
+let openCorrectionBulkActionDialog = () => { };
+let loadCorrectionJob = () => { };
+let startCorrectionJob = () => { };
+let cancelCorrectionJob = () => { };
+let openCorrectionFailureDialog = () => { };
+let deleteBlockReview = () => { };
 let applyBlockReview = () => { };
 let rejectBlockReview = () => { };
+let resetBlockReview = () => { };
+let loadCorrectionReviewQueue = () => { };
+let navigateCorrectionReviewQueue = () => { };
 let loadBookActivity = () => { };
 let navigateBookActivityItem = () => { };
 let loadBlockComments = () => { };
@@ -681,19 +705,38 @@ function renderDiffLine(parts, mode) {
     }, `${index ? ' ' : ''}${part.text}`));
 }
 
-function reviewDiff(originalText, suggestedText) {
+function reviewDiff(originalText, suggestedText, reviewId) {
     const parts = diffTokenParts(originalText || '', suggestedText || '');
 
-    return _.div({ class: 'at-reviewDiff' },
-        _.div({ class: 'at-reviewDiff-row' },
-            _.span({ class: 'at-reviewDiff-label' }, 'Original'),
-            _.p(renderDiffLine(parts, 'original'))
-        ),
-        _.div({ class: 'at-reviewDiff-row' },
-            _.span({ class: 'at-reviewDiff-label' }, 'Suggested'),
-            _.p(renderDiffLine(parts, 'suggested'))
-        )
-    );
+    return _.div({ class: 'at-reviewDiff' }, () => {
+        const expanded = expandedBlockReviewIds.value.includes(reviewId);
+        const toggleExpanded = () => {
+            expandedBlockReviewIds.value = expanded
+                ? expandedBlockReviewIds.value.filter((id) => id !== reviewId)
+                : [...expandedBlockReviewIds.value, reviewId];
+        };
+
+        return [
+            _.div({ class: expanded ? 'at-reviewDiff-content is-expanded' : 'at-reviewDiff-content' },
+                _.div({ class: 'at-reviewDiff-row' },
+                    _.span({ class: 'at-reviewDiff-label' }, 'Original'),
+                    _.p(renderDiffLine(parts, 'original'))
+                ),
+                _.div({ class: 'at-reviewDiff-row' },
+                    _.span({ class: 'at-reviewDiff-label' }, 'Suggested'),
+                    _.p(renderDiffLine(parts, 'suggested'))
+                )
+            ),
+            _.Btn({
+                class: 'at-reviewDiff-toggle',
+                type: 'button',
+                dense: true,
+                color: 'secondary',
+                icon: expanded ? 'unfold_less' : 'unfold_more',
+                onClick: toggleExpanded,
+            }, expanded ? 'Hide text' : 'View all'),
+        ];
+    });
 }
 
 function selectedAiProvider() {
@@ -1242,6 +1285,10 @@ function activityOpenActionLabel(item) {
 
 function activityTargetBlock(item) {
     return editorOutline.value.find((block) => block.block_uuid === item?.block_uuid) || null;
+}
+
+function correctionJobIsActive(job = correctionBatchJob.value) {
+    return ['queued', 'running'].includes(job?.status);
 }
 
 function activityDirectActions(item) {
@@ -1864,6 +1911,13 @@ function rightWorkspaceHeader(tool, block, keyBook) {
                 _.span(tool.label)
             ),
             hasAiSettings ? _.div({ class: 'at-rightWorkspace-headerActions' },
+                tool.id === 'correct' ? _.Btn({
+                    dense: true,
+                    color: 'primary',
+                    icon: 'more_horiz',
+                    title: 'All correction operations',
+                    onClick: (event) => openCorrectionOperationsMenu(event.currentTarget),
+                }, 'All operations') : null,
                 tool.id === 'correct' ? _.button({
                     type: 'button',
                     class: 'at-rightWorkspace-toolSettings',
@@ -1878,7 +1932,7 @@ function rightWorkspaceHeader(tool, block, keyBook) {
                 }, _.Icon ? _.Icon({ name: 'settings', class: 'at-rightWorkspace-toolSettingsIcon' }) : 'Settings')
             ) : null
         ),
-        _.div({ class: 'at-rightWorkspace-context' }, block
+        tool.id === 'correct' ? null : _.div({ class: 'at-rightWorkspace-context' }, block
             ? `${outlineKindLabel(block)} · ${block.label}`
             : 'Book context'
         )
@@ -3000,7 +3054,7 @@ function translatePanel(block, keyBook) {
     );
 }
 
-function correctionPanel(block, keyBook) {
+function correctionPanelContent(block, keyBook) {
     if (!block) {
         return _.div({ class: 'at-rightWorkspace-section' },
             _.h3('AI correction'),
@@ -3027,41 +3081,46 @@ function correctionPanel(block, keyBook) {
     const reviews = blockReviews.value;
     const isChecking = blockReviewActionStatus.value === 'checking';
     const reviewActionBusy = blockReviewActionStatus.value !== 'idle';
+    const batchRunning = blockReviewBatchStatus.value === 'checking';
+    const batchProgress = blockReviewBatchProgress.value;
     const aiSummary = correctionAiSummary();
 
     return _.div({ class: 'at-rightWorkspace-section' },
         _.h3('AI correction'),
-        _.div({ class: aiSummary.missingApiKey ? 'at-correctionProvider has-warning' : 'at-correctionProvider' },
-            _.div({ class: 'at-correctionProvider-main' },
-                _.span('Provider'),
-                _.strong(`${aiSummary.providerName}${aiSummary.model ? ` · ${aiSummary.model}` : ''}`)
-            ),
-            aiSummary.missingApiKey ? _.button({
-                type: 'button',
-                class: 'at-correctionProvider-action',
-                onclick: () => openToolAiSettingsDialog(keyBook, 'correction', 'Correct'),
-            }, 'Configure AI settings') : null
-        ),
-        _.div({ class: 'at-rightWorkspace-actions is-top' },
-            _.button({
-                type: 'button',
-                class: 'at-rightWorkspace-action is-primary',
-                disabled: !block || block.dirty || reviewActionBusy,
-                onclick: () => createBlockReview(block, 'grammar'),
-            }, isChecking ? `Checking with ${aiSummary.providerName}...` : 'Check selected block'),
-            _.button({
-                type: 'button',
-                class: 'at-rightWorkspace-action',
-                disabled: true,
-            }, 'Suggest rewrite')
-        ),
+        _.Btn({
+            class: 'at-correctionAiAction',
+            type: 'button',
+            dense: true,
+            color: 'primary',
+            icon: 'auto_fix_high',
+            disabled: !block || block.dirty || reviewActionBusy || batchRunning || aiSummary.missingApiKey,
+            title: aiSummary.missingApiKey ? 'Configure AI settings before correcting' : `${aiSummary.providerName}${aiSummary.model ? ` · ${aiSummary.model}` : ''}`,
+            onClick: () => createBlockReview(block, 'grammar'),
+        }, isChecking ? `Correcting with ${aiSummary.providerName}...` : 'Correct with AI'),
+        aiSummary.missingApiKey ? _.Btn({
+            class: 'at-correctionAiConfigure',
+            type: 'button',
+            dense: true,
+            color: 'secondary',
+            onClick: () => openToolAiSettingsDialog(keyBook, 'correction', 'Correct'),
+        }, 'Configure AI settings') : null,
+        batchRunning || batchProgress.total ? _.div({ class: 'at-chatNotice' },
+            batchRunning
+                ? `Correcting ${batchProgress.completed} of ${batchProgress.total} saved blocks${batchProgress.failed ? ` · ${batchProgress.failed} failed` : ''}…`
+                : `Correct all finished: ${batchProgress.completed}/${batchProgress.total} processed${batchProgress.failed ? ` · ${batchProgress.failed} failed` : ''}.`
+        ) : null,
+        blockReviewBatchError.value ? _.div({ class: 'at-chatError' }, blockReviewBatchError.value) : null,
         reviews.length
             ? _.div({ class: 'at-reviewList' }, reviews.map((review) => {
                 const isDraft = (review.status || 'draft') === 'draft';
                 const canResolve = isDraft && review.is_current_version && !block.dirty;
                 const isApplying = blockReviewActionStatus.value === `applying:${review.id}`;
                 const isRejecting = blockReviewActionStatus.value === `rejecting:${review.id}`;
+                const isResetting = blockReviewActionStatus.value === `resetting:${review.id}`;
                 const isBusy = blockReviewActionStatus.value !== 'idle';
+                const canReset = review.status === 'applied'
+                    && Number(review.applied_block_version_id) === Number(block.current_version_id)
+                    && !block.dirty;
                 const reviewProvider = review.notes_json?.provider_name || review.notes_json?.provider_key || review.source || 'AI';
                 const reviewModel = review.notes_json?.model || '';
 
@@ -3077,34 +3136,83 @@ function correctionPanel(block, keyBook) {
                         ? `v${review.version_number}${review.is_current_version ? ' current' : ' stale'}`
                         : ''
                     ),
-                    reviewDiff(review.original_text, review.suggested_text),
-                    isDraft ? _.div({ class: 'at-reviewItem-actions' },
-                        _.button({
+                    reviewDiff(review.original_text, review.suggested_text, review.id),
+                    _.div({ class: 'at-reviewItem-actions' },
+                        _.Btn({
                             type: 'button',
-                            class: 'at-reviewItem-action is-apply',
-                            disabled: !canResolve || isBusy,
-                            onclick: () => runPanelAction('apply_review', {
+                            class: 'at-reviewItem-action',
+                            dense: true,
+                            color: 'primary',
+                            disabled: !isDraft || !canResolve || isBusy,
+                            onClick: () => runPanelAction('apply_review', {
                                 context: `${review.type || 'Correction'} · v${review.version_number || ''}`,
                                 preview: review.suggested_text || review.original_text || '',
                             }, () => applyBlockReview(block, review)),
                         }, isApplying ? 'Applying...' : 'Apply'),
-                        _.button({
+                        _.Btn({
                             type: 'button',
                             class: 'at-reviewItem-action',
-                            disabled: !canResolve || isBusy,
-                            onclick: () => runPanelAction('reject_review', {
+                            dense: true,
+                            color: 'secondary',
+                            disabled: !isDraft || !canResolve || isBusy,
+                            onClick: () => runPanelAction('reject_review', {
                                 context: `${review.type || 'Correction'} · v${review.version_number || ''}`,
                                 preview: review.original_text || review.suggested_text || '',
                                 primary: false,
                             }, () => rejectBlockReview(block, review)),
-                        }, isRejecting ? 'Rejecting...' : 'Reject')
-                    ) : null
+                        }, isRejecting ? 'Rejecting...' : 'Reject'),
+                        _.Btn({
+                            type: 'button',
+                            class: 'at-reviewItem-action',
+                            dense: true,
+                            color: 'warning',
+                            disabled: !canReset || isBusy,
+                            onClick: () => resetBlockReview(block, review),
+                        }, isResetting ? 'Resetting...' : 'Reset'),
+                        _.Btn({
+                            type: 'button',
+                            class: 'at-reviewItem-action',
+                            dense: true,
+                            color: 'danger',
+                            disabled: isBusy,
+                            onClick: () => deleteBlockReview(block, review),
+                        }, blockReviewActionStatus.value === `deleting:${review.id}` ? 'Deleting...' : 'Delete')
+                    )
                 );
             }))
             : _.div({ class: 'at-rightWorkspace-emptyState' },
                 _.strong('No corrections yet'),
                 _.p('Corrections will be linked to this block version before AI changes are applied.')
             )
+    );
+}
+
+function correctionPanel(block, keyBook) {
+    return _.div({ class: 'at-rightWorkspace-section at-correctionSection' },
+        _.div({ class: 'at-correctionScroller' },
+            correctionPanelContent(block, keyBook)
+        )
+    );
+}
+
+function correctionReviewQueueNavigation() {
+    const items = correctionReviewQueue.value;
+    const activeItemIndex = items.findIndex((item) => item.block_uuid === activeEditorBlockId.value);
+
+    if (!items.length) return null;
+
+    return _.div({ class: 'at-activityNav at-correctionNav' },
+        _.button({
+            type: 'button',
+            class: 'at-activityNavBtn',
+            onclick: () => navigateCorrectionReviewQueue(-1),
+        }, 'Previous'),
+        _.span(`${Math.max(activeItemIndex, 0) + 1} / ${items.length}`),
+        _.button({
+            type: 'button',
+            class: 'at-activityNavBtn',
+            onclick: () => navigateCorrectionReviewQueue(1),
+        }, 'Next')
     );
 }
 
@@ -3363,10 +3471,12 @@ function rightWorkspaceBody(tool, block, keyBook) {
 
     if (tool.id === 'correct') {
         loadBlockReviews(block);
+        runUntracked(() => loadCorrectionReviewQueue());
 
-        return _.div({ class: 'at-rightWorkspace-body' },
+        return _.div({ class: 'at-rightWorkspace-body is-activityReview is-correctionReview' },
             blockContextSummary(block),
-            correctionPanel(block, keyBook)
+            correctionPanel(block, keyBook),
+            correctionReviewQueueNavigation()
         );
     }
 
@@ -3425,6 +3535,7 @@ function editorText(keyBook) {
     let editor = null;
     let currentEditorBlocks = [];
     let autosaveTimer = null;
+    let correctionJobPollTimer = null;
     let saveInFlight = false;
     let pendingSave = false;
     let autosaveBlocked = false;
@@ -4976,6 +5087,50 @@ function editorText(keyBook) {
             });
     };
 
+    loadCorrectionReviewQueue = ({ force = false } = {}) => {
+        if (!keyBook) {
+            correctionReviewQueue.value = [];
+            correctionReviewQueueStatus.value = 'idle';
+            correctionReviewQueueContextKey.value = null;
+            correctionReviewQueueError.value = null;
+            return;
+        }
+
+        const contextKey = `${keyBook}:correction-review-queue`;
+        if (!force && correctionReviewQueueContextKey.value === contextKey && correctionReviewQueueStatus.value !== 'error') return;
+
+        correctionReviewQueueContextKey.value = contextKey;
+        correctionReviewQueueStatus.value = 'loading';
+        correctionReviewQueueError.value = null;
+
+        _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/correction-reviews/queue`)
+            .then((payload) => {
+                if (correctionReviewQueueContextKey.value !== contextKey) return;
+
+                correctionReviewQueue.value = normalizeDataPayload(payload).items || [];
+                correctionReviewQueueStatus.value = 'ready';
+            })
+            .catch((error) => {
+                if (correctionReviewQueueContextKey.value !== contextKey) return;
+
+                correctionReviewQueue.value = [];
+                correctionReviewQueueError.value = requestErrorMessage(error, 'Unable to load the correction review queue.');
+                correctionReviewQueueStatus.value = 'error';
+            });
+    };
+
+    navigateCorrectionReviewQueue = (direction = 1) => {
+        const items = correctionReviewQueue.value;
+        if (!items.length) return;
+
+        const currentIndex = items.findIndex((item) => item.block_uuid === activeEditorBlockId.value);
+        const fallbackIndex = direction > 0 ? -1 : 0;
+        const nextIndex = (currentIndex >= 0 ? currentIndex : fallbackIndex) + direction;
+        const normalizedIndex = (nextIndex + items.length) % items.length;
+
+        focusEditorBlock(items[normalizedIndex].block_uuid);
+    };
+
     loadBookActivity = (bookKey = keyBook, { force = false } = {}) => {
         if (!bookKey) {
             bookActivityItems.value = [];
@@ -6139,19 +6294,574 @@ function editorText(keyBook) {
                     blockReviewsContextKey.value = contextKey;
                     upsertReviewInList(review);
                     loadBookActivity(keyBook, { force: true });
+                    loadCorrectionReviewQueue({ force: true });
                 } else {
                     blockReviewsContextKey.value = null;
                     loadBlockReviews(block);
                     loadBookActivity(keyBook, { force: true });
+                    loadCorrectionReviewQueue({ force: true });
                 }
             })
             .catch((error) => {
                 blockReviewsError.value = requestErrorMessage(error, 'Unable to create AI correction.');
-                blockReviewsStatus.value = 'error';
+                blockReviewsStatus.value = 'ready';
             })
             .finally(() => {
                 blockReviewActionStatus.value = 'idle';
             });
+    };
+
+    createAllBlockReviews = async (blockUuids = null) => {
+        if (!keyBook || blockReviewBatchStatus.value === 'checking' || blockReviewActionStatus.value !== 'idle') return null;
+
+        const dirty = dirtyBlocks();
+        if (dirty.length) {
+            blockReviewBatchError.value = 'Save all manuscript changes before running Correct all.';
+            return null;
+        }
+
+        const allowedBlockUuids = blockUuids ? new Set(blockUuids) : null;
+        const blocks = Array.from(blockMeta.values())
+            .filter((block) => !allowedBlockUuids || allowedBlockUuids.has(block.block_uuid))
+            .filter((block) => block.current_version_id && String(block.text_plain || '').trim() && block.status !== 'deleted');
+        if (!blocks.length) {
+            blockReviewBatchError.value = 'There are no saved text blocks to correct.';
+            return null;
+        }
+
+        const setting = correctionAiSetting();
+        blockReviewBatchStatus.value = 'checking';
+        blockReviewBatchError.value = null;
+        blockReviewBatchProgress.value = { completed: 0, total: blocks.length, failed: 0 };
+
+        for (const batchBlock of blocks) {
+            try {
+                const payload = await _.http.postJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(batchBlock.block_uuid)}/reviews`, {
+                    type: 'grammar',
+                    provider_key: setting.provider_key,
+                    model: setting.model,
+                });
+                const review = normalizeDataPayload(payload).review;
+                if (review && activeOutlineItem()?.block_uuid === batchBlock.block_uuid) upsertReviewInList(review);
+            } catch (error) {
+                blockReviewBatchProgress.value = {
+                    ...blockReviewBatchProgress.value,
+                    failed: blockReviewBatchProgress.value.failed + 1,
+                };
+                blockReviewBatchError.value = requestErrorMessage(error, 'Some blocks could not be corrected.');
+            } finally {
+                blockReviewBatchProgress.value = {
+                    ...blockReviewBatchProgress.value,
+                    completed: blockReviewBatchProgress.value.completed + 1,
+                };
+            }
+        }
+
+        blockReviewBatchStatus.value = 'idle';
+        loadBookActivity(keyBook, { force: true });
+        loadCorrectionReviewQueue({ force: true });
+
+        return blockReviewBatchProgress.value;
+    };
+
+    const setCorrectionJob = (job) => {
+        const wasActive = correctionJobIsActive(correctionBatchJob.value);
+        correctionBatchJob.value = job || null;
+        blockReviewBatchStatus.value = correctionJobIsActive(job) ? 'checking' : 'idle';
+        blockReviewBatchProgress.value = {
+            completed: Number(job?.completed_blocks || 0),
+            total: Number(job?.total_blocks || 0),
+            failed: Number(job?.failed_blocks || 0),
+        };
+        blockReviewBatchError.value = job?.error_message || null;
+
+        if (wasActive && !correctionJobIsActive(job)) {
+            loadCorrectionReviewQueue({ force: true });
+        }
+    };
+
+    const stopCorrectionJobPolling = () => {
+        if (!correctionJobPollTimer) return;
+        clearInterval(correctionJobPollTimer);
+        correctionJobPollTimer = null;
+    };
+
+    loadCorrectionJob = async ({ poll = true } = {}) => {
+        if (!keyBook) return null;
+
+        try {
+            const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/correction-jobs/current`);
+            const job = normalizeDataPayload(payload).job || null;
+            setCorrectionJob(job);
+
+            if (poll && correctionJobIsActive(job) && !correctionJobPollTimer) {
+                correctionJobPollTimer = window.setInterval(() => loadCorrectionJob({ poll: false }), 1800);
+            }
+            if (!correctionJobIsActive(job)) stopCorrectionJobPolling();
+
+            return job;
+        } catch (error) {
+            blockReviewBatchError.value = requestErrorMessage(error, 'Unable to load correction process.');
+            return null;
+        }
+    };
+
+    startCorrectionJob = async (scope) => {
+        if (correctionJobStarting.value || correctionJobIsActive()) return correctionBatchJob.value;
+
+        correctionJobStarting.value = true;
+        blockReviewBatchError.value = null;
+        try {
+            const setting = correctionAiSetting();
+            const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/correction-jobs`, {
+                provider_key: setting.provider_key,
+                model: setting.model,
+                scope,
+                confirmed: true,
+            });
+            const job = normalizeDataPayload(payload).job || null;
+            setCorrectionJob(job);
+            loadCorrectionJob();
+            return job;
+        } catch (error) {
+            blockReviewBatchError.value = requestErrorMessage(error, 'Unable to start correction process.');
+            return null;
+        } finally {
+            correctionJobStarting.value = false;
+        }
+    };
+
+    cancelCorrectionJob = (job) => {
+        if (!job?.id || !correctionJobIsActive(job) || correctionJobCancelling.value) return;
+
+        _.Dialog({
+            size: 'sm',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3('Cancel correction process?'),
+                    _.span({ class: 'text-muted' }, `${job.completed_blocks || 0} of ${job.total_blocks || 0} blocks processed`),
+                ),
+                content: ({ close }) => _.div({ class: 'at-activityConfirmDialog' },
+                    _.p('This stops the batch after the block currently being processed. Correction drafts already created are kept; no draft will be deleted.'),
+                    _.div({ class: 'at-activityConfirmActions' },
+                        _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Keep process running'),
+                        _.Btn({
+                            type: 'button',
+                            color: 'danger',
+                            loading: correctionJobCancelling,
+                            onClick: async () => {
+                                correctionJobCancelling.value = true;
+                                try {
+                                    const payload = await _.http.patchJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/correction-jobs/${job.id}/cancel`, {});
+                                    setCorrectionJob(normalizeDataPayload(payload).job || null);
+                                    loadBookActivity(keyBook, { force: true });
+                                    close();
+                                } catch (error) {
+                                    blockReviewBatchError.value = requestErrorMessage(error, 'Unable to cancel correction process.');
+                                } finally {
+                                    correctionJobCancelling.value = false;
+                                }
+                            },
+                        }, 'Cancel process'),
+                    ),
+                ),
+            },
+        }).open();
+    };
+
+    openCorrectionFailureDialog = async (job, onRetried = () => {}) => {
+        if (!job?.id) return;
+
+        const failures = _.rod([]);
+        const loadingFailures = _.rod(true);
+        const failuresError = _.rod(null);
+        const retrying = _.rod(false);
+        const loadFailures = async () => {
+            loadingFailures.value = true;
+            failuresError.value = null;
+            try {
+                const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/correction-jobs/${job.id}/failures`);
+                failures.value = normalizeDataPayload(payload).failures || [];
+            } catch (error) {
+                failuresError.value = requestErrorMessage(error, 'Unable to load failed blocks.');
+            } finally {
+                loadingFailures.value = false;
+            }
+        };
+
+        await loadFailures();
+
+        _.Dialog({
+            size: 'md',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3('Failed correction blocks'),
+                    _.span({ class: 'text-muted' }, `${job.failed_blocks || 0} blocks need attention`),
+                ),
+                content: ({ close }) => _.div({ class: 'at-correctionFailuresDialog' },
+                    _.p('A failed block was not changed. Open it to inspect the text, or retry only these blocks with the same AI model.'),
+                    () => loadingFailures.value
+                        ? _.Alert({ type: 'info', icon: 'progress_activity', message: 'Loading failed blocks…' })
+                        : null,
+                    () => failuresError.value ? _.Alert({ type: 'danger', message: failuresError.value }) : null,
+                    () => !loadingFailures.value && !failuresError.value && !failures.value.length
+                        ? _.Alert({ type: 'warning', message: 'No block details were recorded for this older failure. New failures are listed here automatically.' })
+                        : null,
+                    () => failures.value.map((failure) => _.article({ class: 'at-correctionFailureItem' },
+                        _.div({ class: 'at-correctionFailureHead' },
+                            _.strong(`Block${failure.version_number ? ` · v${failure.version_number}` : ''}`),
+                            _.span(`Attempt ${failure.attempts || 1}`),
+                        ),
+                        _.p({ class: 'at-correctionFailurePreview' }, failure.text_preview || 'Text preview unavailable.'),
+                        _.Alert({ type: 'warning', message: failure.error_message || 'Unable to create a correction draft.' }),
+                        _.Btn({
+                            dense: true,
+                            color: 'secondary',
+                            icon: 'visibility',
+                            onClick: () => {
+                                focusEditorBlock(failure.block_uuid);
+                                close();
+                            },
+                        }, 'Open block'),
+                    )),
+                    _.div({ class: 'at-systemPromptActions' },
+                        _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Close'),
+                        _.Btn({
+                            type: 'button',
+                            color: 'primary',
+                            icon: 'refresh',
+                            loading: retrying,
+                            disabled: () => retrying.value || !failures.value.length || correctionJobIsActive(),
+                            onClick: async () => {
+                                retrying.value = true;
+                                try {
+                                    const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/correction-jobs/${job.id}/retry-failed`, {});
+                                    const retryJob = normalizeDataPayload(payload).job || null;
+                                    setCorrectionJob(retryJob);
+                                    loadCorrectionJob();
+                                    onRetried(retryJob);
+                                    close();
+                                } catch (error) {
+                                    failuresError.value = requestErrorMessage(error, 'Unable to retry failed blocks.');
+                                } finally {
+                                    retrying.value = false;
+                                }
+                            },
+                        }, () => `Retry failed (${failures.value.length})`),
+                    ),
+                ),
+            },
+        }).open();
+    };
+
+    openCorrectionOperationsMenu = (anchor) => {
+        if (!anchor) return;
+
+        const correctionJobActive = correctionJobIsActive();
+        _.Menu({
+            title: 'All operations',
+            subtitle: correctionJobActive
+                ? 'A correction batch is currently running.'
+                : 'Manage correction drafts across the manuscript.',
+            icon: 'auto_fix_high',
+            placement: 'bottom-end',
+            minWidth: 300,
+            closeOnSelect: true,
+            items: [
+                {
+                    icon: correctionJobActive ? 'visibility' : 'auto_fix_high',
+                    label: correctionJobActive ? 'View correction process' : 'Correct all',
+                    subtitle: correctionJobActive
+                        ? 'Review the active batch and its progress.'
+                        : 'Create correction drafts for saved text blocks.',
+                    onClick: () => openCorrectAllDialog(),
+                },
+                {
+                    icon: 'done_all',
+                    label: 'Apply all',
+                    subtitle: 'Apply the latest current draft for each block.',
+                    disabled: correctionJobActive,
+                    onClick: () => openCorrectionBulkActionDialog('apply'),
+                },
+                {
+                    icon: 'close',
+                    label: 'Reject all',
+                    subtitle: 'Keep the manuscript and reject all current drafts.',
+                    disabled: correctionJobActive,
+                    onClick: () => openCorrectionBulkActionDialog('reject'),
+                },
+                {
+                    icon: 'delete_forever',
+                    label: 'Delete all',
+                    subtitle: 'Permanently remove all current drafts.',
+                    state: 'danger',
+                    disabled: correctionJobActive,
+                    onClick: () => openCorrectionBulkActionDialog('delete'),
+                },
+            ],
+        }).open(anchor);
+    };
+
+    openCorrectionBulkActionDialog = async (action) => {
+        if (!keyBook || correctionBulkActionStatus.value !== 'idle') return;
+
+        if (correctionJobIsActive()) {
+            _.Dialog({
+                size: 'sm',
+                slots: {
+                    header: _.h3('Correction batch still running'),
+                    content: _.p('Wait for the active Correct all process to finish or cancel it before applying, rejecting or deleting drafts.'),
+                    actions: ({ close }) => [_.Btn({ color: 'secondary', onClick: close }, 'Close')],
+                },
+            }).open();
+            return;
+        }
+
+        const dirty = dirtyBlocks();
+        if (dirty.length) {
+            _.Dialog({
+                size: 'sm',
+                slots: {
+                    header: _.h3('Save manuscript changes first'),
+                    content: _.p('Save all unsaved manuscript changes before running an operation on every correction draft.'),
+                    actions: ({ close }) => [_.Btn({ color: 'secondary', onClick: close }, 'Close')],
+                },
+            }).open();
+            return;
+        }
+
+        const summary = _.rod(null);
+        const loadingSummary = _.rod(true);
+        const dialogError = _.rod(null);
+        const actionCopy = {
+            apply: {
+                title: 'Apply all corrections?',
+                confirm: 'Apply all',
+                color: 'primary',
+                icon: 'done_all',
+                description: 'The latest draft on every current block will be applied to the manuscript. Each changed block receives a new version, so the previous text remains available in Versions.',
+                count: (data) => data.applyable_count || 0,
+                countLabel: 'blocks to apply',
+            },
+            reject: {
+                title: 'Reject all current corrections?',
+                confirm: 'Reject all',
+                color: 'warning',
+                icon: 'close',
+                description: 'All correction drafts linked to current block versions will be marked rejected. Your manuscript text will not change.',
+                count: (data) => data.draft_count || 0,
+                countLabel: 'drafts to reject',
+            },
+            delete: {
+                title: 'Delete all current corrections?',
+                confirm: 'Delete permanently',
+                color: 'danger',
+                icon: 'delete_forever',
+                description: 'All correction drafts linked to current block versions will be permanently deleted. This action cannot be undone.',
+                count: (data) => data.draft_count || 0,
+                countLabel: 'drafts to delete',
+            },
+        }[action];
+        if (!actionCopy) return;
+
+        const loadSummary = async () => {
+            loadingSummary.value = true;
+            dialogError.value = null;
+            try {
+                const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/correction-reviews/bulk-summary`);
+                summary.value = normalizeDataPayload(payload);
+            } catch (error) {
+                dialogError.value = requestErrorMessage(error, 'Unable to load correction draft totals.');
+            } finally {
+                loadingSummary.value = false;
+            }
+        };
+
+        _.Dialog({
+            size: 'sm',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3(actionCopy.title),
+                    _.span({ class: 'text-muted' }, 'Only drafts for the current saved block versions are included.'),
+                ),
+                content: ({ close }) => _.div({ class: 'at-activityConfirmDialog' },
+                    _.p(actionCopy.description),
+                    () => loadingSummary.value
+                        ? _.Alert({ type: 'info', icon: 'progress_activity', message: 'Loading current correction drafts…' })
+                        : null,
+                    () => dialogError.value ? _.Alert({ type: 'danger', message: dialogError.value }) : null,
+                    () => !loadingSummary.value && !dialogError.value ? _.div({ class: 'at-correctAllSummary' },
+                        _.span(actionCopy.countLabel),
+                        _.strong(String(actionCopy.count(summary.value || {}))),
+                    ) : null,
+                    _.div({ class: 'at-activityConfirmActions' },
+                        _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Cancel'),
+                        _.Btn({
+                            type: 'button',
+                            color: actionCopy.color,
+                            icon: actionCopy.icon,
+                            loading: () => correctionBulkActionStatus.value !== 'idle',
+                            disabled: () => loadingSummary.value || !!dialogError.value || !actionCopy.count(summary.value || {}) || correctionBulkActionStatus.value !== 'idle',
+                            onClick: async () => {
+                                correctionBulkActionStatus.value = action;
+                                dialogError.value = null;
+                                try {
+                                    const payload = await _.http.postJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/correction-reviews/bulk`, {
+                                        action,
+                                        confirmed: true,
+                                    });
+                                    const result = normalizeDataPayload(payload);
+                                    const message = `${result.processed_count || 0} correction ${result.processed_count === 1 ? 'draft was' : 'drafts were'} ${action === 'apply' ? 'applied' : action === 'reject' ? 'rejected' : 'deleted'}.`;
+
+                                    if (action === 'apply') {
+                                        await applyRemoteContent();
+                                        blockVersionsContextKey.value = null;
+                                    } else {
+                                        loadBlockReviews(activeOutlineItem());
+                                        loadBookActivity(keyBook, { force: true });
+                                    }
+
+                                    loadCorrectionReviewQueue({ force: true });
+
+                                    close();
+                                    editorStatus.value = { type: result.failed_count ? 'warning' : 'success', message };
+                                } catch (error) {
+                                    dialogError.value = requestErrorMessage(error, `Unable to ${action} all correction drafts.`);
+                                } finally {
+                                    correctionBulkActionStatus.value = 'idle';
+                                    refreshEditorUi();
+                                }
+                            },
+                        }, actionCopy.confirm),
+                    ),
+                ),
+            },
+        }).open();
+
+        await loadSummary();
+    };
+
+    openCorrectAllDialog = async () => {
+        const dirty = dirtyBlocks();
+        const blocks = Array.from(blockMeta.values())
+            .filter((block) => block.current_version_id && String(block.text_plain || '').trim() && block.status !== 'deleted');
+        const scope = _.rod('missing');
+        const correctionProgress = _.rod({ counts: { all: blocks.length, missing: blocks.length, draft: 0 }, missing_block_uuids: blocks.map((block) => block.block_uuid) });
+        const loadingProgress = _.rod(true);
+        const viewedJobId = _.rod(correctionJobIsActive() ? correctionBatchJob.value?.id : null);
+
+        await loadCorrectionJob();
+        try {
+            const payload = await _.http.getJSON(`/dashboard/api/books/${encodeURIComponent(keyBook)}/correction-progress`);
+            correctionProgress.value = normalizeDataPayload(payload);
+        } catch (error) {
+            blockReviewBatchError.value = requestErrorMessage(error, 'Unable to load correction progress.');
+        } finally {
+            loadingProgress.value = false;
+        }
+
+        const aiSummary = correctionAiSummary();
+        const showProcess = () => viewedJobId.value && Number(correctionBatchJob.value?.id) === Number(viewedJobId.value);
+        const processCard = () => {
+            const job = correctionBatchJob.value;
+            const total = Number(job?.total_blocks || 0);
+            const completed = Number(job?.completed_blocks || 0);
+            const failed = Number(job?.failed_blocks || 0);
+            const percent = total ? Math.round((completed / total) * 100) : 0;
+            const active = correctionJobIsActive(job);
+
+            return _.div({ class: 'at-correctAllProgress', role: 'status', ariaLive: 'polite' },
+                _.div({ class: 'at-correctAllProgress-head' },
+                    _.strong(job?.status === 'cancelled' ? 'Correction process cancelled' : active ? 'Creating correction drafts' : 'Correction batch complete'),
+                    _.span(`${completed} / ${total}`)
+                ),
+                _.div({ class: 'at-correctAllProgress-track', ariaHidden: 'true' },
+                    _.div({ class: 'at-correctAllProgress-bar', style: `width: ${percent}%` })
+                ),
+                _.small(active
+                    ? `Processing saved block ${Math.min(completed + 1, total)} of ${total}${failed ? ` · ${failed} failed` : ''}`
+                    : `${completed} blocks processed${failed ? ` · ${failed} failed` : ''}.`),
+                job?.error_message ? _.Alert({ type: 'warning', message: job.error_message }) : null,
+            );
+        };
+        const correctionSummary = () => {
+            const progress = correctionProgress.value;
+            const selectedBlocks = scope.value === 'missing'
+                ? blocks.filter((block) => progress.missing_block_uuids?.includes(block.block_uuid))
+                : blocks;
+            const words = selectedBlocks.reduce((total, block) => total + String(block.text_plain || '').trim().split(/\s+/).filter(Boolean).length, 0);
+
+            return _.div({ class: 'at-correctAllSummary' },
+                _.span('Blocks to correct'), _.strong(loadingProgress.value ? 'Loading…' : String(selectedBlocks.length)),
+                _.span('Source words'), _.strong(loadingProgress.value ? '—' : String(words)),
+                _.span('Current correction drafts'), _.strong(String(progress.counts?.draft || 0)),
+            );
+        };
+
+        _.Dialog({
+            size: 'md',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3('Correct manuscript'),
+                    _.span({ class: 'text-muted' }, 'Review the batch before creating correction drafts.'),
+                ),
+                content: ({ close }) => _.div({ class: 'at-correctAllDialog' },
+                    () => showProcess() ? processCard() : null,
+                    () => showProcess() ? _.p('This process runs in the background. You can close this dialog or reload the page; use View process to return here.') : null,
+                    () => !showProcess() ? _.Alert({
+                            type: 'info',
+                            title: `${aiSummary.providerName} · ${aiSummary.model}`,
+                            message: 'The batch creates correction drafts only. It never changes your manuscript; you review each suggestion before applying it.',
+                        }) : null,
+                    () => !showProcess() && dirty.length ? _.Alert({ type: 'warning', message: 'Save all manuscript changes before starting Correct all.' }) : null,
+                    () => !showProcess() ? _.Select({
+                            label: 'What should be corrected?',
+                            model: scope,
+                            options: [
+                                { value: 'missing', label: 'Blocks without a correction draft (recommended)' },
+                                { value: 'all', label: 'All saved blocks (reuse existing drafts)' },
+                            ],
+                        }) : null,
+                    () => !showProcess() ? correctionSummary() : null,
+                    () => !showProcess() ? _.p('The correction process continues in the background if you close or reload this page.') : null,
+                    () => showProcess()
+                        ? _.div({ class: 'at-systemPromptActions' },
+                            Number(correctionBatchJob.value?.failed_blocks || 0) ? _.Btn({
+                                type: 'button',
+                                color: 'warning',
+                                icon: 'error_outline',
+                                onClick: () => openCorrectionFailureDialog(correctionBatchJob.value, (retryJob) => {
+                                    if (retryJob) viewedJobId.value = retryJob.id;
+                                }),
+                            }, `View failed blocks (${correctionBatchJob.value.failed_blocks})`) : null,
+                            correctionJobIsActive(correctionBatchJob.value) ? _.Btn({
+                                type: 'button',
+                                color: 'danger',
+                                loading: correctionJobCancelling,
+                                onClick: () => cancelCorrectionJob(correctionBatchJob.value),
+                            }, 'Cancel process') : null,
+                            _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Close')
+                        )
+                        : _.div({ class: 'at-systemPromptActions' },
+                            _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Cancel'),
+                            _.Btn({
+                                type: 'button',
+                                color: 'primary',
+                                loading: correctionJobStarting,
+                                disabled: () => dirty.length || loadingProgress.value || correctionJobStarting.value || !(scope.value === 'missing' ? correctionProgress.value.missing_block_uuids?.length : blocks.length),
+                                onClick: async () => {
+                                    const job = await startCorrectionJob(scope.value);
+                                    if (job) viewedJobId.value = job.id;
+                                },
+                            }, 'Confirm and start'),
+                        ),
+                ),
+            },
+        }).open();
     };
 
     applyBlockReview = async (block, review) => {
@@ -6182,6 +6892,7 @@ function editorText(keyBook) {
                 current_version_id: updatedBlock?.current_version_id || block.current_version_id || null,
             });
             loadBookActivity(keyBook, { force: true });
+            loadCorrectionReviewQueue({ force: true });
             return true;
         } catch {
             if (documentSaved) {
@@ -6207,6 +6918,7 @@ function editorText(keyBook) {
                 status: 'rejected',
             });
             loadBookActivity(keyBook, { force: true });
+            loadCorrectionReviewQueue({ force: true });
             return true;
         } catch {
             blockReviewsStatus.value = 'error';
@@ -6215,6 +6927,108 @@ function editorText(keyBook) {
             blockReviewActionStatus.value = 'idle';
             refreshEditorUi();
         }
+    };
+
+    resetBlockReview = (block, review) => {
+        const isCurrentAppliedText = review?.status === 'applied'
+            && Number(review.applied_block_version_id) === Number(block?.current_version_id);
+
+        if (!keyBook || !block?.block_uuid || !review?.id || block.dirty || !isCurrentAppliedText || blockReviewActionStatus.value !== 'idle') return;
+
+        _.Dialog({
+            size: 'sm',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3('Reset to original text?'),
+                    _.span({ class: 'text-muted' }, `${review.type || 'Correction'} · v${review.version_number || ''}`),
+                ),
+                content: ({ close }) => _.div({ class: 'at-activityConfirmDialog' },
+                    _.p('This restores the original text from before this correction. A new manuscript version will be saved; the applied correction remains in the history.'),
+                    _.blockquote({ class: 'at-activityConfirmPreview' }, review.original_text || ''),
+                    _.div({ class: 'at-activityConfirmActions' },
+                        _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Cancel'),
+                        _.Btn({
+                            type: 'button',
+                            color: 'warning',
+                            loading: () => blockReviewActionStatus.value === `resetting:${review.id}`,
+                            onClick: async () => {
+                                blockReviewActionStatus.value = `resetting:${review.id}`;
+
+                                try {
+                                    const changed = updateEditorBlockText(block.block_uuid, review.original_text || '');
+                                    if (!changed) throw new Error('Unable to restore the original text.');
+
+                                    clearTimeout(autosaveTimer);
+                                    const saved = await saveDirtyBlocks();
+                                    if (!saved) throw new Error('Unable to save the restored text.');
+
+                                    const updatedBlock = blockMeta.get(block.block_uuid);
+                                    blockVersionsContextKey.value = null;
+                                    loadBlockVersions({
+                                        ...block,
+                                        current_version_id: updatedBlock?.current_version_id || block.current_version_id || null,
+                                    });
+                                    loadBlockReviews({
+                                        ...block,
+                                        current_version_id: updatedBlock?.current_version_id || block.current_version_id || null,
+                                    });
+                                    loadBookActivity(keyBook, { force: true });
+                                    loadCorrectionReviewQueue({ force: true });
+                                    close();
+                                    editorStatus.value = { type: 'success', message: 'Original text restored in a new version.' };
+                                } catch (error) {
+                                    blockReviewsError.value = requestErrorMessage(error, 'Unable to restore the original text.');
+                                } finally {
+                                    blockReviewActionStatus.value = 'idle';
+                                    refreshEditorUi();
+                                }
+                            },
+                        }, 'Reset to original')
+                    )
+                ),
+            },
+        }).open();
+    };
+
+    deleteBlockReview = (block, review) => {
+        if (!keyBook || !block?.block_uuid || !review?.id || blockReviewActionStatus.value !== 'idle') return;
+
+        _.Dialog({
+            size: 'sm',
+            stickyActions: true,
+            slots: {
+                header: _.div(
+                    _.h3('Delete correction?'),
+                    _.span({ class: 'text-muted' }, `${review.type || 'Correction'} · v${review.version_number || ''}`),
+                ),
+                content: ({ close }) => _.div({ class: 'at-activityConfirmDialog' },
+                    _.p('This permanently deletes this correction draft and its suggested text. This action cannot be undone.'),
+                    _.blockquote({ class: 'at-activityConfirmPreview' }, review.suggested_text || review.original_text || ''),
+                    _.div({ class: 'at-activityConfirmActions' },
+                        _.Btn({ type: 'button', color: 'secondary', onClick: close }, 'Cancel'),
+                        _.Btn({
+                            type: 'button',
+                            color: 'danger',
+                            onClick: async () => {
+                                blockReviewActionStatus.value = `deleting:${review.id}`;
+                                try {
+                                    await _.http.delJSON(`/dashboard/api/books/${keyBook}/blocks/${encodeURIComponent(block.block_uuid)}/reviews/${review.id}`);
+                                    blockReviews.value = blockReviews.value.filter((item) => item.id !== review.id);
+                                    loadBookActivity(keyBook, { force: true });
+                                    loadCorrectionReviewQueue({ force: true });
+                                    close();
+                                } catch (error) {
+                                    blockReviewsError.value = requestErrorMessage(error, 'Unable to delete correction.');
+                                } finally {
+                                    blockReviewActionStatus.value = 'idle';
+                                }
+                            },
+                        }, 'Delete permanently')
+                    )
+                ),
+            },
+        }).open();
     };
 
     const refreshBlockMeta = async () => {
@@ -6462,6 +7276,18 @@ function editorText(keyBook) {
         blockReviewsContextKey.value = null;
         blockReviewsError.value = null;
         blockReviewActionStatus.value = 'idle';
+        correctionBatchJob.value = null;
+        correctionJobStarting.value = false;
+        correctionJobCancelling.value = false;
+        correctionBulkActionStatus.value = 'idle';
+        correctionReviewQueue.value = [];
+        correctionReviewQueueStatus.value = 'idle';
+        correctionReviewQueueContextKey.value = null;
+        correctionReviewQueueError.value = null;
+        if (correctionJobPollTimer) {
+            clearInterval(correctionJobPollTimer);
+            correctionJobPollTimer = null;
+        }
         blockComments.value = [];
         bookCommentsQueue.value = [];
         bookCommentsQueueStatus.value = 'idle';
@@ -6521,8 +7347,19 @@ function editorText(keyBook) {
         loadBlockVersions = () => { };
         loadBlockReviews = () => { };
         createBlockReview = () => { };
+        createAllBlockReviews = () => { };
+        openCorrectAllDialog = () => { };
+        openCorrectionOperationsMenu = () => { };
+        openCorrectionBulkActionDialog = () => { };
+        loadCorrectionJob = () => { };
+        startCorrectionJob = () => { };
+        cancelCorrectionJob = () => { };
+        openCorrectionFailureDialog = () => { };
         applyBlockReview = () => { };
         rejectBlockReview = () => { };
+        resetBlockReview = () => { };
+        loadCorrectionReviewQueue = () => { };
+        navigateCorrectionReviewQueue = () => { };
         loadBookActivity = () => { };
         navigateBookActivityItem = () => { };
         loadBlockComments = () => { };
@@ -6581,6 +7418,7 @@ function editorText(keyBook) {
 
         applyRemoteContent();
         loadAiProviders(keyBook, aiProviderSetting.value.service);
+        loadCorrectionJob();
         refreshEditorUi();
     }, 0);
 

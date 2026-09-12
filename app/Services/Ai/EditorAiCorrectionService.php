@@ -9,13 +9,32 @@ use App\Models\Book;
 use App\Models\BookBlock;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class EditorAiCorrectionService
 {
-    public function generate(Book $book, BookBlock $block, string $type, ?string $providerKey = null, ?string $model = null): array
+    public function generate(Book $book, BookBlock $block, string $type, ?string $providerKey = null, ?string $model = null, ?int $accountId = null): array
     {
-        $provider = $this->resolveProvider(auth()->id(), $providerKey, $model, $book);
+        Log::debug('AI correction started.', [
+            'book_id' => $book->id,
+            'block_id' => $block->id,
+            'block_uuid' => $block->block_uuid,
+            'block_version_id' => $block->current_version_id,
+            'review_type' => $type,
+            'requested_provider' => $providerKey,
+            'requested_model' => $model,
+        ]);
+
+        $provider = $this->resolveProvider($accountId ?? auth()->id(), $providerKey, $model, $book);
         $originalText = $block->currentVersion->text_plain ?? $block->text_plain ?? '';
+
+        Log::debug('AI correction provider resolved.', [
+            'book_id' => $book->id,
+            'block_uuid' => $block->block_uuid,
+            'provider_key' => $provider['provider_key'],
+            'model' => $provider['model'],
+            'text_length' => mb_strlen($originalText),
+        ]);
 
         if ($provider['provider_key'] === 'mock') {
             return $this->mockCorrection($originalText, $provider, $type);
@@ -23,6 +42,10 @@ class EditorAiCorrectionService
 
         if ($provider['provider_key'] === 'openai') {
             return $this->openAiCorrection($originalText, $provider, $type);
+        }
+
+        if ($provider['provider_key'] === 'lm-studio') {
+            return $this->lmStudioCorrection($originalText, $provider, $type);
         }
 
         $this->fail('provider_key', "Provider [{$provider['provider_key']}] is configured but not implemented for corrections yet.");
@@ -48,7 +71,31 @@ class EditorAiCorrectionService
         $resolvedModel = $model ?: ($setting?->model ?: 'mock-correction-v1');
         $provider = $this->providerConfig($accountId, $resolvedProviderKey);
 
+        if ($resolvedProviderKey === 'lm-studio') {
+            $models = $this->lmStudioModels();
+            if ($models === null || ! $models) {
+                Log::warning('AI correction could not load LM Studio models.', [
+                    'book_id' => $book->id,
+                    'model' => $resolvedModel,
+                ]);
+                $this->fail('provider_key', 'LM Studio is not reachable or has no language model available.');
+            }
+
+            $provider['models'] = $models;
+            Log::debug('AI correction loaded LM Studio models.', [
+                'book_id' => $book->id,
+                'requested_model' => $resolvedModel,
+                'available_models' => $models,
+            ]);
+        }
+
         if (! in_array($resolvedModel, $provider['models'], true)) {
+            Log::warning('AI correction requested an unavailable model.', [
+                'book_id' => $book->id,
+                'provider_key' => $resolvedProviderKey,
+                'requested_model' => $resolvedModel,
+                'available_models' => $provider['models'],
+            ]);
             $this->fail('model', "Model [{$resolvedModel}] is not available for provider [{$resolvedProviderKey}].");
         }
 
@@ -188,9 +235,121 @@ class EditorAiCorrectionService
         ];
     }
 
+    private function lmStudioCorrection(string $originalText, array $provider, string $type): array
+    {
+        $prompt = $this->correctionPrompt($originalText, $type, $provider['correction_instructions']);
+        $baseUrl = rtrim($provider['base_url'] ?: 'http://127.0.0.1:1234/v1', '/');
+
+        Log::debug('AI correction sending request to LM Studio.', [
+            'provider_key' => $provider['provider_key'],
+            'model' => $provider['model'],
+            'endpoint' => "{$baseUrl}/chat/completions",
+            'review_type' => $type,
+            'text_length' => mb_strlen($originalText),
+        ]);
+
+        try {
+            $response = Http::acceptJson()
+                ->timeout(180)
+                ->post("{$baseUrl}/chat/completions", [
+                    'model' => $provider['model'],
+                    'messages' => [
+                        ['role' => 'system', 'content' => $provider['system_prompt']],
+                        ['role' => 'user', 'content' => $prompt],
+                    ],
+                    'temperature' => 0.2,
+                ]);
+        } catch (\Throwable $exception) {
+            Log::warning('AI correction could not reach LM Studio.', [
+                'model' => $provider['model'],
+                'endpoint' => "{$baseUrl}/chat/completions",
+                'exception' => $exception->getMessage(),
+            ]);
+            $this->fail('provider_key', 'LM Studio is not reachable. Start its local server and load the selected model.');
+        }
+
+        if ($response->failed()) {
+            Log::warning('AI correction received an LM Studio error response.', [
+                'model' => $provider['model'],
+                'endpoint' => "{$baseUrl}/chat/completions",
+                'status' => $response->status(),
+                'response_preview' => mb_substr($response->body(), 0, 500),
+            ]);
+            $this->fail('provider_key', 'LM Studio correction request failed: '.$response->body());
+        }
+
+        $suggestedText = trim((string) $response->json('choices.0.message.content'));
+        if ($suggestedText === '') {
+            Log::warning('AI correction received an empty LM Studio response.', [
+                'model' => $provider['model'],
+                'endpoint' => "{$baseUrl}/chat/completions",
+                'response_id' => $response->json('id'),
+            ]);
+            $this->fail('provider_key', 'LM Studio returned an empty correction response.');
+        }
+
+        Log::debug('AI correction received an LM Studio response.', [
+            'model' => $provider['model'],
+            'endpoint' => "{$baseUrl}/chat/completions",
+            'response_id' => $response->json('id'),
+            'suggested_text_length' => mb_strlen($suggestedText),
+        ]);
+
+        return [
+            'source' => 'ai',
+            'original_text' => $originalText,
+            'suggested_text' => $suggestedText,
+            'notes_json' => [
+                'mode' => 'provider',
+                'provider_key' => $provider['provider_key'],
+                'provider_name' => $provider['name'],
+                'model' => $provider['model'],
+                'review_type' => $type,
+                'endpoint' => "{$baseUrl}/chat/completions",
+                'changes_detected' => $originalText !== $suggestedText,
+                'system_prompt' => $provider['system_prompt'],
+                'prompt' => $prompt,
+                'response_id' => $response->json('id'),
+            ],
+        ];
+    }
+
     private function correctionPrompt(string $text, string $type, string $instructions): string
     {
         return "Correction type: {$type}\n\nEditorial instructions:\n{$instructions}\n\nOutput requirements (mandatory):\n- Return only the final corrected paragraph.\n- Do not add an introduction, conclusion, explanation, summary, note, label, quotation marks or Markdown.\n- Do not describe what you corrected and do not ask for more text.\n\nParagraph:\n{$text}";
+    }
+
+    private function lmStudioModels(): ?array
+    {
+        try {
+            $response = Http::acceptJson()
+                ->timeout(5)
+                ->get('http://127.0.0.1:1234/api/v1/models');
+        } catch (\Throwable $exception) {
+            Log::debug('AI correction LM Studio model discovery failed.', [
+                'endpoint' => 'http://127.0.0.1:1234/api/v1/models',
+                'exception' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        if ($response->failed()) {
+            Log::debug('AI correction LM Studio model discovery returned an error.', [
+                'endpoint' => 'http://127.0.0.1:1234/api/v1/models',
+                'status' => $response->status(),
+            ]);
+
+            return null;
+        }
+
+        return collect($response->json('models', []))
+            ->filter(fn (array $model) => ($model['type'] ?? 'llm') === 'llm')
+            ->map(fn (array $model) => $model['key'] ?? null)
+            ->filter(fn ($model) => is_string($model) && $model !== '')
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function defaultSystemPrompt(): string

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\BookBlockVersionConflictException;
 use App\Jobs\ProcessBookAudioJob;
+use App\Jobs\ProcessBookCorrectionJob;
 use App\Jobs\ProcessBookTranslationJob;
 use App\Models\AiChatMessage;
 use App\Models\AiChatThread;
@@ -21,6 +22,8 @@ use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
 use App\Models\BookBlockTranslation;
 use App\Models\BookBlockVoiceAssignment;
+use App\Models\BookCorrectionJob;
+use App\Models\BookCorrectionJobFailure;
 use App\Models\BookCategory;
 use App\Models\BookEdition;
 use App\Models\BookPublication;
@@ -42,6 +45,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -1085,6 +1089,270 @@ class DashboardBookController extends Controller
                     ->values(),
             ],
         ]);
+    }
+
+    public function correctionProgress(string $keyBook): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $blocks = $book->blocks()
+            ->where('status', '!=', 'deleted')
+            ->whereNotNull('current_version_id')
+            ->whereNotNull('text_plain')
+            ->with(['reviews:id,book_block_id,book_block_version_id,status'])
+            ->get(['id', 'block_uuid', 'current_version_id', 'text_plain']);
+
+        $eligible = $blocks->filter(fn (BookBlock $block) => filled(trim($block->text_plain ?: '')));
+        $missing = $eligible->filter(fn (BookBlock $block) => ! $block->reviews
+            ->contains(fn (BookBlockReview $review) => $review->book_block_version_id === $block->current_version_id && $review->status === 'draft'));
+
+        return response()->json(['data' => [
+            'counts' => [
+                'all' => $eligible->count(),
+                'missing' => $missing->count(),
+                'draft' => $eligible->count() - $missing->count(),
+            ],
+            'missing_block_uuids' => $missing->pluck('block_uuid')->values(),
+        ]]);
+    }
+
+    public function correctionReviewBulkSummary(string $keyBook): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $drafts = $this->currentCorrectionDrafts($book);
+
+        return response()->json(['data' => [
+            'draft_count' => $drafts->count(),
+            'applyable_count' => $drafts->unique('book_block_id')->count(),
+            'has_active_correction_job' => $book->correctionJobs()
+                ->whereIn('status', ['queued', 'running'])
+                ->exists(),
+        ]]);
+    }
+
+    public function correctionReviewQueue(string $keyBook): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+
+        // A block may have more than one current draft. Correct presents all
+        // of them together, so the global navigator intentionally has one
+        // item per block instead of sending the user to the same paragraph
+        // repeatedly.
+        $items = $this->currentCorrectionDrafts($book)
+            ->groupBy('book_block_id')
+            ->map(function ($reviews) {
+                $block = $reviews->first()->block;
+
+                return [
+                    'block_uuid' => $block->block_uuid,
+                    'draft_count' => $reviews->count(),
+                    'sort_order' => $block->sort_order,
+                ];
+            })
+            ->sortBy(fn (array $item) => sprintf('%010d:%s', $item['sort_order'], $item['block_uuid']))
+            ->map(fn (array $item) => [
+                'block_uuid' => $item['block_uuid'],
+                'draft_count' => $item['draft_count'],
+            ])
+            ->values();
+
+        return response()->json(['data' => [
+            'items' => $items,
+        ]]);
+    }
+
+    public function bulkCorrectionReviews(
+        Request $request,
+        string $keyBook,
+        BookBlockService $blocks,
+    ): JsonResponse {
+        $validated = $request->validate([
+            'action' => ['required', 'string', Rule::in(['apply', 'reject', 'delete'])],
+            'confirmed' => ['accepted'],
+        ]);
+
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        abort_if(
+            $book->correctionJobs()->whereIn('status', ['queued', 'running'])->exists(),
+            422,
+            'Wait for the active correction process before changing all drafts.'
+        );
+
+        $drafts = $this->currentCorrectionDrafts($book);
+        $action = $validated['action'];
+
+        if ($action === 'apply') {
+            $result = $this->applyCurrentCorrectionDrafts($book, $drafts, $blocks);
+        } elseif ($action === 'reject') {
+            $updated = BookBlockReview::query()
+                ->whereIn('id', $drafts->pluck('id'))
+                ->update([
+                    'status' => 'rejected',
+                    'applied_book_block_version_id' => null,
+                    'resolved_at' => now(),
+                    'resolved_by' => auth()->id(),
+                    'updated_at' => now(),
+                ]);
+
+            $result = [
+                'selected_count' => $drafts->count(),
+                'processed_count' => $updated,
+                'skipped_count' => 0,
+                'failed_count' => 0,
+                'errors' => [],
+            ];
+        } else {
+            $deleted = BookBlockReview::query()
+                ->whereIn('id', $drafts->pluck('id'))
+                ->delete();
+
+            $result = [
+                'selected_count' => $drafts->count(),
+                'processed_count' => $deleted,
+                'skipped_count' => 0,
+                'failed_count' => 0,
+                'errors' => [],
+            ];
+        }
+
+        return response()->json(['data' => [
+            'action' => $action,
+            ...$result,
+        ]]);
+    }
+
+    public function correctionJob(string $keyBook): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $job = $book->correctionJobs()->latest('id')->first();
+
+        return response()->json(['data' => [
+            'job' => $job ? $this->serializeCorrectionJob($job) : null,
+        ]]);
+    }
+
+    public function startCorrectionJob(Request $request, string $keyBook): JsonResponse
+    {
+        $validated = $request->validate([
+            'provider_key' => ['required', 'string', 'max:80'],
+            'model' => ['required', 'string', 'max:120'],
+            'scope' => ['nullable', 'in:missing,all'],
+            'confirmed' => ['accepted'],
+        ]);
+
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $activeJob = $book->correctionJobs()
+            ->whereIn('status', ['queued', 'running'])
+            ->latest('id')
+            ->first();
+        if ($activeJob) {
+            return response()->json(['data' => [
+                'job' => $this->serializeCorrectionJob($activeJob),
+                'created' => false,
+            ]]);
+        }
+
+        $scope = $validated['scope'] ?? 'missing';
+        $blocks = $book->blocks()
+            ->where('status', '!=', 'deleted')
+            ->whereNotNull('current_version_id')
+            ->whereNotNull('text_plain')
+            ->when($scope === 'missing', fn ($query) => $query->whereDoesntHave('reviews', fn ($reviews) => $reviews
+                ->where('type', 'grammar')
+                ->where('status', 'draft')
+                ->whereColumn('book_block_version_id', 'book_blocks.current_version_id')))
+            ->get(['id', 'block_uuid', 'text_plain'])
+            ->filter(fn (BookBlock $block) => filled(trim($block->text_plain ?: '')))
+            ->values();
+
+        abort_if($blocks->isEmpty(), 422, 'There are no saved text blocks to correct for this scope.');
+
+        $job = BookCorrectionJob::query()->create([
+            'book_id' => $book->id,
+            'status' => 'queued',
+            'provider_key' => $validated['provider_key'],
+            'model' => $validated['model'],
+            'total_blocks' => $blocks->count(),
+            'request_json' => [
+                'scope' => $scope,
+                'block_uuids' => $blocks->pluck('block_uuid')->all(),
+            ],
+            'created_by' => auth()->id(),
+        ]);
+
+        ProcessBookCorrectionJob::dispatchFor($job);
+
+        return response()->json(['data' => [
+            'job' => $this->serializeCorrectionJob($job),
+            'created' => true,
+        ]], 202);
+    }
+
+    public function cancelCorrectionJob(string $keyBook, BookCorrectionJob $job): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        abort_unless($job->book_id === $book->id, 404);
+        abort_unless(in_array($job->status, ['queued', 'running'], true), 422, 'Only active correction processes can be cancelled.');
+
+        $job->forceFill([
+            'status' => 'cancelled',
+            'current_block_uuid' => null,
+            'completed_at' => now(),
+        ])->save();
+
+        return response()->json(['data' => [
+            'job' => $this->serializeCorrectionJob($job),
+        ]]);
+    }
+
+    public function correctionJobFailures(string $keyBook, BookCorrectionJob $job): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        abort_unless($job->book_id === $book->id, 404);
+
+        $failures = $job->failures()
+            ->whereNull('resolved_at')
+            ->with([
+                'block:id,block_uuid,text_plain',
+                'blockVersion:id,version_number,text_plain',
+            ])
+            ->latest('id')
+            ->get();
+
+        return response()->json(['data' => [
+            'failures' => $failures->map(fn (BookCorrectionJobFailure $failure) => $this->serializeCorrectionJobFailure($failure))->values(),
+        ]]);
+    }
+
+    public function retryCorrectionJobFailures(string $keyBook, BookCorrectionJob $job): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        abort_unless($job->book_id === $book->id, 404);
+        abort_unless(! $book->correctionJobs()->whereIn('status', ['queued', 'running'])->exists(), 422, 'Wait for the active correction process before retrying failed blocks.');
+
+        $failures = $job->failures()
+            ->whereNull('resolved_at')
+            ->get(['id', 'block_uuid']);
+        abort_if($failures->isEmpty(), 422, 'There are no failed blocks to retry.');
+
+        $retry = BookCorrectionJob::query()->create([
+            'book_id' => $book->id,
+            'status' => 'queued',
+            'provider_key' => $job->provider_key,
+            'model' => $job->model,
+            'total_blocks' => $failures->unique('block_uuid')->count(),
+            'request_json' => [
+                'scope' => 'retry_failed',
+                'block_uuids' => $failures->pluck('block_uuid')->unique()->values()->all(),
+                'retry_failure_ids' => $failures->pluck('id')->all(),
+            ],
+            'created_by' => auth()->id(),
+        ]);
+
+        ProcessBookCorrectionJob::dispatchFor($retry);
+
+        return response()->json(['data' => [
+            'job' => $this->serializeCorrectionJob($retry),
+        ]], 202);
     }
 
     public function blockComments(string $keyBook, string $blockUuid): JsonResponse
@@ -3365,6 +3633,15 @@ class DashboardBookController extends Controller
             'model' => ['nullable', 'string', 'max:120'],
         ]);
 
+        Log::debug('Correct review request received.', [
+            'account_id' => auth()->id(),
+            'book_key' => $keyBook,
+            'block_uuid' => $blockUuid,
+            'review_type' => $validated['type'] ?? 'grammar',
+            'provider_key' => $validated['provider_key'] ?? 'mock',
+            'model' => $validated['model'] ?? 'mock-correction-v1',
+        ]);
+
         $book = Book::query()
             ->where('key_book', $keyBook)
             ->firstOrFail();
@@ -3397,6 +3674,11 @@ class DashboardBookController extends Controller
             ->first();
 
         if ($existingReview) {
+            Log::debug('Correct review reused an existing draft.', [
+                'book_id' => $book->id,
+                'block_uuid' => $block->block_uuid,
+                'review_id' => $existingReview->id,
+            ]);
             return response()->json([
                 'data' => [
                     'review' => $this->serializeBlockReview($existingReview, $block),
@@ -3418,6 +3700,13 @@ class DashboardBookController extends Controller
             'suggested_text' => $correction['suggested_text'],
             'notes_json' => $correction['notes_json'],
             'created_by' => auth()->id(),
+        ]);
+
+        Log::debug('Correct review created.', [
+            'book_id' => $book->id,
+            'block_uuid' => $block->block_uuid,
+            'review_id' => $review->id,
+            'source' => $review->source,
         ]);
 
         return response()->json([
@@ -3470,6 +3759,115 @@ class DashboardBookController extends Controller
                 'review' => $this->serializeBlockReview($review->load('blockVersion:id,version_number'), $block),
             ],
         ]);
+    }
+
+    public function destroyBlockReview(string $keyBook, string $blockUuid, BookBlockReview $review): JsonResponse
+    {
+        $book = Book::query()->where('key_book', $keyBook)->firstOrFail();
+        $block = $book->blocks()->where('block_uuid', $blockUuid)->firstOrFail();
+
+        abort_unless($review->book_id === $book->id && $review->book_block_id === $block->id, 404);
+
+        $review->delete();
+
+        return response()->json([], 204);
+    }
+
+    /** @return \Illuminate\Support\Collection<int, BookBlockReview> */
+    private function currentCorrectionDrafts(Book $book)
+    {
+        return BookBlockReview::query()
+            ->with(['block.currentVersion'])
+            ->where('book_id', $book->id)
+            ->where('status', 'draft')
+            ->orderByDesc('id')
+            ->get()
+            ->filter(fn (BookBlockReview $review) => $review->block
+                && $review->block->current_version_id
+                && (int) $review->block->current_version_id === (int) $review->book_block_version_id)
+            ->values();
+    }
+
+    /** @param \Illuminate\Support\Collection<int, BookBlockReview> $drafts */
+    private function applyCurrentCorrectionDrafts(Book $book, $drafts, BookBlockService $blocks): array
+    {
+        // One block can have several current draft proposals. Applying more
+        // than one would overwrite the preceding proposal, so use only the
+        // most recently created draft for each saved block.
+        $reviews = $drafts
+            ->groupBy('book_block_id')
+            ->map(fn ($group) => $group->sortByDesc('id')->first())
+            ->values();
+        $result = [
+            'selected_count' => $reviews->count(),
+            'processed_count' => 0,
+            'skipped_count' => 0,
+            'failed_count' => 0,
+            'errors' => [],
+        ];
+
+        foreach ($reviews as $review) {
+            $block = $review->block;
+            if (! $block || ! $block->currentVersion) {
+                $result['skipped_count']++;
+                continue;
+            }
+
+            try {
+                $saved = $blocks->saveBlock($book, [
+                    'block_uuid' => $block->block_uuid,
+                    'base_version_id' => $block->current_version_id,
+                    'type' => $block->type,
+                    'sort_order' => $block->sort_order,
+                    'parent_block_id' => $block->parent_block_id,
+                    'content_json' => $this->correctionContent($block, $review->suggested_text),
+                    'text_plain' => $review->suggested_text,
+                    'source' => 'correction',
+                    'diff_json' => [
+                        'type' => 'correction_apply',
+                        'review_id' => $review->id,
+                    ],
+                ], auth()->id());
+
+                $review->forceFill([
+                    'status' => 'applied',
+                    'applied_book_block_version_id' => $saved['version']?->id,
+                    'resolved_at' => now(),
+                    'resolved_by' => auth()->id(),
+                ])->save();
+                $result['processed_count']++;
+            } catch (BookBlockVersionConflictException) {
+                // A block changed after the summary was displayed. Preserve
+                // its review rather than applying a suggestion to new text.
+                $result['skipped_count']++;
+            } catch (\Throwable $exception) {
+                $result['failed_count']++;
+                if (count($result['errors']) < 3) {
+                    $result['errors'][] = "Block {$block->block_uuid}: {$exception->getMessage()}";
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    private function correctionContent(BookBlock $block, string $suggestedText): array
+    {
+        $content = $block->currentVersion?->content_json ?: $block->content_json ?: ['type' => $block->type];
+        $textContent = $suggestedText === '' ? [] : [['type' => 'text', 'text' => $suggestedText]];
+
+        if (($content['type'] ?? $block->type) === 'blockquote') {
+            $content['content'] = [[
+                'type' => 'paragraph',
+                'content' => $textContent,
+            ]];
+
+            return $content;
+        }
+
+        $content['content'] = $textContent;
+
+        return $content;
     }
 
     private function serializeEditorBlock(BookBlock $block): array
@@ -3939,6 +4337,44 @@ class DashboardBookController extends Controller
             'started_at' => $job->started_at?->toISOString(),
             'completed_at' => $job->completed_at?->toISOString(),
             'created_at' => $job->created_at?->toISOString(),
+        ];
+    }
+
+    private function serializeCorrectionJob(BookCorrectionJob $job): array
+    {
+        $total = max(0, $job->total_blocks);
+
+        return [
+            'id' => $job->id,
+            'status' => $job->status,
+            'provider_key' => $job->provider_key,
+            'model' => $job->model,
+            'total_blocks' => $total,
+            'completed_blocks' => $job->completed_blocks,
+            'skipped_blocks' => $job->skipped_blocks,
+            'failed_blocks' => $job->failed_blocks,
+            'current_block_uuid' => $job->current_block_uuid,
+            'progress_percent' => $total ? (int) round(($job->completed_blocks / $total) * 100) : 0,
+            'request_json' => $job->request_json,
+            'error_message' => $job->error_message,
+            'started_at' => $job->started_at?->toISOString(),
+            'completed_at' => $job->completed_at?->toISOString(),
+            'created_at' => $job->created_at?->toISOString(),
+        ];
+    }
+
+    private function serializeCorrectionJobFailure(BookCorrectionJobFailure $failure): array
+    {
+        $text = $failure->blockVersion?->text_plain ?: $failure->block?->text_plain ?: '';
+
+        return [
+            'id' => $failure->id,
+            'block_uuid' => $failure->block_uuid,
+            'version_number' => $failure->blockVersion?->version_number,
+            'text_preview' => Str::limit(trim($text), 180),
+            'error_message' => $failure->error_message,
+            'attempts' => $failure->attempts,
+            'last_attempt_at' => $failure->last_attempt_at?->toISOString(),
         ];
     }
 

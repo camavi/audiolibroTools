@@ -127,6 +127,11 @@ class Book extends Model
         return $this->hasMany(BookTranslationJob::class);
     }
 
+    public function correctionJobs(): HasMany
+    {
+        return $this->hasMany(BookCorrectionJob::class);
+    }
+
     public function publications(): HasMany
     {
         return $this->hasMany(BookPublication::class);

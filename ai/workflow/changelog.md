@@ -2,6 +2,17 @@
 
 ## 2026-09-09
 
+- Collegato LM Studio al tool Correct: le correzioni locali usano `chat/completions`, con prompt e metadata coerenti con gli altri provider.
+- Allineata la risoluzione dei modelli LM Studio di Correct a Translate e aggiunto logging diagnostico privo di testo del manoscritto per richiesta, modello, endpoint ed eventuali errori del provider locale.
+- Aggiunta cancellazione permanente delle review nel tool Correct: ogni correzione ha Delete con dialog di conferma esplicito e API che verifica l'appartenenza al blocco/libro.
+- Le correzioni Applied espongono ora `Reset`: con conferma ripristina il testo originale in una nuova versione del blocco, senza eliminare la review applicata e la relativa cronologia.
+- Aggiunto Correct all nel Right Workspace: crea progressivamente review grammar per tutti i blocchi salvati, riusa l'idempotenza delle review e mostra avanzamento/errori senza applicare modifiche al manoscritto. Il batch e' ora una catena di job Laravel persistenti: ogni job completa e salva un solo blocco prima di accodare il successivo; continua dopo refresh/chiusura della pagina, blocca i duplicati e il pulsante diventa `View process` finche' e' in coda o in esecuzione.
+- Aggiunto il guardiano `corrections:recover-stalled`, pianificato ogni minuto: recupera automaticamente un batch Correct attivo che non salva avanzamenti per sei minuti, ripartendo dall'ultimo blocco persistito. Lo stack `dev.sh` avvia anche lo scheduler Laravel.
+- Rafforzata la concorrenza SQLite per i batch AI: WAL, busy timeout e transazioni `IMMEDIATE` serializzano le scritture concorrenti di worker/coda invece di interrompere la correzione con `database is locked`.
+- Nel tool Correct il comando globale e' ora il menu CMSwift `All operations`: contiene `Correct all`, `Apply all`, `Reject all` e `Delete all`. Le azioni bulk richiedono conferma, agiscono solo sulle bozze della versione corrente e restano bloccate finche' Correct all e' attivo; Apply usa esclusivamente la proposta draft piu' recente per ogni blocco e crea una nuova versione del testo.
+- Aggiunta nel footer globale di Correct la navigazione `Previous · posizione · Next`, con la stessa grafica e comportamento della coda Activity. Scorre tra i blocchi che hanno almeno una correzione draft della versione corrente e rimane disponibile mentre il contenuto del pannello scorre.
+- Il dialog `View process` permette ora di annullare un batch Correct all con conferma: il job si ferma dopo l'eventuale blocco gia' in corso e conserva le correzioni draft gia' create.
+- Gli errori del batch Correct all sono ora persistenti per blocco/versione: `View failed blocks` mostra anteprima e causa, permette di aprire il paragrafo nell'editor e di avviare `Retry failed` solo sui blocchi non riusciti.
 - Nel tool Correct dell'editor aggiunto accesso diretto al dialog System prompt: mostra la libreria di prompt salvati, copia il prompt scelto nell'editor modificabile, permette il reset al prompt predefinito e salva l'override per il libro corrente.
 - Rafforzate le istruzioni di Correct: system e user prompt richiedono esclusivamente il paragrafo revisionato, vietando commenti, spiegazioni, saluti, etichette, Markdown e richieste di altri testi.
 - Il dialog System prompt di Correct permette ora di configurare anche le istruzioni editoriali inviate con il blocco; il contratto di output che impone il solo paragrafo corretto resta fisso lato backend.

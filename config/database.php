@@ -38,10 +38,14 @@ return [
             'database' => env('DB_DATABASE', database_path('database.sqlite')),
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
-            'busy_timeout' => null,
-            'journal_mode' => null,
-            'synchronous' => null,
-            'transaction_mode' => 'DEFERRED',
+            // SQLite accepts a single writer. WAL lets readers continue while
+            // a queue worker saves its progress; IMMEDIATE transactions and a
+            // short busy wait serialize concurrent worker reservations rather
+            // than failing a batch with "database is locked".
+            'busy_timeout' => (int) env('DB_SQLITE_BUSY_TIMEOUT', 10000),
+            'journal_mode' => env('DB_SQLITE_JOURNAL_MODE', 'WAL'),
+            'synchronous' => env('DB_SQLITE_SYNCHRONOUS', 'NORMAL'),
+            'transaction_mode' => env('DB_SQLITE_TRANSACTION_MODE', 'IMMEDIATE'),
         ],
 
         'mysql' => [

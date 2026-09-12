@@ -48,6 +48,16 @@ FRONT_PID=$!
 php artisan queue:listen database --queue=tts --timeout=1800 --tries=1 &
 TTS_WORKER_PID=$!
 
+# Le correzioni e le traduzioni batch restano in coda anche se il browser
+# viene ricaricato. Il worker separato evita di bloccare la coda audio.
+php artisan queue:listen database --queue=default --timeout=360 --tries=1 &
+AI_WORKER_PID=$!
+
+# Il guardiano recupera i batch Correct senza aggiornamenti: per esempio dopo
+# un crash del worker o un riavvio mentre LM Studio stava elaborando un blocco.
+php artisan schedule:work &
+SCHEDULER_PID=$!
+
 # Avvia Qwen3-TTS solo se non è già disponibile. Questo permette di
 # rilanciare lo stack senza interrompere una sintesi già in corso.
 QWEN_TTS_PID=""
@@ -62,7 +72,7 @@ if ! qwen_service_ready; then
 fi
 
 cleanup() {
-    kill "$LARAVEL_PID" "$FRONT_PID" "$TTS_WORKER_PID" 2>/dev/null || true
+    kill "$LARAVEL_PID" "$FRONT_PID" "$TTS_WORKER_PID" "$AI_WORKER_PID" "$SCHEDULER_PID" 2>/dev/null || true
 
     if [ -n "$QWEN_TTS_PID" ]; then
         kill "$QWEN_TTS_PID" 2>/dev/null || true
