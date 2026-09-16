@@ -1121,6 +1121,11 @@ function prepareTimelinePlayer(key, url) {
     audio = new Audio(url);
     audio.preload = 'auto';
     audio._atTimelineActive = false;
+    // The timeline clock is based on persisted millisecond durations, while
+    // HTMLAudioElement ends on the decoded media duration. Those values can
+    // differ by a few milliseconds for WAV files. Remember a native end so a
+    // following animation frame cannot call play() again and restart it.
+    audio._atTimelineEnded = false;
     audio._atTimelineTargetTime = 0;
     audio._atWaitingForSeek = false;
     audio._atSeekFallback = null;
@@ -1131,6 +1136,7 @@ function prepareTimelinePlayer(key, url) {
     });
     audio.addEventListener('seeked', () => resumeTimelinePlayerAfterSeek(audio));
     audio.addEventListener('canplay', () => resumeTimelinePlayerAfterSeek(audio));
+    audio.addEventListener('ended', () => { audio._atTimelineEnded = true; });
     audio.load();
     timelinePlayers.set(key, audio);
     return audio;
@@ -1218,7 +1224,7 @@ function configureTimelinePlayerEqualizer(key, audio, clipSettings, masterSettin
     }
 }
 function playTimelinePlayer(audio) {
-    if (audio._atTimelineActive && timelineIsPlaying.value && audio.paused) {
+    if (audio._atTimelineActive && !audio._atTimelineEnded && timelineIsPlaying.value && audio.paused) {
         timelineAudioContext?.resume().catch(() => { });
         startTimelineMeter();
         audio.play().catch(() => { });
@@ -1239,6 +1245,10 @@ function resumeTimelinePlayerAfterSeek(audio) {
     playTimelinePlayer(audio);
 }
 function seekTimelinePlayer(audio, mediaTime) {
+    // A seek is an explicit restart (for instance after a user seek or a
+    // deliberate loop), so the previous native `ended` event is no longer
+    // relevant. Normal transport ticks intentionally do not clear this flag.
+    audio._atTimelineEnded = false;
     const duration = Number(audio.duration);
     const maximum = Number.isFinite(duration) && duration > 0 ? Math.max(0, duration - .01) : Infinity;
     audio._atTimelineTargetTime = Math.min(maximum, Math.max(0, mediaTime));

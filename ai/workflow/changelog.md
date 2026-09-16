@@ -3,6 +3,7 @@
 ## 2026-09-16
 
 - Riorganizzata la topbar globale della dashboard: `Book panel` viene mostrato accanto al nome del prodotto nelle pagine di un libro, mentre a destra resta un unico menu account con Profile, sottomenu Language e cambio tema. Rimossi dalla barra i selettori separati che duplicavano i controlli di lingua e tema.
+- Corretto il playback runtime della timeline: dopo l'evento nativo `ended` di un clip, il transport non invia piu' un secondo `play()` nello scarto di pochi millisecondi rispetto alla durata persistita. Questo evita il riavvio da zero del clip e il taglio percepito alla fine dei segmenti audio.
 
 ## 2026-09-12
 
