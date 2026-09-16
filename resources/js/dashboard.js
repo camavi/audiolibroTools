@@ -207,6 +207,7 @@ function selectChangeValue(value, fallback = '') {
 }
 
 function setDashboardTheme(theme) {
+    dashboardTheme.value = theme;
     _.setTheme(theme);
 }
 
@@ -231,24 +232,72 @@ window.AudiobookTools = {
     setDashboardLocale,
 };
 
-const globalHeaderControls = () => _.div({ class: 'at-dashboardGlobalControls' },
-    _.Select({
-        class: 'at-dashboardLocaleSelect',
-        label: false,
-        model: dashboardLocale,
-        options: dashboardLocaleOptions,
-        onChange: setDashboardLocale,
-    }),
-    _.Btn({
-        class: 'at-dashboardThemeToggle',
-        color: 'secondary',
-        title: _.getTheme() === 'dark' ? 'Use light theme' : 'Use dark theme',
-        ariaLabel: _.getTheme() === 'dark' ? 'Use light theme' : 'Use dark theme',
-        icon: _.getTheme() === 'dark' ? 'light_mode' : 'dark_mode',
+function isBookPanelAction(action) {
+    return action?.classList?.contains('at-dashboardBookPanelAction');
+}
+
+const languageMenu = _.Menu({
+    title: 'Language',
+    subtitle: 'Choose the dashboard interface language.',
+    icon: 'translate',
+    placement: 'left-start',
+    minWidth: 240,
+    items: () => dashboardLocaleOptions.map((option) => ({
+        label: option.label,
+        checked: () => dashboardLocale.value === option.value,
         onClick: () => {
-            setDashboardTheme(_.getTheme() === 'dark' ? 'light' : 'dark');
+            setDashboardLocale(option.value);
+            userMenu.close();
         },
-    })
+    })),
+});
+
+const userMenu = _.Menu({
+    title: 'Account',
+    subtitle: 'Profile and display preferences.',
+    icon: 'person',
+    placement: 'bottom-end',
+    minWidth: 260,
+    items: [
+        {
+            label: 'Profile',
+            icon: 'person',
+            subtitle: 'View and manage your profile.',
+            onClick: () => _.router.navigate('/dashboard/profile'),
+        },
+        { type: 'separator' },
+        {
+            label: 'Language',
+            icon: 'translate',
+            iconRight: 'chevron_left',
+            subtitle: () => dashboardLocaleOptions.find((option) => option.value === dashboardLocale.value)?.label || dashboardLocale.value.toUpperCase(),
+            closeOnSelect: false,
+            onClick: (_, event) => languageMenu.open(event.currentTarget),
+        },
+        {
+            label: 'Theme',
+            icon: () => dashboardTheme.value === 'dark' ? 'light_mode' : 'dark_mode',
+            subtitle: () => dashboardTheme.value === 'dark' ? 'Dark theme is active. Switch to light.' : 'Light theme is active. Switch to dark.',
+            onClick: () => setDashboardTheme(dashboardTheme.value === 'dark' ? 'light' : 'dark'),
+        },
+    ],
+});
+
+const globalHeaderControls = () => _.Btn({
+    class: 'at-dashboardUserMenuTrigger',
+    color: 'secondary',
+    icon: 'account_circle',
+    title: 'Open account menu',
+    ariaLabel: 'Open account menu',
+    onClick: (event) => userMenu.toggle(event.currentTarget),
+});
+
+const dashboardBrand = () => _.span({ class: 'at-dashboardBrand' },
+    _.span({ class: 'at-dashboardBrandCopy' }, 'Audiobook Tools'),
+    _.span({ class: 'at-dashboardHeaderBookPanel' }, () => {
+        pageHeaderActionsVersion.value;
+        return pageHeaderActions().filter(isBookPanelAction);
+    }),
 );
 
 const rightHeader = _.div({ class: 'at-dashboardPageActions' }, () => {
@@ -257,7 +306,7 @@ const rightHeader = _.div({ class: 'at-dashboardPageActions' }, () => {
         _.div({ class: 'at-dashboardEditionSlot' }, () => bookEditionVisible.value
             ? _.Select({ class: 'at-dashboardEditionSelect', model: selectedBookEdition, options: () => bookEditionOptions.value, onChange: changeBookEdition })
             : null),
-        ...pageHeaderActions(),
+        ...pageHeaderActions().filter((action) => !isBookPanelAction(action)),
         globalHeaderControls(),
     ];
 });
@@ -274,7 +323,7 @@ function mountDashboard(contentPage) {
     currentLayout = _.Layout({
         header: _.Header({
             left: false,
-            title: 'Audiobook Tools',
+            title: dashboardBrand,
             subtitle: 'Editor',
             right: rightHeader,
         }),

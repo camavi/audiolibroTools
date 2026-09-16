@@ -17,19 +17,26 @@ body {
     gap: .5rem;
 }
 
-.at-dashboardGlobalControls {
+.at-dashboardBrand,
+.at-dashboardHeaderBookPanel {
     display: flex;
     align-items: center;
     gap: .5rem;
+    min-width: 0;
+}
+
+.at-dashboardBrandCopy {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.at-dashboardHeaderBookPanel {
     padding-left: .5rem;
     border-left: 1px solid var(--cms-border-color);
 }
 
-.at-dashboardLocaleSelect {
-    min-width: 8.5rem;
-}
-
-.at-dashboardThemeToggle {
+.at-dashboardUserMenuTrigger {
     min-width: 2.5rem;
 }
 
@@ -48,8 +55,16 @@ body {
         flex-wrap: wrap;
     }
 
-    .at-dashboardGlobalControls {
+    .at-dashboardBrand {
+        flex-wrap: wrap;
+    }
+
+    .at-dashboardHeaderBookPanel {
         padding-left: 0;
+        border-left: 0;
+    }
+
+    :root[data-theme="dark"] .at-dashboardHeaderBookPanel {
         border-left: 0;
     }
 }

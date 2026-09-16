@@ -1,5 +1,9 @@
 # Registro Avanzamento
 
+## 2026-09-16
+
+- Riorganizzata la topbar globale della dashboard: `Book panel` viene mostrato accanto al nome del prodotto nelle pagine di un libro, mentre a destra resta un unico menu account con Profile, sottomenu Language e cambio tema. Rimossi dalla barra i selettori separati che duplicavano i controlli di lingua e tema.
+
 ## 2026-09-12
 
 - Corretto l'editor delle voci progettate nella libreria Audio: il comando Edit riconosce il provider `at-qwen-design`, mostra i prompt, le frasi di riferimento e un player per il sample salvato senza upload file e rigenera ogni sample singolarmente. Il footer salva solo i dettagli della voce. I requisiti di genere (maschile, femminile o neutro) e lingua vengono ora inviati esplicitamente al motore Qwen; le nuove frasi di riferimento predefinite sono localizzate per ogni lingua supportata.

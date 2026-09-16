@@ -31,7 +31,7 @@
     color: var(--at-text);
 }
 
-:root[data-theme="dark"] .at-dashboardGlobalControls {
+:root[data-theme="dark"] .at-dashboardHeaderBookPanel {
     border-color: var(--at-border);
 }
 
