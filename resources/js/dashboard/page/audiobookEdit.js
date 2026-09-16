@@ -3268,6 +3268,13 @@ function timelineCard() {
         if (modifier && event.key.toLowerCase() === 'z') {
             event.preventDefault();
             event.shiftKey ? redoTimeline(bookKey()) : undoTimeline(bookKey());
+        } else if (event.code === 'Space' && !event.repeat) {
+            // Match standard audio-editor transport behaviour, but leave the
+            // spacebar untouched for text fields (guarded above).
+            event.preventDefault();
+            if (timelineIsPlaying.value) pauseTimelinePlayback();
+            else startTimelinePlayback(render);
+            render();
         } else if (modifier && event.key.toLowerCase() === 'y') {
             event.preventDefault();
             redoTimeline(bookKey());

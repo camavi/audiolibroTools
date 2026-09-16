@@ -5,6 +5,7 @@
 - Riorganizzata la topbar globale della dashboard: `Book panel` viene mostrato accanto al nome del prodotto nelle pagine di un libro, mentre a destra resta un unico menu account con Profile, sottomenu Language e cambio tema. Rimossi dalla barra i selettori separati che duplicavano i controlli di lingua e tema.
 - Corretto il playback runtime della timeline: dopo l'evento nativo `ended` di un clip, il transport non invia piu' un secondo `play()` nello scarto di pochi millisecondi rispetto alla durata persistita. Questo evita il riavvio da zero del clip e il taglio percepito alla fine dei segmenti audio.
 - La selezione di un gruppo nella timeline ora centra automaticamente nel pannello lettura il paragrafo a cui appartiene; la label del gruppo non viene piu' sovrapposta dall'indicatore percentuale del volume.
+- La barra spaziatrice controlla il transport della timeline: avvia la riproduzione oppure la mette in pausa, senza interferire con i campi di testo.
 
 ## 2026-09-12
 
