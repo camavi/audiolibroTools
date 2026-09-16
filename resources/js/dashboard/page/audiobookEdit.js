@@ -526,7 +526,10 @@ function selectTimelineItem(item, additive = false) {
         ? (selectedTimelineItemKeys.value.includes(key) ? selectedTimelineItemKeys.value : [...selectedTimelineItemKeys.value, key])
         : [key];
     const blockIndex = audiobookBlocks.value.findIndex((block) => block.block_uuid === item.block_uuid);
-    if (blockIndex >= 0) activeBlockIndex.value = blockIndex;
+    // A timeline group belongs to the same manuscript block as its generated
+    // clips. Keep the reading panel in sync so selecting it never leaves the
+    // user searching through the manuscript for its paragraph.
+    if (blockIndex >= 0) selectAudiobookBlock(blockIndex, bookKey());
 }
 function isTimelineGroupExpanded(item) { return item?.is_group && expandedTimelineGroupKey.value === timelineItemKey(item); }
 function toggleTimelineGroup(item) {
@@ -2984,7 +2987,11 @@ function drawTimeline(canvas, labelCanvas) {
             ctx.beginPath(); ctx.moveTo(x + 3, gainY); ctx.lineTo(x + clipWidth - 3, gainY); ctx.stroke();
             if (selected) {
                 ctx.fillStyle = '#f8fafc'; ctx.beginPath(); ctx.arc(x + clipWidth - 7, gainY, 3, 0, Math.PI * 2); ctx.fill();
-                if (clipWidth > 72) {
+                // A group uses its header for the GROUP · N CLIPS label.
+                // Drawing the gain percentage there makes the two labels
+                // overlap (most visibly at 100%), so keep that value in the
+                // inspector for groups and draw it on standalone clips only.
+                if (!isGroup && clipWidth > 72) {
                     ctx.fillStyle = 'rgba(255,255,255,.95)';
                     ctx.fillText(`${Math.round(Number(item.volume ?? 100))}%`, x + 8, Math.max(clipY + 11, gainY - 7));
                 }
