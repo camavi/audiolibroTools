@@ -2,6 +2,10 @@
 
 ## 2026-09-16
 
+- La libreria Books riepiloga nell'intestazione quanti libri hanno traduzioni completate, senza appesantire le card con lo stato delle singole lingue.
+- Le copertine generate nella libreria Books mostrano ora titolo e descrizione al loro interno; rimosso il marchio ripetuto e il duplicato di titolo/descrizione sotto la copertina.
+- Le categorie e la data di aggiornamento sono state spostate nel footer delle copertine generate, al posto dell'icona decorativa del libro.
+- Anche il conteggio delle release e' stato spostato nel footer della copertina, sotto la data di aggiornamento.
 - Riorganizzata la topbar globale della dashboard: `Book panel` viene mostrato accanto al nome del prodotto nelle pagine di un libro, mentre a destra resta un unico menu account con Profile, sottomenu Language e cambio tema. Rimossi dalla barra i selettori separati che duplicavano i controlli di lingua e tema.
 - Corretto il playback runtime della timeline: dopo l'evento nativo `ended` di un clip, il transport non invia piu' un secondo `play()` nello scarto di pochi millisecondi rispetto alla durata persistita. Questo evita il riavvio da zero del clip e il taglio percepito alla fine dei segmenti audio.
 - La selezione di un gruppo nella timeline ora centra automaticamente nel pannello lettura il paragrafo a cui appartiene; la label del gruppo non viene piu' sovrapposta dall'indicatore percentuale del volume.

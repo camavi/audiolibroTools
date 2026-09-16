@@ -67,6 +67,11 @@ class DashboardBookController extends Controller
     {
         $books = Book::query()
             ->where('account_id', auth()->id())
+            ->with([
+                'editions:id,book_id,locale,name,status,is_original',
+                'publications:id,book_id,book_edition_id,status,is_online',
+                'audioPublications:id,book_id,book_edition_id,status,is_online',
+            ])
             ->withCount([
                 'publications',
                 'audioPublications',
@@ -87,6 +92,24 @@ class DashboardBookController extends Controller
                 'updated_at',
             ]);
 
+        // The library needs a concise translation state for every language,
+        // calculated only from the currently saved versions of text blocks.
+        // Loading this in bulk avoids one progress query per book card.
+        $blocksByBook = BookBlock::query()
+            ->whereIn('book_id', $books->pluck('id'))
+            ->where('status', '!=', 'deleted')
+            ->whereNotNull('current_version_id')
+            ->whereNotNull('text_plain')
+            ->whereRaw("trim(text_plain) <> ''")
+            ->get(['id', 'book_id', 'current_version_id'])
+            ->groupBy('book_id');
+        $translationsByBook = BookBlockTranslation::query()
+            ->whereIn('book_id', $books->pluck('id'))
+            ->whereIn('source_book_block_version_id', $blocksByBook->flatten(1)->pluck('current_version_id'))
+            ->whereNotNull('target_locale')
+            ->get(['book_id', 'book_block_id', 'source_book_block_version_id', 'target_locale', 'status'])
+            ->groupBy('book_id');
+
         return response()->json([
             'data' => $books->map(fn (Book $book) => [
                 'id' => $book->id,
@@ -102,9 +125,69 @@ class DashboardBookController extends Controller
                 'online_release_count' => $this->onlineReleaseCount($book),
                 'distribution_release_count' => (int) $book->distribution_releases_count,
                 'is_paused' => $this->releaseCount($book) > 0 && $this->onlineReleaseCount($book) === 0,
+                'editions' => $this->libraryEditionSummary(
+                    $book,
+                    $blocksByBook->get($book->id, collect()),
+                    $translationsByBook->get($book->id, collect()),
+                ),
                 'updated_at' => $book->updated_at?->toIso8601String(),
             ])->values(),
         ]);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function libraryEditionSummary(Book $book, $blocks, $translations): array
+    {
+        $originalLocale = strtolower($book->lang ?: 'en');
+        $editionsByLocale = $book->editions->keyBy(fn (BookEdition $edition) => strtolower($edition->locale));
+        $translationsByLocale = $translations->groupBy(fn (BookBlockTranslation $translation) => strtolower($translation->target_locale));
+        $locales = collect([$originalLocale])
+            ->merge($editionsByLocale->keys())
+            ->merge($translationsByLocale->keys())
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values();
+        $totalBlocks = $blocks->count();
+
+        return $locales
+            ->map(function (string $locale) use ($book, $originalLocale, $editionsByLocale, $translationsByLocale, $totalBlocks): array {
+                $isOriginal = $locale === $originalLocale;
+                $edition = $editionsByLocale->get($locale);
+                $languageTranslations = $translationsByLocale->get($locale, collect());
+                $approvedBlocks = $isOriginal
+                    ? $totalBlocks
+                    : $languageTranslations->where('status', 'approved')->unique('book_block_id')->count();
+                $translationStatus = $isOriginal
+                    ? 'original'
+                    : ($totalBlocks > 0 && $approvedBlocks >= $totalBlocks
+                        ? 'complete'
+                        : ($languageTranslations->isNotEmpty() ? 'in_progress' : 'not_started'));
+                // Releases created before editions were introduced belong to
+                // the original language, so they remain visible in the list.
+                $belongsToEdition = fn ($release): bool => $edition
+                    ? (int) $release->book_edition_id === (int) $edition->id
+                    : ($isOriginal && ! $release->book_edition_id);
+                $textReleases = $book->publications->filter($belongsToEdition);
+                $audioReleases = $book->audioPublications->filter($belongsToEdition);
+                $releases = $textReleases->concat($audioReleases);
+
+                return [
+                    'id' => $edition?->id,
+                    'locale' => $locale,
+                    'is_original' => $isOriginal,
+                    'translation_status' => $translationStatus,
+                    'approved_blocks' => $approvedBlocks,
+                    'total_blocks' => $totalBlocks,
+                    'release_count' => $releases->count(),
+                    'online_release_count' => $releases->where('status', 'ready')->where('is_online', true)->count(),
+                    'text_release_count' => $textReleases->count(),
+                    'audio_release_count' => $audioReleases->count(),
+                ];
+            })
+            ->sortByDesc('is_original')
+            ->values()
+            ->all();
     }
 
     /**

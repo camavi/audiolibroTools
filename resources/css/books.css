@@ -111,19 +111,14 @@
 .at-bookCover--5 { background: linear-gradient(155deg, #155e75, #083344); }
 .at-bookCover--6 { background: linear-gradient(155deg, #9f1239, #4c0519); }
 
-.at-bookCoverKicker {
+.at-bookCoverCopy {
     position: relative;
     z-index: 1;
-    font-size: .63rem;
-    font-weight: 700;
-    letter-spacing: .1em;
-    opacity: .82;
-    text-transform: uppercase;
+    display: grid;
+    gap: .65rem;
 }
 
 .at-bookCoverTitle {
-    position: relative;
-    z-index: 1;
     display: -webkit-box;
     overflow: hidden;
     font-family: Georgia, serif;
@@ -134,48 +129,38 @@
     -webkit-line-clamp: 5;
 }
 
-.at-bookCoverMark {
+.at-bookCoverDescription {
+    display: -webkit-box;
+    overflow: hidden;
+    color: rgb(255 255 255 / 76%);
+    font-size: .78rem;
+    line-height: 1.38;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+}
+
+.at-bookCoverFacts {
     position: relative;
     z-index: 1;
-    font-size: 1.35rem;
-}
-
-.at-libraryBookMeta { padding-top: .9rem; }
-
-.at-libraryBook h3 {
-    overflow: hidden;
-    font-size: 1rem;
-    line-height: 1.25;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.at-libraryBookDescription {
-    display: -webkit-box;
-    min-height: 2.7em;
-    margin: .38rem 0 .7rem;
-    overflow: hidden;
-    color: var(--cms-text-muted, var(--at-muted));
-    font-size: .84rem;
-    line-height: 1.35;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-}
-
-.at-libraryBookDetails {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: .35rem;
-    color: var(--cms-text-muted, var(--at-muted));
-    font-size: .75rem;
+    color: rgb(255 255 255 / 86%);
+    font-size: .7rem;
+    font-weight: 600;
 }
 
-.at-libraryBookDetails span {
+.at-bookCoverFacts span {
     display: flex;
     align-items: center;
-    gap: .35rem;
+    gap: .25rem;
 }
 
-.at-libraryBookDetails .cms-icon { font-size: 1rem; }
+.at-bookCoverFacts .cms-icon {
+    font-size: .95rem;
+}
+
+.at-bookCoverFacts .is-paused { color: rgb(255 255 255 / 64%); }
 
 .at-libraryBookCoverWrap { position: relative; }
 
@@ -205,15 +190,6 @@
 
 .at-libraryBookManage:hover { background: var(--cms-danger-dark, #b91c1c); }
 .at-libraryBookManage:active { transform: translateY(1px); }
-
-.at-libraryBookRelease {
-    color: var(--cms-primary, #4f46e5);
-    font-weight: 600;
-}
-
-.at-libraryBookRelease.is-paused {
-    color: var(--cms-text-muted, var(--at-muted));
-}
 
 .at-libraryDeleteDialog {
     display: grid;

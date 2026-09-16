@@ -29,7 +29,7 @@
 - Copertina.
 - Stato progetto.
 - Pubblicazioni versionate: ePub/PDF e audiobook mantengono release indipendenti senza sovrascrivere le versioni precedenti; l'audiobook congela i master Voice/Music/FX e può essere ritirato dal player pubblico senza eliminare i file. La distribuzione pubblica può essere privata, pubblica o protetta da link-invito; espone esclusivamente release online.
-- Lista libri.
+- Lista libri: l'intestazione riepiloga i libri con traduzioni complete; le card restano pulite e mostrano i metadati essenziali all'interno della copertina.
 - Libreria libri: un libro senza release può essere eliminato definitivamente dopo conferma esplicita, inclusi dati e file specifici. La presenza di qualunque release blocca l'eliminazione; il libro può solo essere messo in pausa, rendendo private e offline le release locali senza cancellarle.
 - Pannello libro.
 

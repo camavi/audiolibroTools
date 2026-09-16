@@ -3253,6 +3253,50 @@ class DashboardBookTest extends TestCase
             ->assertJsonPath('data.0.is_paused', true);
     }
 
+    public function test_dashboard_library_reports_translation_progress_and_releases_per_language(): void
+    {
+        $book = $this->createBook();
+        $book->update(['lang' => 'en']);
+        $service = app(BookBlockService::class);
+        $first = $service->saveBlock($book, [
+            'block_uuid' => (string) Str::uuid(), 'type' => 'paragraph', 'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('First source block.'), 'text_plain' => 'First source block.',
+        ]);
+        $second = $service->saveBlock($book, [
+            'block_uuid' => (string) Str::uuid(), 'type' => 'paragraph', 'sort_order' => 2000,
+            'content_json' => $this->paragraphJson('Second source block.'), 'text_plain' => 'Second source block.',
+        ]);
+        $edition = BookEdition::query()->create(['book_id' => $book->id, 'locale' => 'it', 'name' => 'Italian', 'status' => 'ready']);
+        foreach ([$first, $second] as $saved) {
+            BookBlockTranslation::query()->create([
+                'book_id' => $book->id, 'book_block_id' => $saved['block']->id,
+                'source_book_block_version_id' => $saved['version']->id, 'block_uuid' => $saved['block']->block_uuid,
+                'target_locale' => 'it', 'status' => 'approved', 'provider_key' => 'mock', 'model' => 'mock',
+                'source' => 'mock', 'source_text' => $saved['block']->text_plain, 'translated_text' => 'Traduzione approvata.',
+            ]);
+        }
+        BookPublication::query()->create([
+            'book_id' => $book->id, 'book_edition_id' => $edition->id, 'version_number' => 1,
+            'status' => 'ready', 'is_online' => true, 'snapshot_json' => [],
+        ]);
+        BookAudioPublication::query()->create([
+            'book_id' => $book->id, 'book_edition_id' => $edition->id, 'version_number' => 1,
+            'status' => 'ready', 'is_online' => true, 'timeline_snapshot_json' => [], 'masters_json' => [],
+        ]);
+
+        $this->getJson('/dashboard/api/books')
+            ->assertOk()
+            ->assertJsonPath('data.0.editions.0.locale', 'en')
+            ->assertJsonPath('data.0.editions.1.locale', 'it')
+            ->assertJsonPath('data.0.editions.1.translation_status', 'complete')
+            ->assertJsonPath('data.0.editions.1.approved_blocks', 2)
+            ->assertJsonPath('data.0.editions.1.total_blocks', 2)
+            ->assertJsonPath('data.0.editions.1.release_count', 2)
+            ->assertJsonPath('data.0.editions.1.online_release_count', 2)
+            ->assertJsonPath('data.0.editions.1.text_release_count', 1)
+            ->assertJsonPath('data.0.editions.1.audio_release_count', 1);
+    }
+
     private function createBook(): Book
     {
         return Book::query()->create([

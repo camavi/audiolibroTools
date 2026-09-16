@@ -25,6 +25,12 @@ function updatedAt(date) {
     }).format(new Date(date));
 }
 
+function translationSummary() {
+    const translatedBooks = books.value.filter((book) => (book.editions || []).some((edition) => !edition.is_original && edition.translation_status === 'complete'));
+    const completedEditions = books.value.flatMap((book) => book.editions || []).filter((edition) => !edition.is_original && edition.translation_status === 'complete');
+    return { books: translatedBooks.length, editions: completedEditions.length };
+}
+
 function bookCover(book, index) {
     if (book.cover_img) {
         return _.img({
@@ -35,9 +41,20 @@ function bookCover(book, index) {
     }
 
     return _.div({ class: coverStyle(index), 'aria-hidden': 'true' },
-        _.span({ class: 'at-bookCoverKicker' }, 'Audiobook Tools'),
-        _.span({ class: 'at-bookCoverTitle' }, book.name),
-        _.span({ class: 'at-bookCoverMark' }, _.Icon ? _.Icon({ name: 'menu_book' }) : '✦'),
+        _.div({ class: 'at-bookCoverCopy' },
+            _.span({ class: 'at-bookCoverTitle' }, book.name),
+            _.span({ class: 'at-bookCoverDescription' }, book.description || 'No description yet.'),
+        ),
+        _.div({ class: 'at-bookCoverFacts' },
+            _.span(_.Icon ? _.Icon({ name: 'category' }) : null, `${book.categories_count || 0} categories`),
+            _.span(_.Icon ? _.Icon({ name: 'schedule' }) : null, updatedAt(book.updated_at)),
+            Number(book.release_count || 0) > 0
+                ? _.span({ class: book.is_paused ? 'is-paused' : '' },
+                    _.Icon ? _.Icon({ name: book.is_paused ? 'pause_circle' : 'public' }) : null,
+                    book.is_paused ? 'Public releases paused' : `${book.release_count} release${Number(book.release_count) === 1 ? '' : 's'}`,
+                )
+                : null,
+        ),
     );
 }
 
@@ -132,21 +149,7 @@ function bookCard(book, index) {
                 'aria-label': `Delete or pause ${book.name}`,
                 onclick: () => openBookRemovalDialog(book),
             }, _.Icon ? _.Icon({ name: 'delete_outline' }) : '⌫'),
-        ),
-        _.div({ class: 'at-libraryBookMeta' },
-            _.h3(book.name),
-            _.p({ class: 'at-libraryBookDescription' }, book.description || 'No description yet.'),
-            _.div({ class: 'at-libraryBookDetails' },
-                _.span(_.Icon ? _.Icon({ name: 'category' }) : null, `${book.categories_count || 0} categories`),
-                _.span(_.Icon ? _.Icon({ name: 'schedule' }) : null, updatedAt(book.updated_at)),
-                Number(book.release_count || 0) > 0
-                    ? _.span({ class: book.is_paused ? 'at-libraryBookRelease is-paused' : 'at-libraryBookRelease' },
-                        _.Icon ? _.Icon({ name: book.is_paused ? 'pause_circle' : 'public' }) : null,
-                        book.is_paused ? 'Public releases paused' : `${book.release_count} release${Number(book.release_count) === 1 ? '' : 's'}`,
-                    )
-                    : null,
             ),
-        ),
     );
 }
 
@@ -202,9 +205,13 @@ export default function booksPage() {
             _.div(
                 _.span({ class: 'at-libraryEyebrow' }, 'My library'),
                 _.h1('Your books'),
-                _.p(() => booksStatus.value === 'ready'
-                    ? `${books.value.length} ${books.value.length === 1 ? 'book' : 'books'} in your library`
-                    : 'All the books you are creating in one place.'),
+                _.p(() => {
+                    if (booksStatus.value !== 'ready') return 'All the books you are creating in one place.';
+                    const summary = translationSummary();
+                    const bookLabel = `${books.value.length} ${books.value.length === 1 ? 'book' : 'books'} in your library`;
+                    if (!summary.editions) return bookLabel;
+                    return `${bookLabel} · ${summary.books} ${summary.books === 1 ? 'book has' : 'books have'} completed translations (${summary.editions} language${summary.editions === 1 ? '' : 's'})`;
+                }),
             ),
             _.Btn({ color: 'primary', iconRight: 'add', onClick: () => _.router.navigate('/dashboard/new-book') }, 'New book'),
         ),
