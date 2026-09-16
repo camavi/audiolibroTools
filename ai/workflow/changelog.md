@@ -2,6 +2,7 @@
 
 ## 2026-09-16
 
+- Il pulsante del menu Account nella topbar usa ora una superficie chiara nel tema light, con bordo e icona leggibili; nel tema dark mantiene i token della relativa superficie scura.
 - Arricchita la hero del Book panel con indicatori reali di manoscritto, traduzioni completate, timeline audio, release e visibilita'; titolo e descrizione sono ora mostrati nella copertina placeholder senza il marchio ripetuto.
 - La libreria Books riepiloga nell'intestazione quanti libri hanno traduzioni completate, senza appesantire le card con lo stato delle singole lingue.
 - Le copertine generate nella libreria Books mostrano ora titolo e descrizione al loro interno; rimosso il marchio ripetuto e il duplicato di titolo/descrizione sotto la copertina.

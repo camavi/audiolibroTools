@@ -38,6 +38,27 @@ body {
 
 .at-dashboardUserMenuTrigger {
     min-width: 2.5rem;
+    border: 1px solid var(--cms-border-color);
+    --set-background-color: #f8fafc;
+    --set-border-color: var(--cms-border-color);
+    --set-color: #475569;
+    --set-hover: #dbeafe;
+    --set-shadow: none;
+}
+
+.at-dashboardUserMenuTrigger .cms-icon {
+    color: #475569;
+}
+
+:root[data-theme="dark"] .at-dashboardUserMenuTrigger {
+    --set-background-color: var(--cms-surface-2);
+    --set-border-color: var(--cms-border-color);
+    --set-color: var(--cms-text);
+    --set-hover: var(--cms-surface-3);
+}
+
+:root[data-theme="dark"] .at-dashboardUserMenuTrigger .cms-icon {
+    color: var(--cms-text);
 }
 
 /* Dashboard pages created before theming use a small shared set of neutral colors. */
