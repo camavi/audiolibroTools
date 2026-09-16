@@ -3155,8 +3155,14 @@ function timelineCard() {
                 const clipHeight = rowHeight - 19;
                 const gainY = timelineClipGainY(clipY, clipHeight, item.volume);
                 const isGainHandle = Math.abs(event.clientY - rect.top - gainY) <= 8;
-                const mode = isGainHandle ? 'volume' : (selection.length > 1 ? 'move-group' : (seconds - clipStart < edgeSeconds ? 'trim-start' : clipEnd - seconds < edgeSeconds ? 'trim-end' : 'move'));
-                drag = { key, item, items: selection, mode, offset: seconds - clipStart, end: clipEnd, sourceDuration: timelineSourceDuration(item), before: timelineSnapshot(), changed: false };
+                // Shift-drag is a ripple edit: move the grabbed clip/group and
+                // every later timeline item by the same amount. This preserves
+                // all their relative timing, including items on other tracks.
+                const rippleItems = event.shiftKey
+                    ? timelineItems.value.filter((candidate) => Number(candidate.start_ms || 0) >= Number(item.start_ms || 0))
+                    : selection;
+                const mode = event.shiftKey ? 'ripple' : (isGainHandle ? 'volume' : (selection.length > 1 ? 'move-group' : (seconds - clipStart < edgeSeconds ? 'trim-start' : clipEnd - seconds < edgeSeconds ? 'trim-end' : 'move')));
+                drag = { key, item, items: rippleItems, mode, offset: seconds - clipStart, end: clipEnd, sourceDuration: timelineSourceDuration(item), before: timelineSnapshot(), changed: false };
                 canvas.setPointerCapture(event.pointerId);
             }
             render(); return;
@@ -3189,12 +3195,13 @@ function timelineCard() {
                 drag.changed ||= volume !== original;
                 return { ...item, volume };
             });
-        } else if (drag.mode === 'move' || drag.mode === 'move-group') {
+        } else if (drag.mode === 'move' || drag.mode === 'move-group' || drag.mode === 'ripple') {
             const dragKeys = drag.items.map(timelineItemKey);
             const start = magnetizeTimelineTime(Math.max(0, seconds - drag.offset), duration, dragKeys);
             const startMs = Math.round(start * 1000);
-            if (drag.mode === 'move-group') {
-                const deltaMs = startMs - Number(drag.item.start_ms || 0);
+            if (drag.mode === 'move-group' || drag.mode === 'ripple') {
+                const earliestStart = Math.min(...drag.items.map((item) => Number(item.start_ms || 0)));
+                const deltaMs = Math.max(-earliestStart, startMs - Number(drag.item.start_ms || 0));
                 const originals = new Map(drag.items.map((item) => [timelineItemKey(item), item]));
                 const overlaps = drag.items.some((original) => timelineTrackOverlaps(
                     original.track,
@@ -3349,7 +3356,7 @@ function timelineCard() {
                 _.div({ class: 'at-audioSelectionSummary' },
                     _.strong({ class: 'at-audioInspectorLabel' }, multiple ? `${selection.length} clips selected` : item.label),
                     _.span(multiple ? `Group selection · ${timelinePersistence.value === 'saving' ? 'Saving…' : timelinePersistence.value === 'error' ? 'Save failed' : 'Saved'}` : `${item.track.toUpperCase()} · ${timelineSnap(item.start_ms / 1000).toFixed(2)}s · ${timelineSnap(item.duration_ms / 1000).toFixed(2)}s · ${timelinePersistence.value === 'saving' ? 'Saving…' : timelinePersistence.value === 'error' ? 'Save failed' : 'Saved'}`),
-                    _.small(multiple ? 'Shift+click adds clips · Drag to move the selection together' : (item.is_group ? `${item.group_segments?.length || 0} clips · Double click the master to ${isTimelineGroupExpanded(item) ? 'collapse' : 'expand'}` : 'Drag center to move · edges to trim')),
+                    _.small(multiple ? 'Shift+click adds clips · Drag moves the selection · Shift+drag ripples later clips' : (item.is_group ? `${item.group_segments?.length || 0} clips · Shift+drag ripples later clips · Double click the master to ${isTimelineGroupExpanded(item) ? 'collapse' : 'expand'}` : 'Drag center to move · edges to trim · Shift+drag ripples later clips')),
                 ),
                 _.div({ class: 'at-audioClipControls' },
                     _.div({ class: 'at-audioInspectorGroup' },

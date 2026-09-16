@@ -6,6 +6,7 @@
 - Corretto il playback runtime della timeline: dopo l'evento nativo `ended` di un clip, il transport non invia piu' un secondo `play()` nello scarto di pochi millisecondi rispetto alla durata persistita. Questo evita il riavvio da zero del clip e il taglio percepito alla fine dei segmenti audio.
 - La selezione di un gruppo nella timeline ora centra automaticamente nel pannello lettura il paragrafo a cui appartiene; la label del gruppo non viene piu' sovrapposta dall'indicatore percentuale del volume.
 - La barra spaziatrice controlla il transport della timeline: avvia la riproduzione oppure la mette in pausa, senza interferire con i campi di testo.
+- Aggiunto il ripple move nella timeline: trascinando un clip o gruppo con `Shift` premuto, esso e tutti gli elementi successivi si spostano insieme mantenendo le rispettive distanze.
 
 ## 2026-09-12
 
