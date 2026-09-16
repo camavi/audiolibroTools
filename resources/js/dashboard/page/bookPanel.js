@@ -104,8 +104,42 @@ function bookArtwork(book) {
     }
 
     return _.div({ class: 'at-bookPanelArtworkPlaceholder', 'aria-hidden': 'true' },
-        _.span('Audiobook Tools'),
-        _.Icon ? _.Icon({ name: 'menu_book' }) : '✦',
+        _.div({ class: 'at-bookPanelArtworkCopy' },
+            _.strong(book.name),
+            _.span(book.description || 'No description yet.'),
+        ),
+    );
+}
+
+function formatHeroNumber(value) {
+    return new Intl.NumberFormat().format(Math.max(0, Number(value) || 0));
+}
+
+function formatHeroDuration(milliseconds) {
+    const seconds = Math.max(0, Math.round((Number(milliseconds) || 0) / 1000));
+    if (!seconds) return '—';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.ceil((seconds % 3600) / 60);
+    return hours ? `${hours}h ${minutes}m` : `${Math.max(1, minutes)}m`;
+}
+
+function updatedLabel(value) {
+    if (!value) return 'New book';
+    return `Updated ${new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value))}`;
+}
+
+function visibilityLabel(value) {
+    return ({ public: 'Public', invite: 'Invite link', private: 'Private' })[value] || 'Private';
+}
+
+function heroMetric({ icon, label, value, detail }) {
+    return _.div({ class: 'at-bookPanelHeroMetric' },
+        _.span({ class: 'at-bookPanelHeroMetricIcon' }, _.Icon ? _.Icon({ name: icon }) : null),
+        _.div(
+            _.span({ class: 'at-bookPanelHeroMetricLabel' }, label),
+            _.strong(value),
+            _.small(detail),
+        ),
     );
 }
 
@@ -252,17 +286,36 @@ function panelContent(keyBook) {
 
     const book = panelBook.value;
     if (!book) return errorState(keyBook);
+    const overview = book.overview || {};
 
     return _.div({ class: 'at-bookPanelWorkspace' },
         _.section({ class: 'at-bookPanelHero' },
             _.div({ class: 'at-bookPanelHeroArtwork' }, bookArtwork(book)),
             _.div({ class: 'at-bookPanelHeroContent' },
                 _.span({ class: 'at-bookPanelEyebrow' }, 'Book workspace'),
-                _.h1(book.name),
-                _.p(book.description || 'Choose an area below to continue working on your book.'),
-                _.div({ class: 'at-bookPanelMeta' },
-                    _.span(_.Icon ? _.Icon({ name: 'category' }) : null, `${book.categories_count || 0} categories`),
-                    book.lang ? _.span(_.Icon ? _.Icon({ name: 'language' }) : null, book.lang.toUpperCase()) : null,
+                _.h1('Project overview'),
+                _.p(`${updatedLabel(book.updated_at)} · ${visibilityLabel(overview.visibility)}`),
+                _.div({ class: 'at-bookPanelHeroMetrics' },
+                    heroMetric({
+                        icon: 'article', label: 'Manuscript',
+                        value: `${formatHeroNumber(overview.words)} words`,
+                        detail: `${formatHeroNumber(overview.chapters)} chapters · ${formatHeroNumber(overview.blocks)} blocks`,
+                    }),
+                    heroMetric({
+                        icon: 'translate', label: 'Translations',
+                        value: `${formatHeroNumber(overview.completed_translation_languages)}/${formatHeroNumber(overview.translation_languages)} complete`,
+                        detail: 'Languages with every current block approved',
+                    }),
+                    heroMetric({
+                        icon: 'graphic_eq', label: 'Audio timeline',
+                        value: formatHeroDuration(overview.timeline_duration_ms),
+                        detail: `${formatHeroNumber(overview.timeline_clips)} clips · ~${formatHeroDuration((Number(overview.estimated_listening_seconds) || 0) * 1000)} narration`,
+                    }),
+                    heroMetric({
+                        icon: 'publish', label: 'Releases',
+                        value: `${formatHeroNumber(overview.release_count)} total`,
+                        detail: `${formatHeroNumber(overview.online_release_count)} online`,
+                    }),
                 ),
             ),
             _.div({ class: 'at-bookPanelHeroSettings' },

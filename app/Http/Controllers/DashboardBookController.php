@@ -88,6 +88,7 @@ class DashboardBookController extends Controller
                 'categories',
                 'lang',
                 'cover_img',
+                'public_access',
                 'book_design_json',
                 'updated_at',
             ]);
@@ -271,6 +272,32 @@ class DashboardBookController extends Controller
                 'updated_at',
             ]);
 
+        $blocks = BookBlock::query()
+            ->where('book_id', $book->id)
+            ->where('status', '!=', 'deleted')
+            ->whereNotNull('current_version_id')
+            ->whereNotNull('text_plain')
+            ->whereRaw("trim(text_plain) <> ''")
+            ->get(['id', 'type', 'text_plain', 'current_version_id']);
+        $translations = BookBlockTranslation::query()
+            ->where('book_id', $book->id)
+            ->whereIn('source_book_block_version_id', $blocks->pluck('current_version_id'))
+            ->whereNotNull('target_locale')
+            ->get(['book_block_id', 'target_locale', 'status']);
+        $translationLanguages = $translations->groupBy(fn (BookBlockTranslation $translation) => strtolower($translation->target_locale));
+        $completedTranslationLanguages = $translationLanguages
+            ->filter(fn ($items) => $blocks->isNotEmpty() && $items->where('status', 'approved')->unique('book_block_id')->count() >= $blocks->count())
+            ->count();
+        $timelineItems = BookAudioTimelineItem::query()
+            ->where('book_id', $book->id)
+            ->whereNull('parent_timeline_item_id')
+            ->get(['start_ms', 'duration_ms']);
+        $timelineDurationMs = (int) ($timelineItems->max(fn (BookAudioTimelineItem $item) => (int) $item->start_ms + (int) $item->duration_ms) ?? 0);
+        $textReleases = BookPublication::query()->where('book_id', $book->id)->get(['status', 'is_online']);
+        $audioReleases = BookAudioPublication::query()->where('book_id', $book->id)->get(['status', 'is_online']);
+        $releases = $textReleases->concat($audioReleases);
+        $wordCount = $blocks->sum(fn (BookBlock $block) => count(preg_split('/\s+/u', trim((string) $block->text_plain), -1, PREG_SPLIT_NO_EMPTY)));
+
         return response()->json([
             'data' => [
                 'id' => $book->id,
@@ -281,6 +308,19 @@ class DashboardBookController extends Controller
                 'lang' => $book->lang,
                 'cover_img' => $book->cover_img,
                 'book_design_json' => $this->bookDesign($book),
+                'overview' => [
+                    'chapters' => $blocks->where('type', 'heading')->count(),
+                    'blocks' => $blocks->count(),
+                    'words' => $wordCount,
+                    'estimated_listening_seconds' => (int) ceil($wordCount / 2.35),
+                    'translation_languages' => $translationLanguages->count(),
+                    'completed_translation_languages' => $completedTranslationLanguages,
+                    'timeline_clips' => $timelineItems->count(),
+                    'timeline_duration_ms' => $timelineDurationMs,
+                    'release_count' => $releases->count(),
+                    'online_release_count' => $releases->where('status', 'ready')->where('is_online', true)->count(),
+                    'visibility' => $book->public_access ?: 'private',
+                ],
                 'updated_at' => $book->updated_at?->toIso8601String(),
             ],
         ]);

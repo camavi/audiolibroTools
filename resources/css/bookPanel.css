@@ -14,7 +14,7 @@
     display: grid;
     grid-template-columns: minmax(140px, 20%) minmax(0, 1fr);
     gap: clamp(1.25rem, 3vw, 2.5rem);
-    min-height: 250px;
+    min-height: 310px;
     padding: clamp(1.25rem, 3vw, 2.5rem);
     overflow: hidden;
     border: 1px solid var(--cms-border, #e5e7eb);
@@ -71,14 +71,30 @@
     background: linear-gradient(155deg, #312e81, var(--at-text));
 }
 
-.at-bookPanelArtworkPlaceholder span {
-    font-size: .63rem;
-    font-weight: 700;
-    letter-spacing: .1em;
-    text-transform: uppercase;
+.at-bookPanelArtworkCopy {
+    display: grid;
+    gap: .7rem;
 }
 
-.at-bookPanelArtworkPlaceholder .cms-icon { align-self: flex-end; font-size: 2rem; }
+.at-bookPanelArtworkCopy strong {
+    display: -webkit-box;
+    overflow: hidden;
+    font-family: Georgia, serif;
+    font-size: clamp(1.25rem, 2.2vw, 1.8rem);
+    line-height: 1.04;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 5;
+}
+
+.at-bookPanelArtworkCopy span {
+    display: -webkit-box;
+    overflow: hidden;
+    color: rgb(255 255 255 / 76%);
+    font-size: .78rem;
+    line-height: 1.4;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+}
 
 .at-bookPanelHeroContent {
     align-self: center;
@@ -104,17 +120,53 @@
     line-height: 1.55;
 }
 
-.at-bookPanelMeta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .5rem 1rem;
+.at-bookPanelHeroMetrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .65rem;
     margin-top: 1.25rem;
-    color: var(--cms-text-muted, var(--at-muted));
-    font-size: .82rem;
 }
 
-.at-bookPanelMeta span { display: inline-flex; align-items: center; gap: .35rem; }
-.at-bookPanelMeta .cms-icon { font-size: 1rem; }
+.at-bookPanelHeroMetric {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: .55rem;
+    padding: .65rem .75rem;
+    border: 1px solid var(--cms-border, rgb(148 163 184 / 20%));
+    border-radius: .65rem;
+    background: rgb(15 23 42 / 5%);
+}
+
+.at-bookPanelHeroMetricIcon {
+    display: grid;
+    width: 1.85rem;
+    height: 1.85rem;
+    place-items: center;
+    border-radius: .5rem;
+    color: var(--cms-primary, #4f46e5);
+    background: rgb(79 70 229 / 10%);
+}
+
+.at-bookPanelHeroMetricIcon .cms-icon { font-size: 1.1rem; }
+.at-bookPanelHeroMetricLabel,
+.at-bookPanelHeroMetric small { display: block; }
+.at-bookPanelHeroMetricLabel {
+    color: var(--cms-text-muted, var(--at-muted));
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+.at-bookPanelHeroMetric strong { display: block; margin-top: .12rem; font-size: .9rem; }
+.at-bookPanelHeroMetric small {
+    margin-top: .12rem;
+    overflow: hidden;
+    color: var(--cms-text-muted, var(--at-muted));
+    font-size: .7rem;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
 .at-bookPanelAreas {
     display: grid;
@@ -234,13 +286,14 @@
 .at-reimportDiffNew p { margin: .18rem 0 0; }
 
 @media (max-width: 720px) {
-    .at-bookPanelHero { grid-template-columns: 100px minmax(0, 1fr); padding: 1.25rem; }
+    .at-bookPanelHero { grid-template-columns: 100px minmax(0, 1fr); min-height: 0; padding: 1.25rem; }
     .at-bookPanelAreas { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 460px) {
     .at-bookPanelHero { grid-template-columns: 78px minmax(0, 1fr); gap: 1rem; }
     .at-bookPanelHero h1 { font-size: 1.65rem; }
+    .at-bookPanelHeroMetrics { grid-template-columns: 1fr; }
     .at-bookPanelArea { grid-template-columns: auto minmax(0, 1fr); }
     .at-bookPanelAreaAction, .at-bookPanelAreaSoon { display: none; }
 }
