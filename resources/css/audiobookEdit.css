@@ -1876,14 +1876,14 @@
     display: block;
     height: 330px;
     cursor: crosshair;
-    background: var(--at-text)
+    background: #0c1422
 }
 
 .at-audioTimelineFrame {
     display: flex;
     height: min(calc(48vh - 2.35rem), 324px);
     overflow: hidden;
-    background: var(--at-text)
+    background: #0c1422
 }
 
 .at-audioTimelineNavigation {
@@ -2017,10 +2017,10 @@
     overflow-x: auto;
     overflow-y: auto;
     overscroll-behavior: contain;
-    background: var(--at-text);
-    scrollbar-color: var(--at-muted) var(--at-text);
+    background: #0c1422;
+    scrollbar-color: #52677f #0c1422;
     scrollbar-width: thin;
-    background-color: #111a29;
+    background-color: #0c1422;
 }
 
 .at-audioTimelineScroller::-webkit-scrollbar {
@@ -2028,13 +2028,13 @@
 }
 
 .at-audioTimelineScroller::-webkit-scrollbar-track {
-    background: var(--at-text)
+    background: #0c1422
 }
 
 .at-audioTimelineScroller::-webkit-scrollbar-thumb {
-    border: 2px solid var(--at-text);
+    border: 2px solid #0c1422;
     border-radius: .8rem;
-    background: var(--at-muted)
+    background: #52677f
 }
 
 .at-audioReadingWord {

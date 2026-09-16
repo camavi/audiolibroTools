@@ -951,7 +951,7 @@ function drawWaveform(ctx, samples, x, y, width, height, tint) {
     ctx.restore();
 }
 
-function drawTimelineClipWaveforms(ctx, item, x, y, width, height) {
+function drawTimelineClipWaveforms(ctx, item, x, y, width, height, tint = 'rgba(255,255,255,.56)') {
     const parts = timelinePlayableParts(item);
     parts.forEach((part) => {
         const partX = x + width * (part.timeline_offset_ms / Math.max(1, item.duration_ms));
@@ -959,8 +959,66 @@ function drawTimelineClipWaveforms(ctx, item, x, y, width, height) {
         if (partWidth < 3) return;
         const url = timelineAudioUrl(part);
         const samples = url ? timelineWaveform(url) : null;
-        drawWaveform(ctx, samples, partX, y, partWidth, height, 'rgba(255,255,255,.56)');
+        drawWaveform(ctx, samples, partX, y, partWidth, height, tint);
     });
+}
+
+function drawPlayingVoiceWaveform(ctx, item, x, y, width, height) {
+    if (!timelineIsPlaying.value || item.track !== 'voice' || height < 8) return;
+    const playheadMs = timelinePlayhead.value * 1000;
+    const itemStartMs = Number(item.start_ms || 0);
+    const itemDurationMs = Number(item.duration_ms || 0);
+    const isCollapsedGroup = Boolean(item.is_group && Array.isArray(item.group_segments) && !isTimelineGroupExpanded(item));
+
+    if (isCollapsedGroup) {
+        if (playheadMs < itemStartMs || playheadMs >= itemStartMs + itemDurationMs) return;
+        const progress = Math.max(0, Math.min(1, (playheadMs - itemStartMs) / Math.max(1, itemDurationMs)));
+        const playedWidth = width * progress;
+
+        // At the overview level the group behaves as one editorial/audio unit:
+        // show its complete shape and advance one play cursor across it.
+        drawTimelineClipWaveforms(ctx, item, x, y, width, height, 'rgba(191,219,254,.43)');
+        ctx.save();
+        ctx.beginPath(); ctx.rect(x, y, playedWidth, height); ctx.clip();
+        drawTimelineClipWaveforms(ctx, item, x, y, width, height, 'rgba(255,255,255,.96)');
+        ctx.restore();
+
+        const headX = x + playedWidth;
+        ctx.save();
+        ctx.shadowColor = '#93c5fd'; ctx.shadowBlur = 9;
+        ctx.strokeStyle = '#dbeafe'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(headX, y + 4); ctx.lineTo(headX, y + height - 4); ctx.stroke();
+        ctx.restore();
+        return;
+    }
+
+    const activePart = timelinePlayableParts(item).find((part) => {
+        const start = itemStartMs + Number(part.timeline_offset_ms || 0);
+        return playheadMs >= start && playheadMs < start + Number(part.playable_duration_ms || 0);
+    });
+    if (!activePart) return;
+
+    const partX = x + width * (activePart.timeline_offset_ms / Math.max(1, item.duration_ms));
+    const partWidth = width * (Number(activePart.playable_duration_ms || 0) / Math.max(1, item.duration_ms));
+    if (partWidth < 3) return;
+    const url = timelineAudioUrl(activePart);
+    const samples = url ? timelineWaveform(url) : null;
+    const progress = Math.max(0, Math.min(1, (playheadMs - itemStartMs - activePart.timeline_offset_ms) / Math.max(1, activePart.playable_duration_ms)));
+    const playedWidth = partWidth * progress;
+
+    // Expanded groups and regular clips keep the detailed, per-segment view.
+    drawWaveform(ctx, samples, partX, y, partWidth, height, 'rgba(191,219,254,.43)');
+    ctx.save();
+    ctx.beginPath(); ctx.rect(partX, y, playedWidth, height); ctx.clip();
+    drawWaveform(ctx, samples, partX, y, partWidth, height, 'rgba(255,255,255,.96)');
+    ctx.restore();
+
+    const headX = partX + playedWidth;
+    ctx.save();
+    ctx.shadowColor = '#93c5fd'; ctx.shadowBlur = 9;
+    ctx.strokeStyle = '#dbeafe'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(headX, y + 4); ctx.lineTo(headX, y + height - 4); ctx.stroke();
+    ctx.restore();
 }
 function timelineContentEnd() { return Math.max(0, ...timelineItems.value.map((item) => (item.start_ms + item.duration_ms) / 1000)); }
 function timelineEnd() { return Math.max(90, timelineContentEnd()); }
@@ -2846,26 +2904,60 @@ function drawTimeline(canvas, labelCanvas) {
             const expanded = isTimelineGroupExpanded(item);
             const clipY = y + 9;
             const clipHeight = rowHeight - 19;
-            ctx.fillStyle = item.muted ? '#64748b' : color; ctx.fillRect(x, clipY, clipWidth, clipHeight);
+            const isGroup = Boolean(item.is_group && Array.isArray(item.group_segments));
+            const groupHeaderHeight = isGroup && clipHeight >= 34 ? 18 : 0;
+            const groupRadius = Math.min(7, Math.max(2, clipWidth / 5));
+            const waveformY = clipY + (groupHeaderHeight ? groupHeaderHeight + 2 : 0);
+            const waveformHeight = Math.max(2, clipHeight - (groupHeaderHeight ? groupHeaderHeight + 4 : 0));
+
+            if (isGroup) {
+                // A group is a compound clip, not merely a series of lines. Give it
+                // a persistent shell so its extent stays obvious at every zoom level.
+                ctx.save();
+                ctx.shadowColor = selected ? 'rgba(147,197,253,.42)' : 'rgba(2,6,23,.52)';
+                ctx.shadowBlur = selected ? 12 : 7;
+                ctx.shadowOffsetY = 2;
+                ctx.beginPath(); ctx.roundRect(x, clipY, clipWidth, clipHeight, groupRadius);
+                ctx.fillStyle = item.muted ? '#475569' : '#173c78'; ctx.fill();
+                ctx.restore();
+
+                ctx.save();
+                ctx.beginPath(); ctx.roundRect(x, clipY, clipWidth, clipHeight, groupRadius); ctx.clip();
+                ctx.fillStyle = item.muted ? '#64748b' : '#2359ad';
+                ctx.fillRect(x, clipY, clipWidth, groupHeaderHeight);
+                if (groupHeaderHeight) {
+                    ctx.fillStyle = 'rgba(255,255,255,.16)'; ctx.fillRect(x, clipY + groupHeaderHeight - 1, clipWidth, 1);
+                }
+                ctx.restore();
+
+                ctx.beginPath(); ctx.roundRect(x + .75, clipY + .75, Math.max(1, clipWidth - 1.5), Math.max(1, clipHeight - 1.5), groupRadius);
+                ctx.strokeStyle = selected ? '#f8fafc' : (item.muted ? '#94a3b8' : '#79adff');
+                ctx.lineWidth = selected ? 2.25 : 1.5; ctx.stroke();
+            } else {
+                ctx.fillStyle = item.muted ? '#64748b' : color; ctx.fillRect(x, clipY, clipWidth, clipHeight);
+            }
             if (expanded) {
                 timelinePlayableParts(item).forEach((part, partIndex) => {
                     const partX = x + clipWidth * (part.timeline_offset_ms / Math.max(1, item.duration_ms));
                     const partWidth = clipWidth * (Number(part.playable_duration_ms || 0) / Math.max(1, item.duration_ms));
                     if (partWidth < 3) return;
                     ctx.fillStyle = item.muted ? '#64748b' : (partIndex % 2 ? '#1d4ed8' : '#2563eb');
-                    ctx.fillRect(partX + 1, clipY + 2, Math.max(1, partWidth - 3), clipHeight - 4);
+                    const partY = clipY + groupHeaderHeight + 3;
+                    const partHeight = Math.max(2, clipHeight - groupHeaderHeight - 6);
+                    ctx.fillRect(partX + 2, partY, Math.max(1, partWidth - 4), partHeight);
                     const partUrl = timelineAudioUrl(part);
-                    drawWaveform(ctx, partUrl ? timelineWaveform(partUrl) : null, partX + 1, clipY + 2, Math.max(1, partWidth - 3), clipHeight - 4, 'rgba(255,255,255,.58)');
+                    drawWaveform(ctx, partUrl ? timelineWaveform(partUrl) : null, partX + 2, partY, Math.max(1, partWidth - 4), partHeight, 'rgba(255,255,255,.58)');
                     if (partWidth > 44) {
                         ctx.fillStyle = 'rgba(255,255,255,.92)';
-                        ctx.fillText(`${partIndex + 1}`, partX + 6, y + rowHeight / 2);
+                        ctx.fillText(`${partIndex + 1}`, partX + 7, partY + partHeight / 2);
                     }
                 });
             } else if (selected) {
-                drawTimelineClipWaveforms(ctx, item, x, clipY, clipWidth, clipHeight);
+                drawTimelineClipWaveforms(ctx, item, x, waveformY, clipWidth, waveformHeight);
             }
+            drawPlayingVoiceWaveform(ctx, item, x, waveformY, clipWidth, waveformHeight);
             if (selected) {
-                ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 10, Math.max(1, clipWidth - 2), rowHeight - 21);
+                if (!isGroup) { ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 10, Math.max(1, clipWidth - 2), rowHeight - 21); }
                 ctx.fillStyle = '#f8fafc'; ctx.fillRect(x, y + 9, 5, rowHeight - 19); ctx.fillRect(x + clipWidth - 5, y + 9, 5, rowHeight - 19);
             }
             const fadeInWidth = Math.min(clipWidth / 2, clipWidth * ((item.fade_in_ms || 0) / Math.max(1, item.duration_ms)));
@@ -2887,20 +2979,27 @@ function drawTimeline(canvas, labelCanvas) {
                     ctx.fillText(`${Math.round(Number(item.volume ?? 100))}%`, x + 8, Math.max(clipY + 11, gainY - 7));
                 }
             }
-            if (!expanded && item.is_group && Array.isArray(item.group_segments)) {
+            if (!expanded && isGroup) {
                 const trimStart = Number(item.trim_start_ms || 0);
                 const trimEnd = timelineSourceDuration(item) - Number(item.trim_end_ms || 0);
                 let groupOffset = 0;
-                ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1;
+                ctx.strokeStyle = 'rgba(219,234,254,.88)'; ctx.lineWidth = 1.25;
                 item.group_segments.slice(0, -1).forEach((segment) => {
                     groupOffset += Number(segment.duration_ms || 0) + Number(segment.pause_after_ms || 0);
                     if (groupOffset <= trimStart || groupOffset >= trimEnd) return;
                     const dividerX = x + clipWidth * ((groupOffset - trimStart) / Math.max(1, item.duration_ms));
-                    ctx.beginPath(); ctx.moveTo(dividerX, y + 11); ctx.lineTo(dividerX, y + rowHeight - 12); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(dividerX, clipY + groupHeaderHeight + 3); ctx.lineTo(dividerX, clipY + clipHeight - 4); ctx.stroke();
                 });
             }
+            if (isGroup && groupHeaderHeight && clipWidth > 76) {
+                const segmentCount = item.group_segments.length;
+                ctx.fillStyle = 'rgba(255,255,255,.95)'; ctx.font = '700 9px Inter, sans-serif';
+                ctx.fillText(`GROUP  ·  ${segmentCount} ${segmentCount === 1 ? 'CLIP' : 'CLIPS'}`, x + 7, clipY + groupHeaderHeight / 2);
+                ctx.font = '11px Inter, sans-serif';
+            }
             if (!expanded && clipWidth > 70) {
-                ctx.fillStyle = 'rgba(255,255,255,.82)'; ctx.fillText(item.label, x + 6, y + rowHeight / 2);
+                ctx.fillStyle = 'rgba(255,255,255,.9)';
+                ctx.fillText(item.label, x + 7, isGroup && groupHeaderHeight ? clipY + groupHeaderHeight + (clipHeight - groupHeaderHeight) / 2 + 1 : y + rowHeight / 2);
             }
         });
     });
