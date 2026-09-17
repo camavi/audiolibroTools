@@ -2,6 +2,7 @@
 
 ## 2026-09-16
 
+- Rinnovata la pagina Settings: hero con stato delle preferenze locali e dei default AI, navigazione interna e sezioni distinte per Workspace, default dell'editor e configurazione AI. I default dell'editor sono raggruppati per pannello; la ricerca Versions non viene piu' ripristinata, così non nasconde risultati al riavvio. Ogni tool AI ha ora la propria card configurabile e salvabile, senza un selettore che nasconde gli altri default.
 - Il pulsante del menu Account nella topbar usa ora una superficie chiara nel tema light, con bordo e icona leggibili; nel tema dark mantiene i token della relativa superficie scura.
 - Arricchita la hero del Book panel con indicatori reali di manoscritto, traduzioni completate, timeline audio, release e visibilita'; titolo e descrizione sono ora mostrati nella copertina placeholder senza il marchio ripetuto.
 - La libreria Books riepiloga nell'intestazione quanti libri hanno traduzioni completate, senza appesantire le card con lo stato delle singole lingue.

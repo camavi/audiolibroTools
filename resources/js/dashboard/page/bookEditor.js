@@ -282,7 +282,6 @@ function restoreEditorPreferences() {
     if (locales.has(preferences.translationTargetLocale)) translationTargetLocale.value = preferences.translationTargetLocale;
     if (versionFilterOptions.some((option) => option.value === preferences.versionFilter)) versionFilter.value = preferences.versionFilter;
     if (versionSortOptions.some((option) => option.value === preferences.versionSortOrder)) versionSortOrder.value = preferences.versionSortOrder;
-    if (typeof preferences.versionSearch === 'string') versionSearch.value = preferences.versionSearch;
     if (activityFilterOptions.some((option) => option.value === preferences.bookActivityFilter)) bookActivityFilter.value = preferences.bookActivityFilter;
     if (commentFilterOptions.some((option) => option.value === preferences.blockCommentFilter)) blockCommentFilter.value = preferences.blockCommentFilter;
     if (commentAnchorFilterOptions.some((option) => option.value === preferences.blockCommentAnchorFilter)) blockCommentAnchorFilter.value = preferences.blockCommentAnchorFilter;
@@ -1042,7 +1041,6 @@ function setVersionSortOrder(order) {
 
 function setVersionSearch(search) {
     versionSearch.value = search;
-    writeEditorPreference('versionSearch', search);
 }
 
 function setBookActivityFilter(filter) {
