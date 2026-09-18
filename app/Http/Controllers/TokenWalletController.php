@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AccountCreditBalance;
 use App\Models\AccountCreditLedgerEntry;
 use App\Models\User;
+use App\Models\TokenPackage;
 use App\Services\Credits\TranslationCreditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -39,11 +40,9 @@ class TokenWalletController extends Controller
                 'reason' => $entry->metadata_json['reason'] ?? null,
                 'created_at' => $entry->created_at?->toISOString(),
             ])->values(),
-            'top_up_packages' => [
-                ['credits' => 1000, 'label' => '1,000 tokens'],
-                ['credits' => 5000, 'label' => '5,000 tokens'],
-                ['credits' => 10000, 'label' => '10,000 tokens'],
-            ],
+            'top_up_packages' => TokenPackage::query()->where('is_active', true)->orderBy('sort_order')->get()->map(fn (TokenPackage $package) => [
+                'id' => $package->id, 'name' => $package->name, 'description' => $package->description, 'credits' => (int) $package->credits, 'price_cents' => (int) $package->price_cents, 'currency' => $package->currency,
+            ])->values(),
             // A payment provider is deliberately not simulated. This keeps the
             // wallet honest until a real checkout (for example Stripe) is set up.
             'payments_ready' => false,

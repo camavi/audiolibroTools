@@ -14,6 +14,8 @@
 - Il Settings generale dell'editor deve includere la preferenza `Confirm panel actions`: Activity conferma sempre, mentre i pannelli dedicati possono rendere le conferme opzionali.
 - Distribution Hub: AT non raccoglie password, 2FA o sessioni dei portali. Una connessione automatica richiede OAuth/token revocabile, file feed ufficiale oppure una partnership esplicita; per i portali manuali AT prepara il pacchetto e il cliente completa la pubblicazione. Vedi [Policy provider Distribution Hub](distribution-provider-policy.md).
 - Il listino costi AI è amministrativo e distinto dal wallet cliente: testo in USD per 1M token input/output, audio in USD per minuto generato, immagini in USD per immagine generata. I valori vengono catalogati per modello ma non modificano ancora gli addebiti in token. Un modello può essere disabilitato nel catalogo oppure rimosso dalla lista; nessuna delle due azioni altera job o impostazioni già salvati.
+- La monetizzazione parte da tre piani mensili configurabili (`Starter`, `Creator`, `Studio`) con token inclusi. I token extra saranno acquistabili separatamente in un flusso top-up successivo; checkout, rinnovi e allocazione token non sono ancora connessi al catalogo piani.
+- I top-up usano un catalogo indipendente di pacchetti token una tantum: l'admin gestisce prezzo, quantità, stato e rimozione; il wallet espone esclusivamente quelli attivi. Nessun token viene accreditato e nessun pagamento viene simulato fino all'integrazione di un provider verificato.
 
 ## Decisioni da Prendere
 

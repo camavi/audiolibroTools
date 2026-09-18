@@ -11,6 +11,7 @@ const autoRechargeAmount = _.rod('2000');
 function dataOf(payload) { return payload?.data?.data || payload?.data || payload || {}; }
 function errorMessage(error, fallback) { return error?.data?.message || error?.message || fallback; }
 function formatTokens(value) { return new Intl.NumberFormat().format(Number(value || 0)); }
+function formatPrice(cents, currency) { return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency || 'EUR' }).format(Number(cents || 0) / 100); }
 
 function applyWallet(data) {
     wallet.value = data;
@@ -45,12 +46,12 @@ async function saveAutoRecharge() {
 }
 
 function openTopUpDialog() {
-    const selected = _.rod('1000');
+    const selected = _.rod(String(wallet.value?.top_up_packages?.[0]?.id || ''));
     const dialogStatus = _.rod(null);
     _.Dialog({ size: 'sm', stickyActions: true, slots: {
         header: _.div(_.span({ class: 'at-tokensEyebrow' }, 'Add tokens'), _.h3('Choose a token package'), _.p('Tokens are added after a confirmed payment.')),
         content: ({ close }) => _.div({ class: 'at-tokensDialog' },
-            _.Select({ label: 'Token package', model: selected, options: () => (wallet.value?.top_up_packages || []).map((pack) => ({ value: String(pack.credits), label: pack.label })) }),
+            _.Select({ label: 'Token package', model: selected, options: () => (wallet.value?.top_up_packages || []).map((pack) => ({ value: String(pack.id), label: `${pack.name} · ${formatTokens(pack.credits)} tokens · ${formatPrice(pack.price_cents, pack.currency)}` })) }),
             _.div({ class: 'at-tokensPaymentNotice' }, _.Icon({ name: 'info' }), _.span('Payment checkout is not connected yet. No charge and no tokens will be created until a verified payment provider is configured.')),
             () => dialogStatus.value ? _.Alert(dialogStatus.value) : null,
             _.div({ class: 'at-tokensDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close'), _.Btn({ color: 'primary', icon: 'payments', disabled: true }, 'Continue to payment')),

@@ -4,6 +4,8 @@
 
 - Migrata la dashboard da CMSwift a JSswift: dipendenza npm, import JavaScript, configurazione globale, CSS, chunk Vite e riferimenti runtime ora usano `jsswift`/`JSswift`. L'alias `_` e le classi CSS `cms-*` restano compatibili con il framework rinominato.
 - Aggiunta Administration → AI pricing: catalogo modificabile e auditato per i costi dei modelli AI, con testo per 1M token input/output, TTS per minuto audio e immagini per generazione. Il catalogo prepara il cost tracking senza ancora alterare il wallet clienti; ogni modello può inoltre essere disabilitato o rimosso dalla lista con conferma.
+- Aggiunta Administration → Subscription plans: catalogo iniziale di tre piani mensili modificabili (Starter, Creator e Studio), ciascuno con prezzo, token inclusi, descrizione e stato. I pacchetti token extra restano volutamente fuori da questa prima fase.
+- Aggiunta Administration → Token packages: catalogo separato e modificabile dei top-up una tantum, con creazione, stato, modifica e rimozione. Il wallet cliente legge i soli pacchetti attivi; pagamento e accredito token restano disabilitati fino a checkout verificato.
 
 ## 2026-09-16
 

@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\AdminSupportController;
 use App\Http\Controllers\AdminAiPricingController;
+use App\Http\Controllers\AdminSubscriptionPlanController;
+use App\Http\Controllers\AdminTokenPackageController;
 use App\Http\Controllers\AiPromptController;
 use App\Http\Controllers\AudioLibraryController;
 use App\Http\Controllers\AudioMediaController;
@@ -83,6 +85,12 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
         Route::post('/ai-pricing', [AdminAiPricingController::class, 'store'])->name('ai-pricing.store');
         Route::put('/ai-pricing', [AdminAiPricingController::class, 'update'])->name('ai-pricing.update');
         Route::patch('/ai-pricing/status', [AdminAiPricingController::class, 'updateStatus'])->name('ai-pricing.status.update');
+        Route::get('/subscription-plans', [AdminSubscriptionPlanController::class, 'index'])->name('subscription-plans.index');
+        Route::patch('/subscription-plans/{plan}', [AdminSubscriptionPlanController::class, 'update'])->name('subscription-plans.update');
+        Route::get('/token-packages', [AdminTokenPackageController::class, 'index'])->name('token-packages.index');
+        Route::post('/token-packages', [AdminTokenPackageController::class, 'store'])->name('token-packages.store');
+        Route::patch('/token-packages/{package}', [AdminTokenPackageController::class, 'update'])->name('token-packages.update');
+        Route::delete('/token-packages/{package}', [AdminTokenPackageController::class, 'destroy'])->name('token-packages.destroy');
         Route::post('/users/{user}/password-reset', [AdminSupportController::class, 'sendPasswordReset'])->name('users.password-reset.store');
         Route::patch('/users/{user}/books/{book}/moderation', [AdminSupportController::class, 'moderateBook'])->name('users.books.moderation.update');
         Route::post('/users/{user}/copyright-notices', [AdminSupportController::class, 'sendCopyrightNotice'])->name('users.copyright-notices.store');

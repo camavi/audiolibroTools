@@ -315,6 +315,41 @@
     background: linear-gradient(115deg, #172447 0%, var(--at-surface) 100%);
 }
 
+:root[data-theme="dark"] .at-subscriptionPlansHero {
+    background: linear-gradient(115deg, #172447 0%, var(--at-surface) 100%);
+}
+
+:root[data-theme="dark"] .at-tokenPackagesHero {
+    background: linear-gradient(115deg, #172447 0%, var(--at-surface) 100%);
+}
+
+:root[data-theme="dark"] .at-tokenPackagesCard {
+    border-color: var(--at-border);
+    background: var(--at-surface);
+}
+
+:root[data-theme="dark"] .at-tokenPackagesNotice {
+    border-color: rgb(96 165 250 / 35%);
+    background: #14203d;
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-subscriptionPlanCard {
+    border-color: var(--at-border);
+    background: var(--at-surface);
+}
+
+:root[data-theme="dark"] .at-subscriptionPlansNotice {
+    border-color: rgb(96 165 250 / 35%);
+    background: #14203d;
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-subscriptionPlansNotice .material-icons,
+:root[data-theme="dark"] .at-subscriptionPlanPrice {
+    color: var(--at-text);
+}
+
 :root[data-theme="dark"] .at-aiPricingCard {
     border-color: var(--at-border);
     background: var(--at-surface);

@@ -129,3 +129,5 @@
 - Utenti.
 - Costi/consumi.
 - Catalogo prezzi AI: pagina amministrativa per modello. Il testo registra USD per 1M token input/output, il TTS USD per minuto audio generato e le immagini USD per immagine generata; il catalogo è separato finché il calcolo dei costi reali non viene collegato ai job.
+- Abbonamenti mensili: catalogo amministrativo iniziale di tre piani (`Starter`, `Creator`, `Studio`) con prezzo EUR e token inclusi al mese. Checkout, rinnovi, allocazione mensile token e top-up restano fasi separate.
+- Pacchetti token: catalogo amministrativo separato per top-up una tantum, visibile già nel wallet cliente con solo i pacchetti attivi. Il checkout verificato, le fatture e l'accredito token sono ancora da collegare.
