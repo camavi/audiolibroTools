@@ -1,5 +1,9 @@
 # Registro Avanzamento
 
+## 2026-09-18
+
+- Migrata la dashboard da CMSwift a JSswift: dipendenza npm, import JavaScript, configurazione globale, CSS, chunk Vite e riferimenti runtime ora usano `jsswift`/`JSswift`. L'alias `_` e le classi CSS `cms-*` restano compatibili con il framework rinominato.
+
 ## 2026-09-16
 
 - Rinnovata la pagina Settings: hero con stato delle preferenze locali e dei default AI, navigazione interna e sezioni distinte per Workspace, default dell'editor e configurazione AI. I default dell'editor sono raggruppati per pannello; la ricerca Versions non viene piu' ripristinata, così non nasconde risultati al riavvio. Ogni tool AI ha ora la propria card configurabile e salvabile, senza un selettore che nasconde gli altri default.
@@ -36,7 +40,7 @@
 - Aggiunto Correct all nel Right Workspace: crea progressivamente review grammar per tutti i blocchi salvati, riusa l'idempotenza delle review e mostra avanzamento/errori senza applicare modifiche al manoscritto. Il batch e' ora una catena di job Laravel persistenti: ogni job completa e salva un solo blocco prima di accodare il successivo; continua dopo refresh/chiusura della pagina, blocca i duplicati e il pulsante diventa `View process` finche' e' in coda o in esecuzione.
 - Aggiunto il guardiano `corrections:recover-stalled`, pianificato ogni minuto: recupera automaticamente un batch Correct attivo che non salva avanzamenti per sei minuti, ripartendo dall'ultimo blocco persistito. Lo stack `dev.sh` avvia anche lo scheduler Laravel.
 - Rafforzata la concorrenza SQLite per i batch AI: WAL, busy timeout e transazioni `IMMEDIATE` serializzano le scritture concorrenti di worker/coda invece di interrompere la correzione con `database is locked`.
-- Nel tool Correct il comando globale e' ora il menu CMSwift `All operations`: contiene `Correct all`, `Apply all`, `Reject all` e `Delete all`. Le azioni bulk richiedono conferma, agiscono solo sulle bozze della versione corrente e restano bloccate finche' Correct all e' attivo; Apply usa esclusivamente la proposta draft piu' recente per ogni blocco e crea una nuova versione del testo.
+- Nel tool Correct il comando globale e' ora il menu JSswift `All operations`: contiene `Correct all`, `Apply all`, `Reject all` e `Delete all`. Le azioni bulk richiedono conferma, agiscono solo sulle bozze della versione corrente e restano bloccate finche' Correct all e' attivo; Apply usa esclusivamente la proposta draft piu' recente per ogni blocco e crea una nuova versione del testo.
 - Aggiunta nel footer globale di Correct la navigazione `Previous · posizione · Next`, con la stessa grafica e comportamento della coda Activity. Scorre tra i blocchi che hanno almeno una correzione draft della versione corrente e rimane disponibile mentre il contenuto del pannello scorre.
 - Il dialog `View process` permette ora di annullare un batch Correct all con conferma: il job si ferma dopo l'eventuale blocco gia' in corso e conserva le correzioni draft gia' create.
 - Gli errori del batch Correct all sono ora persistenti per blocco/versione: `View failed blocks` mostra anteprima e causa, permette di aprire il paragrafo nell'editor e di avviare `Retry failed` solo sui blocchi non riusciti.
@@ -53,7 +57,7 @@
 
 ## 2026-09-07
 
-- Completato code splitting dashboard/Vite: la shell mantiene CMSwift e routing, mentre editor, studio audio e pagine dashboard vengono caricati su richiesta. Il bundle iniziale della dashboard e' sceso a circa 11 kB; il core CMSwift condiviso resta separato.
+- Completato code splitting dashboard/Vite: la shell mantiene JSswift e routing, mentre editor, studio audio e pagine dashboard vengono caricati su richiesta. Il bundle iniziale della dashboard e' sceso a circa 11 kB; il core JSswift condiviso resta separato.
 - Avviate le pubblicazioni versionate: ogni release salva lo snapshot dell'edizione e genera PDF/ePub in un percorso dedicato, preservando i file delle release precedenti. Le traduzioni approvate vengono incluse nell'export dell'edizione selezionata; l'audiolibro resta per ora composto dai tre master WAV della timeline.
 - Spostato il controllo delle release in un gestore a dialog: mostra data, file, peso e download per ogni versione e permette di ritirare una release dalla disponibilità online senza cancellarne i file. Le versioni audio restano intenzionalmente separate dalle release ePub/PDF.
 - Aggiunte release audio versionate: ogni release congela file sorgente, trim, volumi, fade e posizioni della timeline prima del render, così non legge la timeline live. Voice è obbligatoria; Music e FX sono opzionali. Il gestore permette download, retry delle release fallite con dettaglio errore, conferma per il ritiro offline e apertura/copia del link pubblico. Il player pubblico e lo streaming espongono soltanto release `ready` e online.
@@ -80,7 +84,7 @@
 
 - Creata struttura iniziale `ai/`.
 - Creato `ai/ai.md`.
-- Definita architettura: Laravel backend, Node/CSS/JS nativi frontend, CMSwift per dashboard.
+- Definita architettura: Laravel backend, Node/CSS/JS nativi frontend, JSswift per dashboard.
 - Inserito supporto multilingua come requisito fondamentale.
 - Pianificata palette globale unica.
 - Creato scaffold Laravel 13.
@@ -100,8 +104,8 @@
 
 ## 2026-08-03
 
-- Avviata dashboard CMSwift con prima pagina menu `New book`.
-- Aggiunto flusso frontend CMSwift per scelta `Write book` / `Upload book` e form `Write book`.
+- Avviata dashboard JSswift con prima pagina menu `New book`.
+- Aggiunto flusso frontend JSswift per scelta `Write book` / `Upload book` e form `Write book`.
 - Aggiunti backend Laravel, migrazioni, modelli e test per categorie libro e creazione libro vuoto.
 
 ## 2026-08-06
@@ -166,7 +170,7 @@
 - Estese le azioni dirette Activity a draft singoli: correzioni con `Apply/Reject` e traduzioni con `Approve/Reject`, mentre i gruppi multipli restano nel tool dedicato.
 - Aggiunte conferme e feedback alle azioni dirette Activity, con messaggi temporanei in card e bottom bar dopo apply/reject/approve/audio.
 - Aggiunta preferenza locale `Confirm panel actions`: i pannelli Correct, Translate e Audio possono disattivare le conferme, mentre Activity le mantiene obbligatorie.
-- Avviata pagina `/dashboard/setting` con Settings generale CMSwift per preferenze editor locali, inclusa `Confirm panel actions`, rimuovendo il toggle temporaneo dal book editor.
+- Avviata pagina `/dashboard/setting` con Settings generale JSswift per preferenze editor locali, inclusa `Confirm panel actions`, rimuovendo il toggle temporaneo dal book editor.
 - Estesa pagina Settings con preferenze editor locali: visibilita' pannelli, tool destro predefinito, formato pagina, filtri Activity/Comments/Versions e lingua target traduzione.
 - Aggiunti AI defaults globali nella pagina Settings e fallback backend: i libri senza override specifico ereditano provider, modello e system prompt globali per servizio.
 
@@ -174,7 +178,7 @@
 
 - Completato hardening dashboard: pagine e API richiedono autenticazione, con test di accesso per guest e utenti autenticati.
 - Aggiunti rate limit per login/registrazione e Voice Design Qwen.
-- Reso l'avvio del dashboard coerente con `APP_DEBUG`, senza lasciare CMSwift in modalita' sviluppo in produzione.
+- Reso l'avvio del dashboard coerente con `APP_DEBUG`, senza lasciare JSswift in modalita' sviluppo in produzione.
 - Aggiunta checklist di deploy, monitoraggio e QA manuale responsive/accessibilita' in `docs/deployment.md`.
 - Verificati suite PHP completa e build Vite di produzione.
 - Approvata QA manuale responsive e keyboard della dashboard; confermato anche il test reale Qwen contro il taglio dell'ultima parola.

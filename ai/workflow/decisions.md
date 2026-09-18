@@ -17,7 +17,7 @@
 ## Decisioni da Prendere
 
 - Tipo database primario.
-- Strategia auth Laravel + CMSwift.
+- Strategia auth Laravel + JSswift.
 - Provider AI iniziale.
 - Provider TTS iniziale.
 - Storage file locale/S3.

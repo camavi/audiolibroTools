@@ -9,7 +9,7 @@
 - Configurare `.env`.
 - Configurare database.
 - Configurare multilingua.
-- Preparare CMSwift dashboard integration.
+- Preparare integrazione dashboard JSswift.
 
 ## 2. Autenticazione e Utenti
 
@@ -18,7 +18,7 @@
 - Profilo utente.
 - Organizzazioni/team.
 - Ruoli e permessi.
-- Dashboard post-login CMSwift.
+- Dashboard post-login JSswift.
 
 ## 3. Libri
 

@@ -1,6 +1,6 @@
 /*
  * Audiobook Tools dark theme
- * CMSwift provides the base theme tokens. These tokens cover the custom
+ * JSswift provides the base theme tokens. These tokens cover the custom
  * dashboard layouts that predate the global theme switcher.
  */
 :root[data-theme="dark"] {
@@ -26,7 +26,7 @@
     color: var(--at-text);
 }
 
-/* Shared dashboard chrome and CMSwift overlay surfaces. */
+/* Shared dashboard chrome and JSswift overlay surfaces. */
 :root[data-theme="dark"] .at-dashboardPageActions {
     color: var(--at-text);
 }

@@ -1,6 +1,6 @@
-@import 'cmswift/css/base.css';
-@import 'cmswift/css/ui.css';
-@import 'cmswift/css/responsive.css';
+@import 'jsswift/css/base.css';
+@import 'jsswift/css/ui.css';
+@import 'jsswift/css/responsive.css';
 @import './dark.css';
 
 body {

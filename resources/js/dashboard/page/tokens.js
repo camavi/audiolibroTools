@@ -15,7 +15,7 @@ function formatTokens(value) { return new Intl.NumberFormat().format(Number(valu
 function applyWallet(data) {
     wallet.value = data;
     const balance = data.balance || {};
-    CMSwift.reactive.untracked(() => {
+    JSswift.reactive.untracked(() => {
         autoRechargeEnabled.value = Boolean(balance.auto_recharge_enabled);
         autoRechargeThreshold.value = balance.auto_recharge_threshold ? String(balance.auto_recharge_threshold) : '500';
         autoRechargeAmount.value = balance.auto_recharge_amount ? String(balance.auto_recharge_amount) : '2000';

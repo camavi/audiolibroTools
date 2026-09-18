@@ -39,7 +39,7 @@ async function loadDesign(bookKey) {
         ]);
         const book = dataOf(bookPayload);
         const library = dataOf(assetsPayload);
-        CMSwift.reactive.untracked(() => {
+        JSswift.reactive.untracked(() => {
             designBook.value = book;
             assets.value = library.assets || [];
             const cover = book.book_design_json?.cover || {};
@@ -81,7 +81,7 @@ async function uploadAsset(bookKey, event) {
     uploading.value = true; status.value = null;
     try {
         const body = new FormData(); body.append('image', file); body.append('name', file.name.replace(/\.[^.]+$/, ''));
-        // CMSwift's JSON helpers intentionally serialize JSON. Upload needs a
+        // JSswift's JSON helpers intentionally serialize JSON. Upload needs a
         // multipart request so the selected image can remain a real file.
         const response = await fetch(`/dashboard/api/books/${encodeURIComponent(bookKey)}/design-assets`, { method: 'POST', headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken() }, body });
         const payload = await response.json();

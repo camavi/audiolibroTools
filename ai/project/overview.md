@@ -17,7 +17,7 @@ Audiobook Tool deve diventare una piattaforma moderna per autori, editori e team
 
 - Backend: PHP Laravel.
 - Frontend pubblico/editor: Node per tooling, CSS nativo, JavaScript nativo.
-- Dashboard utente loggato: usare CMSwift.
+- Dashboard utente loggato: usare JSswift.
 - Sito multilingua fin dall'inizio.
 - Palette globale: usare `public/assets/css/palette.css`, derivata da `/Users/cmalleux/Sites/audiolibroTools_old/palette.css`.
 - Non creare stili isolati pagina per pagina se possono diventare token, componenti o utility globali.

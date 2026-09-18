@@ -14,7 +14,7 @@ async function loadProfile() {
     try {
         const data = dataOf(await _.http.getJSON('/dashboard/api/profile'));
         profile.value = data;
-        CMSwift.reactive.untracked(() => { name.value = data.user?.name || ''; });
+        JSswift.reactive.untracked(() => { name.value = data.user?.name || ''; });
     } catch (error) {
         pageStatus.value = { type: 'danger', message: errorMessage(error, 'Unable to load your profile.') };
     } finally { loading.value = false; }

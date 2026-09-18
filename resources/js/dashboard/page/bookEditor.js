@@ -618,7 +618,7 @@ function normalizeEditorPayload(payload) {
 }
 
 function normalizeDataPayload(payload) {
-    // CMSwift's HTTP helper can wrap Laravel's { data: ... } response one
+    // JSswift's HTTP helper can wrap Laravel's { data: ... } response one
     // additional time. Unwrap every transport layer before reading resources.
     let data = payload;
     while (data && typeof data === 'object' && !Array.isArray(data) && data.data && typeof data.data === 'object') {
@@ -951,7 +951,7 @@ function csrfToken() {
 }
 
 function runUntracked(fn) {
-    const untracked = globalThis.CMSwift?.reactive?.untracked;
+    const untracked = globalThis.JSswift?.reactive?.untracked;
 
     return typeof untracked === 'function' ? untracked(fn) : fn();
 }
@@ -6072,7 +6072,7 @@ function editorText(keyBook) {
                     speaker_separators: speakerSeparators.value,
                 });
                 const detected = normalizeDataPayload(payload).candidates || [];
-                CMSwift.reactive.untracked(() => {
+                JSswift.reactive.untracked(() => {
                     candidates.value = detected.map((candidate) => ({ ...candidate, selected: _.rod(true) }));
                 });
             } catch (error) {

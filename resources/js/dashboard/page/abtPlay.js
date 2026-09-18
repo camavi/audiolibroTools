@@ -277,7 +277,7 @@ export default function abtPlay(ctx) {
     const key = keyBook(ctx); load(key);
     window.AudiobookTools?.setPageHeaderActions?.([bookPanelButton(key), _.Btn({ color: 'secondary', icon: 'edit', onClick: () => _.router.navigate(`/dashboard/book/${key}/audiobook/edit`) }, 'Edit audiobook')]);
     return _.main({ class: 'at-abtPage' },
-        _.section({ class: 'at-abtIntro' }, _.div(_.span('Audiobook player'), _.h2(() => playerBook.value?.name || 'Loading preview…'), _.p('A CMSwift port of the original Audiobook Tools demo player.')), _.div({ class: 'at-abtModes' }, ['cover', 'text', 'block', 'word'].map((mode) => _.Btn({ color: () => readingMode.value === mode ? 'primary' : 'secondary', onClick: () => setMode(mode) }, mode[0].toUpperCase() + mode.slice(1))))),
+        _.section({ class: 'at-abtIntro' }, _.div(_.span('Audiobook player'), _.h2(() => playerBook.value?.name || 'Loading preview…'), _.p('A JSswift port of the original Audiobook Tools demo player.')), _.div({ class: 'at-abtModes' }, ['cover', 'text', 'block', 'word'].map((mode) => _.Btn({ color: () => readingMode.value === mode ? 'primary' : 'secondary', onClick: () => setMode(mode) }, mode[0].toUpperCase() + mode.slice(1))))),
         () => error.value ? _.Alert({ type: 'danger', message: error.value }) : null,
         _.section({ class: 'at-abtWorkspace' },
             _.section({ class: 'at-abtPlayer' },

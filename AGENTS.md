@@ -13,5 +13,5 @@ Leggere: sempre, prima di modificare il codice.
 ## Regole non negoziabili
 
 - Non trasformare `ai/ai.md` in un documento monolitico: i dettagli vanno in file dedicati sotto `ai/` e devono essere linkati dall'indice.
-- Per la dashboard, CMSwift è il framework ufficiale. Segui le regole e i pattern riportati in `ai/ai.md`.
+- Per la dashboard, JSswift è il framework ufficiale. Segui le regole e i pattern riportati in `ai/ai.md`.
 - Quando lo stato o le decisioni di progetto cambiano, aggiorna la documentazione pertinente indicata in `ai/ai.md`.

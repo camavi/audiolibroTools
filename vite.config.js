@@ -4,13 +4,13 @@ import { bunny } from 'laravel-vite-plugin/fonts';
 
 export default defineConfig({
     build: {
-        // CMSwift is the shared dashboard runtime. Route pages are loaded on
+        // JSswift is the shared dashboard runtime. Route pages are loaded on
         // demand, so keep the warning focused on chunks that exceed this core.
         chunkSizeWarningLimit: 550,
         rollupOptions: {
             output: {
                 manualChunks(id) {
-                    if (id.includes('/node_modules/cmswift/')) return 'cmswift';
+                    if (id.includes('/node_modules/jsswift/')) return 'jsswift';
                     if (id.includes('/node_modules/@tiptap/')) return 'tiptap';
                 },
             },

@@ -34,7 +34,7 @@ async function loadVoices() {
 }
 
 function openVoiceDialog(existing = null) {
-    const initial = CMSwift.reactive.untracked(() => ({
+    const initial = JSswift.reactive.untracked(() => ({
         name: existing?.name || '',
         type: existing?.type || 'female',
         language: existing?.language || 'it',
@@ -44,7 +44,7 @@ function openVoiceDialog(existing = null) {
     const type = _.rod(initial.type);
     const language = _.rod(initial.language);
     const description = _.rod(initial.description);
-    let samples = CMSwift.reactive.untracked(() => (existing?.samples || []).map((sample) => sampleState(sample)));
+    let samples = JSswift.reactive.untracked(() => (existing?.samples || []).map((sample) => sampleState(sample)));
     const dialogStatus = _.rod(null);
     const sampleList = _.div({ class: 'at-uploadAudioSamples' });
     const emptySamples = _.div({ class: 'at-uploadAudioEmptySamples' }, 'Add at least one sample to make this voice available for preview.');
@@ -73,7 +73,7 @@ function openVoiceDialog(existing = null) {
         return row;
     };
     const addSample = () => {
-        const sample = sampleState({ tone_id: CMSwift.reactive.untracked(() => tones.value[0]?.id || 3) });
+        const sample = sampleState({ tone_id: JSswift.reactive.untracked(() => tones.value[0]?.id || 3) });
         samples.push(sample);
         sampleList.appendChild(createSampleRow(sample));
         syncSampleList();
@@ -87,7 +87,7 @@ function openVoiceDialog(existing = null) {
             const form = new FormData();
             form.append('name', name.value.trim()); form.append('type', type.value); form.append('language', language.value); form.append('description', description.value);
             samples.forEach((sample, index) => { if (sample.id) form.append(`samples[${index}][id]`, sample.id); form.append(`samples[${index}][tone_id]`, sample.toneId.value); form.append(`samples[${index}][description]`, sample.descriptionModel.value); form.append(`samples[${index}][reference_text]`, sample.referenceTextModel.value); if (sample.file) form.append(`samples[${index}][file]`, sample.file); });
-            // Multipart is required for audio files; CMSwift request keeps its CSRF headers and HTTP handling.
+            // Multipart is required for audio files; JSswift request keeps its CSRF headers and HTTP handling.
             const response = await _.http.request(existing ? `/dashboard/api/audio-library/voices/${existing.id}` : '/dashboard/api/audio-library/voices', { method: 'POST', body: form });
             const saved = dataOf(await response.jsonStrict()).voice;
             voices.value = [saved, ...voices.value.filter((voice) => voice.id !== saved.id)];
@@ -133,12 +133,12 @@ function defaultDesignReference(language) {
 }
 
 function openDesignVoiceDialog(existing = null) {
-    const initial = CMSwift.reactive.untracked(() => ({
+    const initial = JSswift.reactive.untracked(() => ({
         name: existing?.name || '', type: existing?.type || 'female', language: existing?.language || 'it', description: existing?.description || '',
     }));
     const name = _.rod(initial.name); const type = _.rod(initial.type); const language = _.rod(initial.language); const description = _.rod(initial.description);
     const dialogStatus = _.rod(null);
-    let designs = CMSwift.reactive.untracked(() => (existing?.samples || []).map((sample) => ({
+    let designs = JSswift.reactive.untracked(() => (existing?.samples || []).map((sample) => ({
         sampleId: sample.id || null,
         audioUrl: _.rod(sample.audio_url || null),
         toneId: _.rod(Number(sample.tone_id || sample.tone?.id || tones.value[0]?.id || 3)),
@@ -174,7 +174,7 @@ function openDesignVoiceDialog(existing = null) {
         return row;
     };
     const addDesign = () => {
-        const design = { sampleId: null, audioUrl: _.rod(null), toneId: _.rod(CMSwift.reactive.untracked(() => tones.value[0]?.id || 3)), prompt: _.rod(''), referenceText: _.rod(CMSwift.reactive.untracked(() => defaultDesignReference(language.value))) };
+        const design = { sampleId: null, audioUrl: _.rod(null), toneId: _.rod(JSswift.reactive.untracked(() => tones.value[0]?.id || 3)), prompt: _.rod(''), referenceText: _.rod(JSswift.reactive.untracked(() => defaultDesignReference(language.value))) };
         designs.push(design); designList.appendChild(createDesignRow(design)); syncDesignList();
     };
     designs.forEach((design) => designList.appendChild(createDesignRow(design)));

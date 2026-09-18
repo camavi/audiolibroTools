@@ -14,12 +14,12 @@
                 document.documentElement.dataset.theme = savedTheme === 'dark' ? 'dark' : 'light';
             })();
 
-            window.CMSwift_setting = {
+            window.JSswift_setting = {
                 modeDev: @js((bool) config('app.debug')),
                 themes: ['light', 'dark'],
                 themeList: ['light', 'dark'],
                 http: {
-                //baseURL: "https://cmswift.com/api",
+                //baseURL: "https://jsswift.com/api",
                 timeout: 900000,
                 credentials: "include",
                 headers: {

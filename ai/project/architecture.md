@@ -57,9 +57,9 @@ Stack frontend:
 - nessun framework frontend obbligatorio nella prima fase;
 - design token globali in `public/assets/css/palette.css`.
 
-## Dashboard con CMSwift
+## Dashboard con JSswift
 
-La dashboard utente loggato deve usare CMSwift per:
+La dashboard utente loggato deve usare JSswift per:
 
 - menu area privata;
 - layout dashboard;
@@ -69,8 +69,8 @@ La dashboard utente loggato deve usare CMSwift per:
 
 Da progettare:
 
-- confine tra Laravel Auth e CMSwift;
+- confine tra Laravel Auth e JSswift;
 - sessione utente;
 - permessi;
 - routing dashboard;
-- inclusione CSS globale del nuovo progetto senza rompere CMSwift.
+- inclusione CSS globale del nuovo progetto senza rompere JSswift.

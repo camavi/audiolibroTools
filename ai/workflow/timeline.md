@@ -29,7 +29,7 @@ Obiettivi:
 - configurare routing base;
 - configurare multilingua;
 - creare layout pubblico iniziale;
-- preparare integrazione dashboard CMSwift.
+- preparare integrazione dashboard JSswift.
 
 ## Fase 2 - Database e Dominio
 
@@ -49,7 +49,7 @@ Stato: in corso.
 
 Obiettivi:
 
-- dashboard utente CMSwift;
+- dashboard utente JSswift;
 - lista libri;
 - creazione libro: primo flusso `New book` / `Write book` avviato;
 - upload libro TXT/PDF completato: estrazione testo, blocchi editor e versione `import`;
@@ -133,7 +133,7 @@ Obiettivi:
 - sicurezza;
 - test;
 - performance;
-- Code splitting dashboard/Vite completato: le pagine pesanti vengono caricate su richiesta; il core CMSwift condiviso resta sotto una soglia di avviso dedicata di 550 kB.
+- Code splitting dashboard/Vite completato: le pagine pesanti vengono caricate su richiesta; il core JSswift condiviso resta sotto una soglia di avviso dedicata di 550 kB.
 - documentazione deploy;
 - QA UI responsive;
 - controllo accessibilita';

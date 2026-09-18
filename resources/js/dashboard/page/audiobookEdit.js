@@ -256,7 +256,7 @@ function resolvedBookStyle(styleKey, design = bookDesign.value) {
 function hydrateDesignForm(styleKey = designStyleKey.value) {
     const style = resolvedBookStyle(styleKey);
     const layout = bookDesign.value?.layout || defaultBookDesign().layout;
-    CMSwift.reactive.untracked(() => {
+    JSswift.reactive.untracked(() => {
         Object.entries(designFields).forEach(([key, model]) => { model.value = String(style[key] ?? ''); });
         Object.entries(layoutFields).forEach(([key, model]) => { model.value = String(layout[key] ?? ''); });
     });
@@ -729,7 +729,7 @@ async function openTimelineEqualizerDialog(scope, track = null) {
     const gainInput = (label, hint, model) => {
         const field = _.Input({ label: false, type: 'range', model });
         const input = field._input;
-        // CMSwift's generic range field defaults to 0–100. Set its native
+        // JSswift's generic range field defaults to 0–100. Set its native
         // bounds explicitly so the visual thumb and the persisted dB value
         // always use the same −12…+12 scale.
         input.min = '-12';
@@ -896,7 +896,7 @@ function processTimelineWaveformQueue() {
         const url = queuedTimelineWaveforms.shift();
         if (!pendingTimelineWaveforms.has(url)) continue;
         activeTimelineWaveformLoads += 1;
-    // CMSwift's JSON helpers intentionally parse response bodies. A WAV must be
+    // JSswift's JSON helpers intentionally parse response bodies. A WAV must be
     // decoded as an ArrayBuffer by the browser Web Audio API, so this is the
     // one technical use of fetch in the dashboard.
         fetch(url)
@@ -2035,7 +2035,7 @@ function openAudioDirectionDialog() {
     const libraryVoices = _.rod([]);
     const libraryLoading = _.rod(true);
     const libraryChoice = new Map();
-    // Keep the CMSwift field while using a numeric text input: it is more
+    // Keep the JSswift field while using a numeric text input: it is more
     // reliable in dialog overlays with a suffix and still opens a number pad
     // on mobile devices.
     const timingInput = (label, model) => {
@@ -2054,7 +2054,7 @@ function openAudioDirectionDialog() {
             if (model.value !== normalized) model.value = normalized;
             field._refresh();
         });
-        // Do not put cms-col-* on _.Input: CMSwift forwards the class to its
+        // Do not put cms-col-* on _.Input: JSswift forwards the class to its
         // native <input>, shrinking the editable surface to one quarter.
         return _.div({ class: 'at-audioDirectionTimingField' }, field);
     };

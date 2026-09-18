@@ -1,4 +1,4 @@
-import 'cmswift';
+import 'jsswift';
 
 let currentLayout = null;
 const currentView = _.rod('new-book');
@@ -175,7 +175,7 @@ async function syncBookEditions() {
         const data = payload?.data?.data || payload?.data || {};
         const editions = data.editions || [];
         const queryEdition = new URLSearchParams(window.location.search).get('edition');
-        CMSwift.reactive.untracked(() => {
+        JSswift.reactive.untracked(() => {
             bookEditionOptions.value = editions.map((edition) => {
                 const total = Number(edition.total_blocks || 0);
                 const approved = Number(edition.approved_blocks || 0);
@@ -347,7 +347,7 @@ function mountDashboard(contentPage) {
 
 //const root = document.getElementById('dashboard-root');
 
-let contentPage = _.div({ class: "cmswift-route-outlet" });
+let contentPage = _.div({ class: "jsswift-route-outlet" });
 const layoutPage = mountDashboard(contentPage);
 _.mount("#dashboard-root", layoutPage);
 _.router.setOutlet(contentPage);

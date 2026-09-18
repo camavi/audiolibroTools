@@ -27,7 +27,7 @@ function settingsPayload() {
 
 function hydrate(data) {
     const meta = data.settings?.metadata || {}; const reading = data.settings?.reading || {};
-    CMSwift.reactive.untracked(() => {
+    JSswift.reactive.untracked(() => {
         title.value = meta.title || ''; subtitle.value = meta.subtitle || ''; author.value = meta.author || ''; publisher.value = meta.publisher || '';
         publicationDate.value = meta.publication_date || ''; identifier.value = meta.identifier || ''; language.value = meta.language || 'en'; description.value = meta.description || ''; subjects.value = (meta.subjects || []).join(', '); rights.value = meta.rights || '';
         direction.value = reading.direction || 'auto'; includeToc.value = Boolean(reading.include_toc); includeTitlePage.value = Boolean(reading.include_title_page); chapterBreak.value = reading.chapter_break || 'heading';
