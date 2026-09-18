@@ -1,0 +1,164 @@
+.at-aiPricingPage {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 20px;
+    color: var(--at-text);
+}
+
+.at-aiPricingHero {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 21px 23px;
+    border: 1px solid var(--at-border);
+    border-radius: 15px;
+    background: linear-gradient(135deg, var(--at-surface-subtle), var(--at-surface));
+}
+
+.at-aiPricingHero>div>span {
+    display: block;
+    color: #2d6bca;
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+}
+
+.at-aiPricingHero h2 {
+    margin: 4px 0;
+    color: var(--at-text);
+}
+
+.at-aiPricingHero p {
+    max-width: 720px;
+    margin: 0;
+    color: var(--at-muted);
+    line-height: 1.45;
+}
+
+.at-aiPricingGuide {
+    display: flex;
+    gap: 11px;
+    margin: 14px 0;
+    padding: 14px 16px;
+    border: 1px solid #bfdbfe;
+    border-radius: 12px;
+    background: #eff6ff;
+    color: #34547c;
+}
+
+.at-aiPricingGuide .material-icons {
+    color: #2563eb;
+}
+
+.at-aiPricingGuide strong,
+.at-aiPricingGuide span {
+    display: block;
+}
+
+.at-aiPricingGuide span {
+    margin-top: 3px;
+    font-size: .86rem;
+    line-height: 1.45;
+}
+
+.at-aiPricingCard {
+    border: 1px solid var(--at-border);
+    border-radius: 14px;
+    background: var(--at-surface);
+    overflow: hidden;
+}
+
+.at-aiPricingTableWrap {
+    overflow-x: auto;
+}
+
+.at-aiPricingTable {
+    min-width: 970px;
+}
+
+.at-aiPricingTable .cms-input {
+    min-width: 136px;
+}
+
+.at-aiPricingTable code {
+    color: #28486f;
+    font-size: .82rem;
+}
+
+.at-aiPricingType {
+    display: inline-flex;
+    padding: .22rem .48rem;
+    border-radius: 999px;
+    background: #e8eef8;
+    color: #36516f;
+    font-size: .72rem;
+    font-weight: 800;
+    text-transform: capitalize;
+}
+
+.at-aiPricingType.is-audio {
+    background: #e0f2fe;
+    color: #0369a1;
+}
+
+.at-aiPricingType.is-image {
+    background: #f3e8ff;
+    color: #7e22ce;
+}
+
+.at-aiPricingType.is-text {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.at-aiPricingLoading {
+    padding: 56px;
+    color: var(--at-muted);
+    text-align: center;
+}
+
+.at-aiPricingActions,
+.at-aiPricingConfirmActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .5rem;
+}
+
+.at-aiPricingConfirm {
+    display: grid;
+    gap: 1rem;
+}
+
+.at-aiPricingConfirm p {
+    margin: 0;
+    color: var(--at-muted);
+    line-height: 1.45;
+}
+
+.at-aiPricingHeroActions,
+.at-aiPricingAddCosts {
+    display: flex;
+    gap: .6rem;
+}
+
+.at-aiPricingAddDialog {
+    display: grid;
+    gap: .85rem;
+}
+
+@media (max-width: 720px) {
+    .at-aiPricingPage {
+        padding: 14px;
+    }
+
+    .at-aiPricingHero {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .at-aiPricingHero .cms-btn {
+        width: 100%;
+    }
+}

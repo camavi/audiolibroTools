@@ -13,6 +13,7 @@
 - `ai/ai.md` deve restare solo indice, non documentazione monolitica.
 - Il Settings generale dell'editor deve includere la preferenza `Confirm panel actions`: Activity conferma sempre, mentre i pannelli dedicati possono rendere le conferme opzionali.
 - Distribution Hub: AT non raccoglie password, 2FA o sessioni dei portali. Una connessione automatica richiede OAuth/token revocabile, file feed ufficiale oppure una partnership esplicita; per i portali manuali AT prepara il pacchetto e il cliente completa la pubblicazione. Vedi [Policy provider Distribution Hub](distribution-provider-policy.md).
+- Il listino costi AI è amministrativo e distinto dal wallet cliente: testo in USD per 1M token input/output, audio in USD per minuto generato, immagini in USD per immagine generata. I valori vengono catalogati per modello ma non modificano ancora gli addebiti in token. Un modello può essere disabilitato nel catalogo oppure rimosso dalla lista; nessuna delle due azioni altera job o impostazioni già salvati.
 
 ## Decisioni da Prendere
 

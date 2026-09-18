@@ -128,3 +128,4 @@
 - Job monitor.
 - Utenti.
 - Costi/consumi.
+- Catalogo prezzi AI: pagina amministrativa per modello. Il testo registra USD per 1M token input/output, il TTS USD per minuto audio generato e le immagini USD per immagine generata; il catalogo è separato finché il calcolo dei costi reali non viene collegato ai job.

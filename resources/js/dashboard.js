@@ -46,6 +46,7 @@ const navGroups = [
             items: [
                 { label: 'Tickets', key: 'admin-tickets', icon: 'support_agent', link: '/dashboard/admin/tickets' },
                 { label: 'All users', key: 'admin-users', icon: 'group', link: '/dashboard/admin/users' },
+                { label: 'AI pricing', key: 'admin-ai-pricing', icon: 'price_change', link: '/dashboard/admin/ai-pricing' },
             ],
         }]
         : []),
@@ -158,6 +159,7 @@ const statisticsPage = lazyPage('Statistics', () => import('./dashboard/page/sta
 const teamPage = lazyPage('Team', () => import('./dashboard/page/team.js'));
 const promptsPage = lazyPage('AI prompts', () => import('./dashboard/page/prompts.js'));
 const supportPage = lazyPage('Help and support', () => import('./dashboard/page/support.js'));
+const adminAiPricingPage = lazyPage('AI pricing', () => import('./dashboard/page/adminAiPricing.js'));
 const logoutPage = lazyPage('Logout', () => import('./dashboard/page/logout.js'));
 function setPageHeaderActions(actions = []) {
     const nodes = Array.isArray(actions) ? actions : [actions];
@@ -375,6 +377,7 @@ _.router.add('/dashboard/support', routePage(supportPage));
 _.router.add('/dashboard/admin', routePage(supportPage));
 _.router.add('/dashboard/admin/tickets', routePage(supportPage));
 _.router.add('/dashboard/admin/users', routePage(supportPage));
+_.router.add('/dashboard/admin/ai-pricing', routePage(adminAiPricingPage));
 _.router.add('/dashboard/logout', routePage(logoutPage));
 
 _.router.start();

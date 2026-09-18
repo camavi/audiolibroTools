@@ -3,6 +3,7 @@
 ## 2026-09-18
 
 - Migrata la dashboard da CMSwift a JSswift: dipendenza npm, import JavaScript, configurazione globale, CSS, chunk Vite e riferimenti runtime ora usano `jsswift`/`JSswift`. L'alias `_` e le classi CSS `cms-*` restano compatibili con il framework rinominato.
+- Aggiunta Administration → AI pricing: catalogo modificabile e auditato per i costi dei modelli AI, con testo per 1M token input/output, TTS per minuto audio e immagini per generazione. Il catalogo prepara il cost tracking senza ancora alterare il wallet clienti; ogni modello può inoltre essere disabilitato o rimosso dalla lista con conferma.
 
 ## 2026-09-16
 

@@ -311,6 +311,27 @@
 }
 
 /* Token wallet */
+:root[data-theme="dark"] .at-aiPricingHero {
+    background: linear-gradient(115deg, #172447 0%, var(--at-surface) 100%);
+}
+
+:root[data-theme="dark"] .at-aiPricingCard {
+    border-color: var(--at-border);
+    background: var(--at-surface);
+}
+
+:root[data-theme="dark"] .at-aiPricingGuide {
+    border-color: rgb(96 165 250 / 35%);
+    background: #14203d;
+    color: var(--at-muted);
+}
+
+:root[data-theme="dark"] .at-aiPricingGuide .material-icons,
+:root[data-theme="dark"] .at-aiPricingHero h2,
+:root[data-theme="dark"] .at-aiPricingTable code {
+    color: var(--at-text);
+}
+
 :root[data-theme="dark"] .at-tokensPage {
     color: var(--at-text);
 }

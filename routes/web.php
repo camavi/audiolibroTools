@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AdminSupportController;
+use App\Http\Controllers\AdminAiPricingController;
 use App\Http\Controllers\AiPromptController;
 use App\Http\Controllers\AudioLibraryController;
 use App\Http\Controllers\AudioMediaController;
@@ -78,6 +79,10 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
         Route::patch('/users/{user}', [AdminSupportController::class, 'updateUser'])->name('users.update');
         Route::patch('/users/{user}/status', [AdminSupportController::class, 'updateAccountStatus'])->name('users.status.update');
         Route::post('/users/{user}/credits', [AdminSupportController::class, 'adjustCredits'])->name('users.credits.adjust');
+        Route::get('/ai-pricing', [AdminAiPricingController::class, 'index'])->name('ai-pricing.index');
+        Route::post('/ai-pricing', [AdminAiPricingController::class, 'store'])->name('ai-pricing.store');
+        Route::put('/ai-pricing', [AdminAiPricingController::class, 'update'])->name('ai-pricing.update');
+        Route::patch('/ai-pricing/status', [AdminAiPricingController::class, 'updateStatus'])->name('ai-pricing.status.update');
         Route::post('/users/{user}/password-reset', [AdminSupportController::class, 'sendPasswordReset'])->name('users.password-reset.store');
         Route::patch('/users/{user}/books/{book}/moderation', [AdminSupportController::class, 'moderateBook'])->name('users.books.moderation.update');
         Route::post('/users/{user}/copyright-notices', [AdminSupportController::class, 'sendCopyrightNotice'])->name('users.copyright-notices.store');
