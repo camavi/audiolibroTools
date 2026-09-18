@@ -2039,10 +2039,10 @@
 
 .at-audioReadingWord {
     border-radius: .18rem;
-    background: #fde68a;
+    background: #3c78ff;
     box-decoration-break: clone;
-    box-shadow: 0 0 0 .08rem rgba(245, 158, 11, .35);
-    color: var(--at-text);
+    box-shadow: 0 0 0 .08rem rgb(60 120 255 / 55%);
+    color: #fff;
 }
 
 
