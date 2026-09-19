@@ -2,6 +2,7 @@
 
 namespace App\Services\Payments;
 
+use App\Models\AccountSubscription;
 use App\Models\SubscriptionPlan;
 use App\Models\TokenPurchase;
 use App\Models\User;
@@ -68,5 +69,75 @@ class StripeCheckoutService
         ]);
 
         return ['id' => $session->id, 'url' => $session->url];
+    }
+
+    public function previewSubscriptionPlanChange(AccountSubscription $subscription, SubscriptionPlan $plan): array
+    {
+        abort_unless($this->subscriptionCheckoutReady($plan), 422, 'This plan is not ready for Stripe yet.');
+
+        $stripe = $this->client();
+        $current = $stripe->subscriptions->retrieve($subscription->provider_subscription_id, []);
+        $item = $current->items->data[0] ?? null;
+        abort_unless($item, 422, 'Stripe did not return a subscription item to preview.');
+        $prorationDate = now()->timestamp;
+        $preview = $stripe->invoices->createPreview([
+            'subscription' => $subscription->provider_subscription_id,
+            'subscription_details' => [
+                'items' => [['id' => $item->id, 'price' => $plan->stripe_price_id]],
+                'proration_behavior' => 'always_invoice',
+                'proration_date' => $prorationDate,
+            ],
+        ]);
+
+        return ['amount_due' => (int) $preview->amount_due, 'currency' => strtoupper((string) $preview->currency), 'proration_date' => $prorationDate];
+    }
+
+    public function changeSubscriptionPlan(AccountSubscription $subscription, SubscriptionPlan $plan, ?int $prorationDate = null): object
+    {
+        abort_unless($this->subscriptionCheckoutReady($plan), 422, 'This plan is not ready for Stripe yet.');
+
+        $stripe = $this->client();
+        $current = $stripe->subscriptions->retrieve($subscription->provider_subscription_id, []);
+        $item = $current->items->data[0] ?? null;
+        abort_unless($item, 422, 'Stripe did not return a subscription item to update.');
+
+        return $stripe->subscriptions->update($subscription->provider_subscription_id, [
+            'items' => [['id' => $item->id, 'price' => $plan->stripe_price_id]],
+            'proration_behavior' => 'always_invoice',
+            'payment_behavior' => 'error_if_incomplete',
+            'proration_date' => $prorationDate,
+            'metadata' => ['user_id' => (string) $subscription->user_id, 'subscription_plan_id' => (string) $plan->id],
+        ]);
+    }
+
+    public function setSubscriptionCancellation(AccountSubscription $subscription, bool $cancelAtPeriodEnd): object
+    {
+        return $this->client()->subscriptions->update($subscription->provider_subscription_id, [
+            'cancel_at_period_end' => $cancelAtPeriodEnd,
+        ]);
+    }
+
+    public function createCustomerPortal(AccountSubscription $subscription): array
+    {
+        $stripe = $this->client();
+        $customerId = $subscription->provider_customer_id;
+        if (! filled($customerId)) {
+            $customerId = $stripe->subscriptions->retrieve($subscription->provider_subscription_id, [])->customer;
+        }
+        abort_unless(filled($customerId), 422, 'Stripe did not return a customer for this subscription.');
+
+        $session = $stripe->billingPortal->sessions->create([
+            'customer' => $customerId,
+            'return_url' => rtrim((string) config('app.url'), '/').'/dashboard/subscription?portal=return',
+        ]);
+
+        return ['url' => $session->url];
+    }
+
+    private function client(): StripeClient
+    {
+        abort_unless($this->isConfigured(), 422, 'Stripe is not configured yet. Add STRIPE_SECRET_KEY before managing subscriptions.');
+
+        return new StripeClient((string) config('payments.stripe.secret_key'));
     }
 }

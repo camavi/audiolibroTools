@@ -1,9 +1,9 @@
 <?php
 
-use App\Http\Controllers\AdminSupportController;
 use App\Http\Controllers\AdminAiPricingController;
 use App\Http\Controllers\AdminBillingController;
 use App\Http\Controllers\AdminSubscriptionPlanController;
+use App\Http\Controllers\AdminSupportController;
 use App\Http\Controllers\AdminTokenPackageController;
 use App\Http\Controllers\AiPromptController;
 use App\Http\Controllers\AudioLibraryController;
@@ -24,9 +24,9 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicAudiobookController;
 use App\Http\Controllers\PublicBookController;
 use App\Http\Controllers\StatisticsController;
+use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\SupportTicketController;
-use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TokenWalletController;
 use Illuminate\Support\Facades\Route;
@@ -121,6 +121,10 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
     Route::get('/tokens', [TokenWalletController::class, 'show'])->name('tokens.show');
     Route::get('/subscription', [SubscriptionController::class, 'show'])->name('subscription.show');
     Route::post('/subscription/checkout', [SubscriptionController::class, 'createCheckout'])->name('subscription.checkout.store');
+    Route::post('/subscription/plan-preview', [SubscriptionController::class, 'previewPlanChange'])->name('subscription.plan-preview.store');
+    Route::patch('/subscription/plan', [SubscriptionController::class, 'changePlan'])->name('subscription.plan.update');
+    Route::patch('/subscription/cancellation', [SubscriptionController::class, 'updateCancellation'])->name('subscription.cancellation.update');
+    Route::post('/subscription/customer-portal', [SubscriptionController::class, 'customerPortal'])->name('subscription.customer-portal.store');
     Route::post('/tokens/checkout', [TokenWalletController::class, 'createCheckout'])->name('tokens.checkout.store');
     Route::patch('/tokens/auto-recharge', [TokenWalletController::class, 'updateAutoRecharge'])->name('tokens.auto-recharge.update');
     Route::get('/profile', [ProfileController::class, 'show'])->name('profile.show');

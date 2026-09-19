@@ -36,19 +36,27 @@ class StripeWebhookController extends Controller
 
             return response()->json(['received' => true]);
         }
-        if ($event->type !== 'checkout.session.completed') return response()->json(['received' => true]);
+        if ($event->type !== 'checkout.session.completed') {
+            return response()->json(['received' => true]);
+        }
 
         $session = $event->data->object;
-        if (($session->mode ?? null) === 'subscription') return response()->json(['received' => true]);
-        if (($session->payment_status ?? null) !== 'paid') return response()->json(['received' => true]);
+        if (($session->mode ?? null) === 'subscription') {
+            return response()->json(['received' => true]);
+        }
+        if (($session->payment_status ?? null) !== 'paid') {
+            return response()->json(['received' => true]);
+        }
         $purchaseId = $session->metadata->token_purchase_id ?? $session->client_reference_id ?? null;
         $purchase = TokenPurchase::query()->find($purchaseId);
         if (! $purchase || $purchase->provider !== 'stripe' || $purchase->provider_checkout_session_id !== $session->id) {
             Log::warning('Stripe checkout could not be matched to a token purchase.', ['session_id' => $session->id, 'purchase_id' => $purchaseId]);
+
             return response()->json(['received' => true]);
         }
         if ((int) $session->amount_total !== $purchase->amount_cents || strtoupper((string) $session->currency) !== $purchase->currency) {
             Log::warning('Stripe checkout total does not match the token purchase.', ['session_id' => $session->id, 'purchase_id' => $purchase->id]);
+
             return response()->json(['received' => true]);
         }
 
@@ -63,7 +71,9 @@ class StripeWebhookController extends Controller
         $userId = $metadata->user_id ?? null;
         $planId = $metadata->subscription_plan_id ?? null;
         $user = User::query()->find($userId);
-        $plan = SubscriptionPlan::query()->find($planId);
+        $priceId = $stripeSubscription->items->data[0]->price->id ?? null;
+        $plan = filled($priceId) ? SubscriptionPlan::query()->where('stripe_price_id', $priceId)->first() : null;
+        $plan = $plan ?: SubscriptionPlan::query()->find($planId);
 
         if (! $user || ! $plan) {
             $existing = AccountSubscription::query()->where('provider', 'stripe')->where('provider_subscription_id', $stripeSubscription->id ?? null)->first();
@@ -82,8 +92,12 @@ class StripeWebhookController extends Controller
     private function grantPaidInvoicePeriod(object $invoice, SubscriptionLifecycleService $subscriptions): void
     {
         $subscriptionId = $invoice->subscription ?? $invoice->parent?->subscription_details?->subscription ?? null;
-        if (! is_string($subscriptionId)) return;
+        if (! is_string($subscriptionId)) {
+            return;
+        }
         $subscription = AccountSubscription::query()->where('provider', 'stripe')->where('provider_subscription_id', $subscriptionId)->first();
-        if ($subscription) $subscriptions->grantPeriod($subscription);
+        if ($subscription) {
+            $subscriptions->grantPeriod($subscription);
+        }
     }
 }

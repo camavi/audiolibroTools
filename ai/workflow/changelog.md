@@ -2,6 +2,8 @@
 
 ## 2026-09-18
 
+- Completata la gestione cliente degli abbonamenti Stripe: cambio piano con prorata e addebito immediato, disdetta a fine periodo, riattivazione e accesso al Customer Portal per fatture e metodi di pagamento. Lo stato locale resta sincronizzato dagli eventi Stripe e identifica il piano dal Price attivo, anche dopo un cambio piano.
+
 - Migrata la dashboard da CMSwift a JSswift: dipendenza npm, import JavaScript, configurazione globale, CSS, chunk Vite e riferimenti runtime ora usano `jsswift`/`JSswift`. L'alias `_` e le classi CSS `cms-*` restano compatibili con il framework rinominato.
 - Aggiunta Administration → AI pricing: catalogo modificabile e auditato per i costi dei modelli AI, con testo per 1M token input/output, TTS per minuto audio e immagini per generazione. Il catalogo prepara il cost tracking senza ancora alterare il wallet clienti; ogni modello può inoltre essere disabilitato o rimosso dalla lista con conferma.
 - Aggiunta Administration → Subscription plans: catalogo iniziale di tre piani mensili modificabili (Starter, Creator e Studio), ciascuno con prezzo, token inclusi, descrizione e stato. I pacchetti token extra restano volutamente fuori da questa prima fase.
