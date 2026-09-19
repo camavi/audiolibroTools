@@ -17,6 +17,7 @@
 - La monetizzazione parte da tre piani mensili configurabili (`Starter`, `Creator`, `Studio`) con token inclusi. I token extra saranno acquistabili separatamente in un flusso top-up successivo; checkout, rinnovi e allocazione token non sono ancora connessi al catalogo piani.
 - I top-up usano un catalogo indipendente di pacchetti token una tantum: l'admin gestisce prezzo, quantità, stato e rimozione; il wallet espone esclusivamente quelli attivi. Nessun token viene accreditato e nessun pagamento viene simulato fino all'integrazione di un provider verificato.
 - Stripe è il provider iniziale per i top-up: l'accesso al suo SDK è confinato in `StripeCheckoutService`, per consentire una futura sostituzione. Il ritorno browser non accredita nulla; solo il webhook Stripe firmato, con importo/currency verificati e una riga acquisto bloccata in transazione, crea l'accredito idempotente nel ledger. L'attivazione reale resta sospesa finché non saranno disponibili chiavi test Stripe e un endpoint webhook raggiungibile (o Stripe CLI in locale).
+- Le analytics Billing sono amministrative e autonome dalle statistiche di ricavi dei libri: fatturato e token venduti contano esclusivamente `token_purchases` con stato `paid` e `paid_at` nel periodo selezionato; checkout pendenti o falliti sono solo indicatori del funnel.
 
 ## Decisioni da Prendere
 

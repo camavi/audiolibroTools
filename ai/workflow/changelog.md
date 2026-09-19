@@ -8,6 +8,8 @@
 - Aggiunta Administration → Token packages: catalogo separato e modificabile dei top-up una tantum, con creazione, stato, modifica e rimozione. Il wallet cliente legge i soli pacchetti attivi; pagamento e accredito token restano disabilitati fino a checkout verificato.
 - Avviato Stripe Checkout per i pacchetti token: il wallet apre il checkout solo quando le chiavi server sono configurate; l'accredito è eseguito esclusivamente dal webhook firmato `checkout.session.completed`, con controllo importo/valuta e protezione idempotente contro eventi duplicati.
 - Stripe Checkout è messo in sospeso dopo l'implementazione: senza chiavi test e webhook configurati il wallet lo mantiene disabilitato, quindi non genera addebiti né accrediti.
+- Aggiunta Administration → Billing con analisi delle vendite token: KPI, filtro periodo, raggruppamento giorno/settimana/mese, trend, pacchetti venduti, funnel checkout e attività recente. Il report resta separato da royalties e payout delle pubblicazioni.
+- Aggiunti i comandi locali `billing:seed-demo` e `billing:clear-demo`: popolano e rimuovono in modo isolato i dati demo delle vendite token, senza interferire con account o acquisti reali.
 
 ## 2026-09-16
 

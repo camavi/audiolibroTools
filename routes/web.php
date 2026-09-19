@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AdminSupportController;
 use App\Http\Controllers\AdminAiPricingController;
+use App\Http\Controllers\AdminBillingController;
 use App\Http\Controllers\AdminSubscriptionPlanController;
 use App\Http\Controllers\AdminTokenPackageController;
 use App\Http\Controllers\AiPromptController;
@@ -90,6 +91,7 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
         Route::get('/subscription-plans', [AdminSubscriptionPlanController::class, 'index'])->name('subscription-plans.index');
         Route::patch('/subscription-plans/{plan}', [AdminSubscriptionPlanController::class, 'update'])->name('subscription-plans.update');
         Route::get('/token-packages', [AdminTokenPackageController::class, 'index'])->name('token-packages.index');
+        Route::get('/billing/token-sales', [AdminBillingController::class, 'tokenSales'])->name('billing.token-sales.index');
         Route::post('/token-packages', [AdminTokenPackageController::class, 'store'])->name('token-packages.store');
         Route::patch('/token-packages/{package}', [AdminTokenPackageController::class, 'update'])->name('token-packages.update');
         Route::delete('/token-packages/{package}', [AdminTokenPackageController::class, 'destroy'])->name('token-packages.destroy');
