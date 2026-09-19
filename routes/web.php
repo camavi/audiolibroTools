@@ -24,6 +24,7 @@ use App\Http\Controllers\PublicAudiobookController;
 use App\Http\Controllers\PublicBookController;
 use App\Http\Controllers\StatisticsController;
 use App\Http\Controllers\SupportTicketController;
+use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TokenWalletController;
 use Illuminate\Support\Facades\Route;
@@ -60,6 +61,7 @@ Route::get('/project-plan/file/{path}', function (string $path) {
 Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:auth')->name('auth.register');
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:auth')->name('auth.login');
 Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth')->name('auth.logout');
+Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])->name('stripe.webhook');
 
 Route::get('/listen/{keyBook}/{release}', [PublicAudiobookController::class, 'show'])->name('public.audiobooks.show');
 Route::get('/listen/{keyBook}/{release}/{track}', [PublicAudiobookController::class, 'stream'])->whereIn('track', ['voice', 'music', 'fx'])->name('public.audiobooks.stream');
@@ -112,6 +114,7 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
     Route::get('/statistics', [StatisticsController::class, 'index'])->name('statistics.index');
     Route::get('/activity', [BookActivityController::class, 'index'])->name('activity.index');
     Route::get('/tokens', [TokenWalletController::class, 'show'])->name('tokens.show');
+    Route::post('/tokens/checkout', [TokenWalletController::class, 'createCheckout'])->name('tokens.checkout.store');
     Route::patch('/tokens/auto-recharge', [TokenWalletController::class, 'updateAutoRecharge'])->name('tokens.auto-recharge.update');
     Route::get('/profile', [ProfileController::class, 'show'])->name('profile.show');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');

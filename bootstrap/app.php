@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectGuestsTo('/');
+        $middleware->validateCsrfTokens(except: ['stripe/webhook']);
         $middleware->alias(['staff' => EnsureStaffRole::class, 'account.active' => EnsureAccountIsActive::class, 'account.can-write' => EnsureAccountCanWrite::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

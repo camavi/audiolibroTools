@@ -4,6 +4,7 @@ const wallet = _.rod(null);
 const loading = _.rod(true);
 const status = _.rod(null);
 const savingAutoRecharge = _.rod(false);
+const startingCheckout = _.rod(false);
 const autoRechargeEnabled = _.rod(false);
 const autoRechargeThreshold = _.rod('500');
 const autoRechargeAmount = _.rod('2000');
@@ -48,13 +49,24 @@ async function saveAutoRecharge() {
 function openTopUpDialog() {
     const selected = _.rod(String(wallet.value?.top_up_packages?.[0]?.id || ''));
     const dialogStatus = _.rod(null);
+    const startCheckout = async () => {
+        if (startingCheckout.value || !selected.value) return;
+        startingCheckout.value = true; dialogStatus.value = null;
+        try {
+            const data = dataOf(await _.http.postJSON('/dashboard/api/tokens/checkout', { token_package_id: Number(selected.value) }));
+            window.location.assign(data.checkout_url);
+        } catch (error) {
+            dialogStatus.value = { type: 'danger', message: errorMessage(error, 'Unable to start Stripe Checkout.') };
+            startingCheckout.value = false;
+        }
+    };
     _.Dialog({ size: 'sm', stickyActions: true, slots: {
         header: _.div(_.span({ class: 'at-tokensEyebrow' }, 'Add tokens'), _.h3('Choose a token package'), _.p('Tokens are added after a confirmed payment.')),
         content: ({ close }) => _.div({ class: 'at-tokensDialog' },
             _.Select({ label: 'Token package', model: selected, options: () => (wallet.value?.top_up_packages || []).map((pack) => ({ value: String(pack.id), label: `${pack.name} · ${formatTokens(pack.credits)} tokens · ${formatPrice(pack.price_cents, pack.currency)}` })) }),
-            _.div({ class: 'at-tokensPaymentNotice' }, _.Icon({ name: 'info' }), _.span('Payment checkout is not connected yet. No charge and no tokens will be created until a verified payment provider is configured.')),
+            _.div({ class: 'at-tokensPaymentNotice' }, _.Icon({ name: 'info' }), () => wallet.value?.payments_ready ? _.span('You will complete the payment securely in Stripe Checkout. Tokens are credited only after Stripe confirms payment.') : _.span('Stripe has not been configured yet. Add the server keys before accepting payments.')),
             () => dialogStatus.value ? _.Alert(dialogStatus.value) : null,
-            _.div({ class: 'at-tokensDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close'), _.Btn({ color: 'primary', icon: 'payments', disabled: true }, 'Continue to payment')),
+            _.div({ class: 'at-tokensDialogActions' }, _.Btn({ color: 'secondary', onClick: close }, 'Close'), _.Btn({ color: 'primary', icon: 'payments', loading: startingCheckout, disabled: () => !wallet.value?.payments_ready || !selected.value, onClick: startCheckout }, 'Continue to payment')),
         ),
     } }).open();
 }

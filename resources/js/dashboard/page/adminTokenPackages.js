@@ -58,7 +58,11 @@ export default function adminTokenPackagesPage() {
         () => status.value ? _.Alert(status.value) : null,
         _.section({ class: 'at-tokenPackagesNotice' }, _.Icon({ name: 'info' }), _.span('This catalog is already shown in My tokens. Payment, invoice creation and token crediting will only happen after a verified checkout is connected.')),
         () => loading.value ? _.div({ class: 'at-tokenPackagesLoading' }, 'Loading token packages…') : _.section({ class: 'at-tokenPackagesCard' }, _.Table({ rows: () => packages.value, rowKey: 'id', pageSize: 50, pageSizeOptions: [50], hideFooter: true, emptyText: 'No token packages are configured.', columns: [
-            { key: 'name', label: 'Package', render: (item) => _.div({ class: 'at-tokenPackageName' }, _.strong(item.name), _.small(item.package_key)) }, { key: 'description', label: 'Description', render: (item) => item.description || '—' }, { key: 'price', label: 'Price', render: (item) => formatPrice(item.price_cents, item.currency) }, { key: 'credits', label: 'Tokens', render: (item) => formatCredits(item.credits) }, { key: 'status', label: 'Status', render: (item) => _.span({ class: `at-tokenPackageStatus ${item.is_active ? '' : 'is-inactive'}` }, item.is_active ? 'Active' : 'Inactive') },
+            { key: 'name', label: 'Package', render: (item) => _.div({ class: 'at-tokenPackageName' }, _.strong(item.name), _.small(item.package_key)) },
+            { key: 'description', label: 'Description', render: (item) => _.span(item.description || '—') },
+            { key: 'price', label: 'Price', render: (item) => _.span(formatPrice(item.price_cents, item.currency)) },
+            { key: 'credits', label: 'Tokens', render: (item) => _.span(formatCredits(item.credits)) },
+            { key: 'status', label: 'Status', render: (item) => _.span({ class: `at-tokenPackageStatus ${item.is_active ? '' : 'is-inactive'}` }, item.is_active ? 'Active' : 'Inactive') },
         ], actionsLabel: 'Actions', actions: (item) => _.div({ class: 'at-tokenPackageActions' }, _.Btn({ dense: true, color: 'secondary', size: 'sm', icon: 'edit', onClick: () => packageDialog(item) }, 'Edit'), _.Btn({ dense: true, color: 'danger', size: 'sm', icon: 'delete', onClick: () => removePackage(item) }, 'Remove')) })),
     );
 }

@@ -7,6 +7,8 @@ use App\Models\AccountCreditLedgerEntry;
 use App\Models\User;
 use App\Models\TokenPackage;
 use App\Services\Credits\TranslationCreditService;
+use App\Services\Payments\StripeCheckoutService;
+use App\Models\TokenPurchase;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -43,9 +45,7 @@ class TokenWalletController extends Controller
             'top_up_packages' => TokenPackage::query()->where('is_active', true)->orderBy('sort_order')->get()->map(fn (TokenPackage $package) => [
                 'id' => $package->id, 'name' => $package->name, 'description' => $package->description, 'credits' => (int) $package->credits, 'price_cents' => (int) $package->price_cents, 'currency' => $package->currency,
             ])->values(),
-            // A payment provider is deliberately not simulated. This keeps the
-            // wallet honest until a real checkout (for example Stripe) is set up.
-            'payments_ready' => false,
+            'payments_ready' => app(StripeCheckoutService::class)->isConfigured(),
         ]]);
     }
 
@@ -72,6 +72,34 @@ class TokenWalletController extends Controller
         ])->save();
 
         return response()->json(['data' => ['balance' => $this->serializeBalance($balance->fresh())]]);
+    }
+
+    public function createCheckout(Request $request, StripeCheckoutService $stripe): JsonResponse
+    {
+        $user = $this->user($request);
+        $data = $request->validate(['token_package_id' => ['required', 'integer']]);
+        $package = TokenPackage::query()->whereKey($data['token_package_id'])->where('is_active', true)->firstOrFail();
+
+        $purchase = TokenPurchase::query()->create([
+            'user_id' => $user->id,
+            'token_package_id' => $package->id,
+            'provider' => 'stripe',
+            'amount_cents' => $package->price_cents,
+            'currency' => $package->currency,
+            'credits' => $package->credits,
+            'status' => 'pending',
+            'metadata_json' => ['package_name' => $package->name, 'package_key' => $package->package_key],
+        ]);
+
+        try {
+            $checkout = $stripe->createTopUpCheckout($purchase, $user->email);
+            $purchase->update(['provider_checkout_session_id' => $checkout['id'], 'status' => 'checkout_created']);
+        } catch (\Throwable $error) {
+            $purchase->update(['status' => 'failed', 'metadata_json' => [...($purchase->metadata_json ?? []), 'checkout_error' => $error->getMessage()]]);
+            throw $error;
+        }
+
+        return response()->json(['data' => ['checkout_url' => $checkout['url']]], 201);
     }
 
     private function user(Request $request): User
