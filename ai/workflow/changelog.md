@@ -109,6 +109,11 @@
 - Pulito il hero: rimossa la ricostruzione HTML/CSS del mockup e lasciata solo immagine `public/assets/images/hero-audiobook-tool.png`.
 - Riorganizzata documentazione AI: `ai/ai.md` e' ora indice, i dettagli sono in file separati.
 
+## 2026-09-19
+
+- Esteso il portale cliente Subscription: piano e rinnovo correnti, confronto dei piani e azioni di cambio/disdetta predisposte e chiaramente disabilitate fino alla configurazione Stripe.
+- Aggiunto report Administration → Subscription analytics: MRR locale, nuovi/cancellati, distribuzione per piano, stati a rischio e attività recente degli abbonamenti.
+
 ## 2026-08-03
 
 - Avviata dashboard JSswift con prima pagina menu `New book`.

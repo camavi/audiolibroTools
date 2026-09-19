@@ -23,6 +23,6 @@ class SubscriptionLifecycleTest extends TestCase
 
         $this->assertDatabaseHas('account_credit_balances', ['account_id' => $user->id, 'available_credits' => $plan->monthly_credits]);
         $this->assertSame(1, AccountCreditLedgerEntry::query()->where('account_id', $user->id)->where('type', 'subscription_grant')->count());
-        $this->actingAs($user)->getJson('/dashboard/api/subscription')->assertOk()->assertJsonPath('data.subscription.plan_name', 'Starter')->assertJsonCount(1, 'data.subscription.grants');
+        $this->actingAs($user)->getJson('/dashboard/api/subscription')->assertOk()->assertJsonPath('data.subscription.plan_name', 'Starter')->assertJsonPath('data.checkout_ready', false)->assertJsonCount(3, 'data.plans')->assertJsonCount(1, 'data.subscription.grants');
     }
 }

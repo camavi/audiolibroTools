@@ -16,5 +16,6 @@ class AccountSubscription extends Model
     }
 
     public function plan(): BelongsTo { return $this->belongsTo(SubscriptionPlan::class, 'subscription_plan_id'); }
+    public function user(): BelongsTo { return $this->belongsTo(User::class); }
     public function grants(): HasMany { return $this->hasMany(SubscriptionCreditGrant::class); }
 }

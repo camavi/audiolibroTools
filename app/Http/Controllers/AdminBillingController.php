@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AccountSubscription;
 use App\Models\TokenPurchase;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -56,6 +57,60 @@ class AdminBillingController extends Controller
                 'status' => $purchase->status,
                 'paid_at' => $purchase->paid_at?->toISOString(),
                 'created_at' => $purchase->created_at?->toISOString(),
+            ])->values(),
+        ]]);
+    }
+
+    public function subscriptions(Request $request): JsonResponse
+    {
+        $data = $request->validate(['period' => ['nullable', 'integer', 'in:30,90,365']]);
+        $days = $data['period'] ?? 90;
+        $from = now()->subDays($days - 1)->startOfDay();
+        $subscriptions = AccountSubscription::query()
+            ->with('user:id,name,email')
+            ->where(function ($query) use ($from): void {
+                $query->where('created_at', '>=', $from)
+                    ->orWhere('cancelled_at', '>=', $from)
+                    ->orWhereIn('status', ['active', 'canceling', 'past_due']);
+            })
+            ->latest('created_at')
+            ->get();
+        $billable = $subscriptions->whereIn('status', ['active', 'canceling']);
+        $cancelled = $subscriptions->where('status', 'cancelled')->filter(fn (AccountSubscription $subscription) => $subscription->cancelled_at?->greaterThanOrEqualTo($from));
+        $planDistribution = $billable->groupBy(fn (AccountSubscription $subscription) => $subscription->plan_name)
+            ->map(fn ($items, string $planName) => [
+                'plan_name' => $planName,
+                'active_subscriptions' => $items->count(),
+                'mrr_cents' => (int) $items->sum('monthly_price_cents'),
+                'monthly_credits' => (int) $items->sum('monthly_credits'),
+                'currency' => $items->first()->currency,
+            ])->sortByDesc('mrr_cents')->values();
+
+        return response()->json(['data' => [
+            'period' => $days,
+            'summary' => [
+                'active_subscriptions' => $billable->count(),
+                'mrr_cents' => (int) $billable->sum('monthly_price_cents'),
+                'new_subscriptions' => $subscriptions->filter(fn (AccountSubscription $subscription) => $subscription->created_at->greaterThanOrEqualTo($from))->count(),
+                'cancelled_subscriptions' => $cancelled->count(),
+                'scheduled_cancellations' => $subscriptions->where('status', 'canceling')->count(),
+                'past_due_subscriptions' => $subscriptions->where('status', 'past_due')->count(),
+            ],
+            'plans' => $planDistribution,
+            'statuses' => collect(['active', 'canceling', 'past_due', 'cancelled', 'replaced'])->map(fn (string $status) => [
+                'status' => $status,
+                'count' => $subscriptions->where('status', $status)->count(),
+            ])->values(),
+            'recent_subscriptions' => $subscriptions->take(12)->map(fn (AccountSubscription $subscription) => [
+                'id' => $subscription->id,
+                'customer' => $subscription->user?->email ?? 'Deleted user',
+                'plan_name' => $subscription->plan_name,
+                'monthly_price_cents' => $subscription->monthly_price_cents,
+                'currency' => $subscription->currency,
+                'monthly_credits' => $subscription->monthly_credits,
+                'status' => $subscription->status,
+                'current_period_ends_at' => $subscription->current_period_ends_at?->toISOString(),
+                'created_at' => $subscription->created_at?->toISOString(),
             ])->values(),
         ]]);
     }
