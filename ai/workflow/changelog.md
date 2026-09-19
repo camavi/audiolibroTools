@@ -111,6 +111,9 @@
 
 ## 2026-09-19
 
+- Avviato Stripe Billing per abbonamenti: catalogo prezzi sincronizzabile, Checkout mensile per il primo piano, webhook di sincronizzazione `customer.subscription.*` e accredito periodico token idempotente.
+- Aggiunti comandi Sandbox per scenario Test Clock isolato: creazione Customer/abbonamento con carta test e avanzamento mensile simulato per verificare i rinnovi Stripe.
+- Aggiunta Administration → Billing alerts: coda operativa per pagamenti in ritardo, disdette imminenti, checkout token falliti e configurazione Stripe/webhook mancante.
 - Esteso il portale cliente Subscription: piano e rinnovo correnti, confronto dei piani e azioni di cambio/disdetta predisposte e chiaramente disabilitate fino alla configurazione Stripe.
 - Aggiunto report Administration → Subscription analytics: MRR locale, nuovi/cancellati, distribuzione per piano, stati a rischio e attività recente degli abbonamenti.
 

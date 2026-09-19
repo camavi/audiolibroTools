@@ -15,6 +15,7 @@ class SubscriptionLifecycleTest extends TestCase
 
     public function test_subscription_period_grant_is_idempotent_and_visible_to_the_customer(): void
     {
+        config()->set('payments.stripe.secret_key', null);
         $user = User::factory()->create();
         $plan = SubscriptionPlan::query()->where('plan_key', 'starter')->firstOrFail();
         $service = app(SubscriptionLifecycleService::class);

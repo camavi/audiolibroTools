@@ -16,7 +16,7 @@ class SubscriptionLifecycleService
     public function activate(User $user, SubscriptionPlan $plan, string $providerSubscriptionId, Carbon $periodStartsAt, Carbon $periodEndsAt): AccountSubscription
     {
         return DB::transaction(function () use ($user, $plan, $providerSubscriptionId, $periodStartsAt, $periodEndsAt): AccountSubscription {
-            AccountSubscription::query()->where('user_id', $user->id)->whereIn('status', ['active', 'canceling', 'past_due'])->update(['status' => 'replaced', 'cancelled_at' => now()]);
+            AccountSubscription::query()->where('user_id', $user->id)->whereIn('status', ['active', 'canceling', 'past_due'])->where('provider_subscription_id', '!=', $providerSubscriptionId)->update(['status' => 'replaced', 'cancelled_at' => now()]);
             $subscription = AccountSubscription::query()->updateOrCreate(
                 ['provider' => 'stripe', 'provider_subscription_id' => $providerSubscriptionId],
                 ['user_id' => $user->id, 'subscription_plan_id' => $plan->id, 'status' => 'active', 'plan_name' => $plan->name, 'monthly_price_cents' => $plan->monthly_price_cents, 'currency' => $plan->currency, 'monthly_credits' => $plan->monthly_credits, 'current_period_starts_at' => $periodStartsAt, 'current_period_ends_at' => $periodEndsAt, 'cancel_at_period_end' => false, 'cancelled_at' => null, 'metadata_json' => ['plan_key' => $plan->plan_key]],
@@ -49,5 +49,26 @@ class SubscriptionLifecycleService
         $subscription->update(['cancel_at_period_end' => true, 'status' => 'canceling']);
 
         return $subscription->fresh();
+    }
+
+    public function syncStripeSubscription(User $user, SubscriptionPlan $plan, object $stripeSubscription): AccountSubscription
+    {
+        $status = match ($stripeSubscription->status ?? null) {
+            'active', 'trialing' => ($stripeSubscription->cancel_at_period_end ?? false) ? 'canceling' : 'active',
+            'canceled', 'incomplete_expired' => 'cancelled',
+            default => 'past_due',
+        };
+        $startsAt = Carbon::createFromTimestamp((int) ($stripeSubscription->current_period_start ?? now()->timestamp));
+        $endsAt = Carbon::createFromTimestamp((int) ($stripeSubscription->current_period_end ?? now()->addMonth()->timestamp));
+
+        if (in_array($status, ['active', 'canceling'], true)) {
+            $subscription = $this->activate($user, $plan, (string) $stripeSubscription->id, $startsAt, $endsAt);
+            return $status === 'canceling' ? $this->scheduleCancellation($subscription) : $subscription;
+        }
+
+        return AccountSubscription::query()->updateOrCreate(
+            ['provider' => 'stripe', 'provider_subscription_id' => (string) $stripeSubscription->id],
+            ['user_id' => $user->id, 'subscription_plan_id' => $plan->id, 'status' => $status, 'plan_name' => $plan->name, 'monthly_price_cents' => $plan->monthly_price_cents, 'currency' => $plan->currency, 'monthly_credits' => $plan->monthly_credits, 'current_period_starts_at' => $startsAt, 'current_period_ends_at' => $endsAt, 'cancel_at_period_end' => false, 'cancelled_at' => $status === 'cancelled' ? now() : null, 'metadata_json' => ['plan_key' => $plan->plan_key]],
+        );
     }
 }

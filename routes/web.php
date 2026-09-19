@@ -94,6 +94,7 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
         Route::get('/token-packages', [AdminTokenPackageController::class, 'index'])->name('token-packages.index');
         Route::get('/billing/token-sales', [AdminBillingController::class, 'tokenSales'])->name('billing.token-sales.index');
         Route::get('/billing/subscriptions', [AdminBillingController::class, 'subscriptions'])->name('billing.subscriptions.index');
+        Route::get('/billing/alerts', [AdminBillingController::class, 'alerts'])->name('billing.alerts.index');
         Route::post('/token-packages', [AdminTokenPackageController::class, 'store'])->name('token-packages.store');
         Route::patch('/token-packages/{package}', [AdminTokenPackageController::class, 'update'])->name('token-packages.update');
         Route::delete('/token-packages/{package}', [AdminTokenPackageController::class, 'destroy'])->name('token-packages.destroy');
@@ -119,6 +120,7 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
     Route::get('/activity', [BookActivityController::class, 'index'])->name('activity.index');
     Route::get('/tokens', [TokenWalletController::class, 'show'])->name('tokens.show');
     Route::get('/subscription', [SubscriptionController::class, 'show'])->name('subscription.show');
+    Route::post('/subscription/checkout', [SubscriptionController::class, 'createCheckout'])->name('subscription.checkout.store');
     Route::post('/tokens/checkout', [TokenWalletController::class, 'createCheckout'])->name('tokens.checkout.store');
     Route::patch('/tokens/auto-recharge', [TokenWalletController::class, 'updateAutoRecharge'])->name('tokens.auto-recharge.update');
     Route::get('/profile', [ProfileController::class, 'show'])->name('profile.show');

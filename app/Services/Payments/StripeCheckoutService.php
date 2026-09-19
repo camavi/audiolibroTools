@@ -2,7 +2,9 @@
 
 namespace App\Services\Payments;
 
+use App\Models\SubscriptionPlan;
 use App\Models\TokenPurchase;
+use App\Models\User;
 use Stripe\StripeClient;
 
 class StripeCheckoutService
@@ -39,6 +41,30 @@ class StripeCheckoutService
             ]],
             'success_url' => rtrim((string) config('app.url'), '/').'/dashboard/tokens?checkout=success&session_id={CHECKOUT_SESSION_ID}',
             'cancel_url' => rtrim((string) config('app.url'), '/').'/dashboard/tokens?checkout=cancelled',
+        ]);
+
+        return ['id' => $session->id, 'url' => $session->url];
+    }
+
+    public function subscriptionCheckoutReady(SubscriptionPlan $plan): bool
+    {
+        return $this->isConfigured() && filled($plan->stripe_price_id);
+    }
+
+    public function createSubscriptionCheckout(User $user, SubscriptionPlan $plan): array
+    {
+        abort_unless($this->subscriptionCheckoutReady($plan), 422, 'This plan is not ready for Stripe Checkout yet. Sync its Stripe price first.');
+
+        $stripe = new StripeClient((string) config('payments.stripe.secret_key'));
+        $session = $stripe->checkout->sessions->create([
+            'mode' => 'subscription',
+            'customer_email' => $user->email,
+            'client_reference_id' => (string) $user->id,
+            'metadata' => ['user_id' => (string) $user->id, 'subscription_plan_id' => (string) $plan->id],
+            'subscription_data' => ['metadata' => ['user_id' => (string) $user->id, 'subscription_plan_id' => (string) $plan->id]],
+            'line_items' => [['price' => $plan->stripe_price_id, 'quantity' => 1]],
+            'success_url' => rtrim((string) config('app.url'), '/').'/dashboard/subscription?checkout=success&session_id={CHECKOUT_SESSION_ID}',
+            'cancel_url' => rtrim((string) config('app.url'), '/').'/dashboard/subscription?checkout=cancelled',
         ]);
 
         return ['id' => $session->id, 'url' => $session->url];

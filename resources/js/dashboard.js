@@ -52,6 +52,7 @@ const navGroups = [
                 { label: 'Token packages', key: 'admin-token-packages', icon: 'token', link: '/dashboard/admin/token-packages' },
                 { label: 'Billing', key: 'admin-billing', icon: 'monitoring', link: '/dashboard/admin/billing' },
                 { label: 'Subscription analytics', key: 'admin-subscription-analytics', icon: 'subscriptions', link: '/dashboard/admin/billing/subscriptions' },
+                { label: 'Billing alerts', key: 'admin-billing-alerts', icon: 'notification_important', link: '/dashboard/admin/billing/alerts' },
             ],
         }]
         : []),
@@ -170,6 +171,7 @@ const adminSubscriptionPlansPage = lazyPage('Subscription plans', () => import('
 const adminTokenPackagesPage = lazyPage('Token packages', () => import('./dashboard/page/adminTokenPackages.js'));
 const adminBillingPage = lazyPage('Billing', () => import('./dashboard/page/adminBilling.js'));
 const adminSubscriptionAnalyticsPage = lazyPage('Subscription analytics', () => import('./dashboard/page/adminSubscriptionAnalytics.js'));
+const adminBillingAlertsPage = lazyPage('Billing alerts', () => import('./dashboard/page/adminBillingAlerts.js'));
 const logoutPage = lazyPage('Logout', () => import('./dashboard/page/logout.js'));
 function setPageHeaderActions(actions = []) {
     const nodes = Array.isArray(actions) ? actions : [actions];
@@ -393,6 +395,7 @@ _.router.add('/dashboard/admin/subscription-plans', routePage(adminSubscriptionP
 _.router.add('/dashboard/admin/token-packages', routePage(adminTokenPackagesPage));
 _.router.add('/dashboard/admin/billing', routePage(adminBillingPage));
 _.router.add('/dashboard/admin/billing/subscriptions', routePage(adminSubscriptionAnalyticsPage));
+_.router.add('/dashboard/admin/billing/alerts', routePage(adminBillingAlertsPage));
 _.router.add('/dashboard/logout', routePage(logoutPage));
 
 _.router.start();

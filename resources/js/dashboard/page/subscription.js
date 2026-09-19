@@ -3,6 +3,7 @@ import '../../../css/subscription.css';
 const data = _.rod(null);
 const loading = _.rod(true);
 const status = _.rod(null);
+const startingCheckout = _.rod(false);
 const unwrap = (payload) => payload?.data?.data || payload?.data || payload || {};
 const money = (cents, currency = 'EUR') => new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(Number(cents || 0) / 100);
 const number = (value) => new Intl.NumberFormat().format(Number(value || 0));
@@ -21,13 +22,26 @@ function unavailableAction() {
     status.value = { type: 'info', message: 'Subscription billing is not configured yet. These actions will be enabled when Stripe subscriptions are activated.' };
 }
 
+async function startCheckout(plan) {
+    if (startingCheckout.value || !plan.checkout_ready) return;
+    startingCheckout.value = true; status.value = null;
+    try {
+        const result = unwrap(await _.http.postJSON('/dashboard/api/subscription/checkout', { subscription_plan_id: plan.id }));
+        window.location.assign(result.checkout_url);
+    } catch (error) {
+        status.value = { type: 'danger', message: error?.data?.message || error?.message || 'Unable to start subscription checkout.' };
+    } finally {
+        startingCheckout.value = false;
+    }
+}
+
 function planCard(plan, current) {
     const isCurrent = current?.plan_name === plan.name;
     return _.article({ class: 'at-subscriptionPlan' + (isCurrent ? ' is-current' : '') },
         _.div(_.span(isCurrent ? 'Current plan' : 'Monthly plan'), _.h3(plan.name), _.p(plan.description || 'Monthly AI capacity for your projects.')),
         _.strong(money(plan.monthly_price_cents, plan.currency) + ' / month'),
         _.small(number(plan.monthly_credits) + ' tokens included every month'),
-        _.Btn({ color: isCurrent ? 'secondary' : 'primary', icon: isCurrent ? 'check_circle' : 'swap_horiz', disabled: () => isCurrent || !data.value?.checkout_ready, onClick: unavailableAction }, isCurrent ? 'Current plan' : 'Choose plan'),
+        _.Btn({ color: isCurrent ? 'secondary' : 'primary', icon: isCurrent ? 'check_circle' : 'payments', loading: startingCheckout, disabled: () => isCurrent || !plan.checkout_ready, onClick: () => startCheckout(plan) }, isCurrent ? 'Current plan' : 'Choose plan'),
     );
 }
 
@@ -49,6 +63,6 @@ export default function subscriptionPage() {
             _.div({ class: 'at-subscriptionSectionHead' }, _.div(_.span('Available plans'), _.h3('Choose your monthly capacity')), _.small(() => data.value.checkout_ready ? 'Secure checkout is available.' : 'Checkout is temporarily unavailable.')),
             _.div({ class: 'at-subscriptionPlanGrid' }, ...(data.value.plans || []).map((plan) => planCard(plan, data.value.subscription))),
         ) : null,
-        () => !loading.value && data.value && !data.value.checkout_ready ? _.div({ class: 'at-subscriptionNotice' }, _.Icon({ name: 'info' }), _.span('Plan selection, changes and cancellation are ready in this portal. They will remain disabled until Stripe subscriptions are configured.')) : null,
+        () => !loading.value && data.value && !(data.value.plans || []).some((plan) => plan.checkout_ready) ? _.div({ class: 'at-subscriptionNotice' }, _.Icon({ name: 'info' }), _.span('Subscription checkout is configured but prices have not been synced to Stripe yet.')) : null,
     );
 }

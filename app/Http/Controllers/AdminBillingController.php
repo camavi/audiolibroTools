@@ -115,6 +115,46 @@ class AdminBillingController extends Controller
         ]]);
     }
 
+    public function alerts(): JsonResponse
+    {
+        $soon = now()->addDays(7);
+        $items = collect();
+        $pastDue = AccountSubscription::query()->with('user:id,email')->where('status', 'past_due')->latest('updated_at')->get();
+        foreach ($pastDue as $subscription) {
+            $items->push($this->alert('critical', 'payment', 'Subscription payment overdue', $subscription->plan_name.' is past due for '.($subscription->user?->email ?? 'a deleted user').'.', $subscription->user?->email, $subscription->updated_at));
+        }
+        $ending = AccountSubscription::query()->with('user:id,email')->where('status', 'canceling')->whereNotNull('current_period_ends_at')->where('current_period_ends_at', '<=', $soon)->orderBy('current_period_ends_at')->get();
+        foreach ($ending as $subscription) {
+            $items->push($this->alert('warning', 'cancellation', 'Cancellation approaching', $subscription->plan_name.' ends on '.$subscription->current_period_ends_at->toDateString().'.', $subscription->user?->email, $subscription->current_period_ends_at));
+        }
+        $failedPurchases = TokenPurchase::query()->with('user:id,email')->where('status', 'failed')->where('updated_at', '>=', now()->subDays(7))->latest('updated_at')->get();
+        foreach ($failedPurchases as $purchase) {
+            $items->push($this->alert('warning', 'payment', 'Token checkout failed', 'A token checkout did not complete.', $purchase->user?->email, $purchase->updated_at));
+        }
+        if (! filled(config('payments.stripe.secret_key'))) {
+            $items->push($this->alert('info', 'configuration', 'Stripe checkout is disabled', 'Add the Stripe secret key before accepting token or subscription payments.', null, null));
+        }
+        if (! filled(config('payments.stripe.webhook_secret'))) {
+            $items->push($this->alert('warning', 'webhook', 'Stripe webhook is not configured', 'Confirmed payments and renewals cannot be processed until the webhook signing secret is configured.', null, null));
+        }
+        $items = $items->sortByDesc(fn (array $item) => ['critical' => 3, 'warning' => 2, 'info' => 1][$item['severity']])->values();
+
+        return response()->json(['data' => [
+            'summary' => [
+                'open_alerts' => $items->count(),
+                'critical_alerts' => $items->where('severity', 'critical')->count(),
+                'payment_alerts' => $items->where('category', 'payment')->count(),
+                'webhook_ready' => filled(config('payments.stripe.webhook_secret')),
+            ],
+            'alerts' => $items,
+        ]]);
+    }
+
+    private function alert(string $severity, string $category, string $title, string $description, ?string $customer, $occurredAt): array
+    {
+        return ['severity' => $severity, 'category' => $category, 'title' => $title, 'description' => $description, 'customer' => $customer, 'occurred_at' => $occurredAt?->toISOString()];
+    }
+
     private function trend($purchases, Carbon $from, string $groupBy): array
     {
         $now = now();

@@ -31,12 +31,14 @@ class AdminSubscriptionPlanController extends Controller
             'monthly_credits' => ['required', 'integer', 'min:0', 'max:100000000'],
             'is_active' => ['required', 'boolean'],
         ]);
+        $priceChanged = $plan->monthly_price_cents !== $data['monthly_price_cents'] || $plan->currency !== strtoupper($data['currency']);
 
         $plan->update([
             ...$data,
             'name' => trim($data['name']),
             'description' => filled($data['description'] ?? null) ? trim($data['description']) : null,
             'currency' => strtoupper($data['currency']),
+            'stripe_price_id' => $priceChanged ? null : $plan->stripe_price_id,
         ]);
         $this->audit->record($request, $actor, 'admin.subscription_plan_updated', ['plan_key' => $plan->plan_key, 'is_active' => $plan->is_active]);
 
