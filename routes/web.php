@@ -24,6 +24,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicAudiobookController;
 use App\Http\Controllers\PublicBookController;
 use App\Http\Controllers\StatisticsController;
+use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\SupportTicketController;
 use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\TeamController;
@@ -116,6 +117,7 @@ Route::prefix('dashboard/api')->middleware(['auth', 'account.active', 'account.c
     Route::get('/statistics', [StatisticsController::class, 'index'])->name('statistics.index');
     Route::get('/activity', [BookActivityController::class, 'index'])->name('activity.index');
     Route::get('/tokens', [TokenWalletController::class, 'show'])->name('tokens.show');
+    Route::get('/subscription', [SubscriptionController::class, 'show'])->name('subscription.show');
     Route::post('/tokens/checkout', [TokenWalletController::class, 'createCheckout'])->name('tokens.checkout.store');
     Route::patch('/tokens/auto-recharge', [TokenWalletController::class, 'updateAutoRecharge'])->name('tokens.auto-recharge.update');
     Route::get('/profile', [ProfileController::class, 'show'])->name('profile.show');

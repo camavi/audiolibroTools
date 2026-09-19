@@ -30,6 +30,7 @@ const navGroups = [
     { label: 'Activity book', key: 'activity-book', icon: 'pie_chart', link: '/dashboard/activity' },
     { label: 'Statistics', key: 'statistics', icon: 'monetization_on', link: '/dashboard/statistics' },
     { label: 'My tokens', key: 'tokens', icon: 'token', link: '/dashboard/tokens' },
+    { label: 'Subscription', key: 'subscription', icon: 'card_membership', link: '/dashboard/subscription' },
     //{ label: 'External services', key: 'external-services', icon: 'folder_special' },
     { label: 'Team', key: 'team', icon: 'diversity_3', link: '/dashboard/team' },
     { label: 'Profile', key: 'profile', icon: 'person', link: '/dashboard/profile' },
@@ -157,6 +158,7 @@ const bookPdfPage = lazyPage('PDF', () => import('./dashboard/page/bookPdf.js'))
 const bookDistributionPage = lazyPage('Distribution', () => import('./dashboard/page/bookDistribution.js'));
 const profilePage = lazyPage('Profile', () => import('./dashboard/page/profile.js'));
 const tokensPage = lazyPage('Tokens', () => import('./dashboard/page/tokens.js'));
+const subscriptionPage = lazyPage('Subscription', () => import('./dashboard/page/subscription.js'));
 const activityPage = lazyPage('Activity', () => import('./dashboard/page/activity.js'));
 const statisticsPage = lazyPage('Statistics', () => import('./dashboard/page/statistics.js'));
 const teamPage = lazyPage('Team', () => import('./dashboard/page/team.js'));
@@ -375,6 +377,7 @@ _.router.add('/dashboard/books', routePage(booksPage));
 _.router.add('/dashboard/upload-audio', routePage(uploadAudioPage));
 _.router.add('/dashboard/profile', routePage(profilePage));
 _.router.add('/dashboard/tokens', routePage(tokensPage));
+_.router.add('/dashboard/subscription', routePage(subscriptionPage));
 _.router.add('/dashboard/activity', routePage(activityPage));
 _.router.add('/dashboard/statistics', routePage(statisticsPage));
 _.router.add('/dashboard/team', routePage(teamPage));

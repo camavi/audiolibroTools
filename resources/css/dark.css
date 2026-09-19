@@ -327,6 +327,10 @@
     background: linear-gradient(115deg, #172447 0%, var(--at-surface) 100%);
 }
 
+:root[data-theme="dark"] .at-subscriptionHero {
+    background: linear-gradient(115deg, #172447 0%, var(--at-surface) 100%);
+}
+
 :root[data-theme="dark"] :is(.at-billingFilters, .at-billingTrend, .at-billingCard, .at-billingStat) {
     border-color: var(--at-border);
     background: var(--at-surface);
