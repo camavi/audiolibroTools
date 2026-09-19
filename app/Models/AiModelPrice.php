@@ -14,9 +14,9 @@ class AiModelPrice extends Model
         'pricing_unit',
         'is_enabled',
         'is_hidden',
-        'input_price_usd',
-        'output_price_usd',
-        'unit_price_usd',
+        'input_tokens',
+        'output_tokens',
+        'customer_credits',
     ];
 
     protected function casts(): array
@@ -24,9 +24,6 @@ class AiModelPrice extends Model
         return [
             'is_enabled' => 'boolean',
             'is_hidden' => 'boolean',
-            'input_price_usd' => 'decimal:6',
-            'output_price_usd' => 'decimal:6',
-            'unit_price_usd' => 'decimal:6',
         ];
     }
 }

@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\AiModelPrice;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -28,14 +27,14 @@ class AdminAiPricingTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin']);
 
         $this->actingAs($admin)->putJson('/dashboard/api/admin/ai-pricing', ['prices' => [
-            ['provider_key' => 'at-openai', 'model' => 'gpt-5-mini', 'modality' => 'text', 'input_price_usd' => 0.25, 'output_price_usd' => 2],
-            ['provider_key' => 'at-qwen', 'model' => 'quality', 'modality' => 'audio', 'unit_price_usd' => 0.03],
-            ['provider_key' => 'at-openai', 'model' => 'gpt-image-1', 'modality' => 'image', 'unit_price_usd' => 0.04],
+            ['provider_key' => 'at-openai', 'model' => 'gpt-5-mini', 'modality' => 'text', 'input_tokens' => 3, 'output_tokens' => 6],
+            ['provider_key' => 'at-qwen', 'model' => 'quality', 'modality' => 'audio', 'customer_credits' => 20],
+            ['provider_key' => 'at-openai', 'model' => 'gpt-image-1', 'modality' => 'image', 'customer_credits' => 70],
         ]])->assertOk();
 
-        $this->assertDatabaseHas('ai_model_prices', ['provider_key' => 'at-openai', 'model' => 'gpt-5-mini', 'modality' => 'text', 'input_price_usd' => 0.25, 'output_price_usd' => 2]);
-        $this->assertDatabaseHas('ai_model_prices', ['provider_key' => 'at-qwen', 'model' => 'quality', 'modality' => 'audio', 'unit_price_usd' => 0.03]);
-        $this->assertDatabaseHas('ai_model_prices', ['provider_key' => 'at-openai', 'model' => 'gpt-image-1', 'modality' => 'image', 'unit_price_usd' => 0.04]);
+        $this->assertDatabaseHas('ai_model_prices', ['provider_key' => 'at-openai', 'model' => 'gpt-5-mini', 'modality' => 'text', 'input_tokens' => 3, 'output_tokens' => 6]);
+        $this->assertDatabaseHas('ai_model_prices', ['provider_key' => 'at-qwen', 'model' => 'quality', 'modality' => 'audio', 'customer_credits' => 20]);
+        $this->assertDatabaseHas('ai_model_prices', ['provider_key' => 'at-openai', 'model' => 'gpt-image-1', 'modality' => 'image', 'customer_credits' => 70]);
     }
 
     public function test_an_administrator_can_disable_or_remove_a_catalog_model(): void
@@ -66,10 +65,22 @@ class AdminAiPricingTest extends TestCase
             'provider_name' => 'AT · ElevenLabs',
             'model' => 'multilingual-v2',
             'modality' => 'audio',
-            'unit_price_usd' => 0.18,
+            'customer_credits' => 20,
         ])->assertCreated()
             ->assertJsonFragment(['provider_key' => 'at-elevenlabs', 'model' => 'multilingual-v2', 'modality' => 'audio']);
 
-        $this->assertDatabaseHas('ai_model_prices', ['provider_key' => 'at-elevenlabs', 'provider_name' => 'AT · ElevenLabs', 'model' => 'multilingual-v2', 'modality' => 'audio', 'pricing_unit' => 'per_audio_minute']);
+        $this->assertDatabaseHas('ai_model_prices', ['provider_key' => 'at-elevenlabs', 'provider_name' => 'AT · ElevenLabs', 'model' => 'multilingual-v2', 'modality' => 'audio', 'pricing_unit' => 'per_audio_minute', 'customer_credits' => 20]);
+    }
+
+    public function test_an_administrator_can_load_token_products_for_the_value_calculator(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $this->actingAs($admin)->getJson('/dashboard/api/admin/ai-pricing')
+            ->assertOk()
+            ->assertJsonCount(3, 'data.token_products.plans')
+            ->assertJsonCount(3, 'data.token_products.packages')
+            ->assertJsonPath('data.token_products.plans.1.name', 'Creator')
+            ->assertJsonPath('data.token_products.plans.1.credits', 15000);
     }
 }

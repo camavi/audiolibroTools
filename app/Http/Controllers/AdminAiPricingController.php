@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\AiModelPrice;
+use App\Models\SubscriptionPlan;
+use App\Models\TokenPackage;
 use App\Models\User;
 use App\Services\AdminAuditService;
 use Illuminate\Http\JsonResponse;
@@ -11,9 +13,7 @@ use Illuminate\Support\Collection;
 
 class AdminAiPricingController extends Controller
 {
-    public function __construct(private readonly AdminAuditService $audit)
-    {
-    }
+    public function __construct(private readonly AdminAuditService $audit) {}
 
     public function index(): JsonResponse
     {
@@ -36,17 +36,33 @@ class AdminAiPricingController extends Controller
 
                 return [
                     ...$item,
-                    'input_price_usd' => $price?->input_price_usd,
-                    'output_price_usd' => $price?->output_price_usd,
-                    'unit_price_usd' => $price?->unit_price_usd,
+                    'input_tokens' => $price?->input_tokens,
+                    'output_tokens' => $price?->output_tokens,
+                    'customer_credits' => $price?->customer_credits,
                     'is_configured' => $price !== null,
                     'is_enabled' => $price?->is_enabled ?? true,
                 ];
             })->values(),
             'units' => [
-                'text' => 'USD per 1M tokens',
-                'audio' => 'USD per audio minute',
-                'image' => 'USD per generated image',
+                'text' => 'Per input/output token',
+                'audio' => 'Per audio minute',
+                'image' => 'Per generated image',
+            ],
+            'token_products' => [
+                'plans' => SubscriptionPlan::query()->orderBy('sort_order')->get()->map(fn (SubscriptionPlan $plan) => [
+                    'name' => $plan->name,
+                    'price_cents' => $plan->monthly_price_cents,
+                    'currency' => $plan->currency,
+                    'credits' => $plan->monthly_credits,
+                    'is_active' => $plan->is_active,
+                ])->values(),
+                'packages' => TokenPackage::query()->orderBy('sort_order')->get()->map(fn (TokenPackage $package) => [
+                    'name' => $package->name,
+                    'price_cents' => $package->price_cents,
+                    'currency' => $package->currency,
+                    'credits' => $package->credits,
+                    'is_active' => $package->is_active,
+                ])->values(),
             ],
         ]]);
     }
@@ -60,9 +76,9 @@ class AdminAiPricingController extends Controller
             'prices.*.provider_key' => ['required', 'string', 'max:80'],
             'prices.*.model' => ['required', 'string', 'max:160'],
             'prices.*.modality' => ['required', 'in:text,audio,image'],
-            'prices.*.input_price_usd' => ['nullable', 'numeric', 'min:0', 'max:999999'],
-            'prices.*.output_price_usd' => ['nullable', 'numeric', 'min:0', 'max:999999'],
-            'prices.*.unit_price_usd' => ['nullable', 'numeric', 'min:0', 'max:999999'],
+            'prices.*.input_tokens' => ['nullable', 'integer', 'min:1', 'max:100000000'],
+            'prices.*.output_tokens' => ['nullable', 'integer', 'min:1', 'max:100000000'],
+            'prices.*.customer_credits' => ['nullable', 'integer', 'min:1', 'max:100000000'],
         ]);
 
         $catalog = $this->catalog()->keyBy(fn (array $item) => $this->key($item['provider_key'], $item['model'], $item['modality']));
@@ -72,16 +88,15 @@ class AdminAiPricingController extends Controller
             abort_unless($catalog->has($key) || $existing, 422, 'An unknown AI model cannot be priced.');
 
             $isText = $item['modality'] === 'text';
-            abort_if($isText && ($item['input_price_usd'] === null || $item['output_price_usd'] === null), 422, 'Text models need both input and output prices.');
-            abort_if(! $isText && $item['unit_price_usd'] === null, 422, 'Audio and image models need a price per unit.');
+            abort_if($isText && (($item['input_tokens'] ?? null) === null || ($item['output_tokens'] ?? null) === null), 422, 'Text models need both input and output token charges.');
 
             AiModelPrice::query()->updateOrCreate(
                 ['provider_key' => $item['provider_key'], 'model' => $item['model'], 'modality' => $item['modality']],
                 [
                     'pricing_unit' => $catalog->get($key)['pricing_unit'] ?? $existing->pricing_unit,
-                    'input_price_usd' => $isText ? $item['input_price_usd'] : null,
-                    'output_price_usd' => $isText ? $item['output_price_usd'] : null,
-                    'unit_price_usd' => $isText ? null : $item['unit_price_usd'],
+                    'input_tokens' => $isText ? $item['input_tokens'] : null,
+                    'output_tokens' => $isText ? $item['output_tokens'] : null,
+                    'customer_credits' => $item['customer_credits'] ?? null,
                 ],
             );
         }
@@ -131,22 +146,21 @@ class AdminAiPricingController extends Controller
             'provider_name' => ['required', 'string', 'max:120'],
             'model' => ['required', 'string', 'max:160'],
             'modality' => ['required', 'in:text,audio,image'],
-            'input_price_usd' => ['nullable', 'numeric', 'min:0', 'max:999999'],
-            'output_price_usd' => ['nullable', 'numeric', 'min:0', 'max:999999'],
-            'unit_price_usd' => ['nullable', 'numeric', 'min:0', 'max:999999'],
+            'input_tokens' => ['nullable', 'integer', 'min:1', 'max:100000000'],
+            'output_tokens' => ['nullable', 'integer', 'min:1', 'max:100000000'],
+            'customer_credits' => ['nullable', 'integer', 'min:1', 'max:100000000'],
         ]);
         $isText = $data['modality'] === 'text';
-        abort_if($isText && ($data['input_price_usd'] === null || $data['output_price_usd'] === null), 422, 'Text models need both input and output prices.');
-        abort_if(! $isText && $data['unit_price_usd'] === null, 422, 'Audio and image models need a price per unit.');
+        abort_if($isText && (($data['input_tokens'] ?? null) === null || ($data['output_tokens'] ?? null) === null), 422, 'Text models need both input and output token charges.');
 
         AiModelPrice::query()->updateOrCreate(
             ['provider_key' => $data['provider_key'], 'model' => $data['model'], 'modality' => $data['modality']],
             [
                 'provider_name' => trim($data['provider_name']),
                 'pricing_unit' => $this->unitFor($data['modality']),
-                'input_price_usd' => $isText ? $data['input_price_usd'] : null,
-                'output_price_usd' => $isText ? $data['output_price_usd'] : null,
-                'unit_price_usd' => $isText ? null : $data['unit_price_usd'],
+                'input_tokens' => $isText ? $data['input_tokens'] : null,
+                'output_tokens' => $isText ? $data['output_tokens'] : null,
+                'customer_credits' => $data['customer_credits'] ?? null,
                 'is_enabled' => true,
                 'is_hidden' => false,
             ],

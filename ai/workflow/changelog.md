@@ -1,11 +1,18 @@
 # Registro Avanzamento
 
+## 2026-09-19
+
+- Collegato il wallet alla generazione di copertine GPT: `gpt-image-1` medium (1024×1536) addebita 70 token configurabili dall'Administration → AI pricing. I token vengono riservati prima della chiamata, consumati solo dopo il salvataggio dell'immagine e rilasciati integralmente se il provider fallisce.
+- Il catalogo AI non usa più USD: per i modelli testo configura token in ingresso e uscita; per TTS e immagini configura token per unità generata. Rimossi dal database e dall'interfaccia i campi dei costi in dollari.
+- Aggiunto il calcolatore su ogni riga nella pagina degli addebiti AI: compara quel modello con piani mensili e pacchetti token attivi, mostrando valore cliente per azione e numero di utilizzi disponibili.
+- Per le immagini il calcolatore include ora il costo GPT modificabile per una singola immagine, così visualizza costo e margine lordo stimato senza fissare un prezzo fornitore nel catalogo cliente.
+
 ## 2026-09-18
 
 - Completata la gestione cliente degli abbonamenti Stripe: cambio piano con prorata e addebito immediato, disdetta a fine periodo, riattivazione e accesso al Customer Portal per fatture e metodi di pagamento. Lo stato locale resta sincronizzato dagli eventi Stripe e identifica il piano dal Price attivo, anche dopo un cambio piano.
 
 - Migrata la dashboard da CMSwift a JSswift: dipendenza npm, import JavaScript, configurazione globale, CSS, chunk Vite e riferimenti runtime ora usano `jsswift`/`JSswift`. L'alias `_` e le classi CSS `cms-*` restano compatibili con il framework rinominato.
-- Aggiunta Administration → AI pricing: catalogo modificabile e auditato per i costi dei modelli AI, con testo per 1M token input/output, TTS per minuto audio e immagini per generazione. Il catalogo prepara il cost tracking senza ancora alterare il wallet clienti; ogni modello può inoltre essere disabilitato o rimosso dalla lista con conferma.
+- Aggiunta Administration → AI pricing: catalogo modificabile e auditato per gli addebiti dei modelli AI, con testo per token input/output, TTS per minuto audio e immagini per generazione. Ogni modello può inoltre essere disabilitato o rimosso dalla lista con conferma.
 - Aggiunta Administration → Subscription plans: catalogo iniziale di tre piani mensili modificabili (Starter, Creator e Studio), ciascuno con prezzo, token inclusi, descrizione e stato. I pacchetti token extra restano volutamente fuori da questa prima fase.
 - Aggiunta Administration → Token packages: catalogo separato e modificabile dei top-up una tantum, con creazione, stato, modifica e rimozione. Il wallet cliente legge i soli pacchetti attivi; pagamento e accredito token restano disabilitati fino a checkout verificato.
 - Avviato Stripe Checkout per i pacchetti token: il wallet apre il checkout solo quando le chiavi server sono configurate; l'accredito è eseguito esclusivamente dal webhook firmato `checkout.session.completed`, con controllo importo/valuta e protezione idempotente contro eventi duplicati.

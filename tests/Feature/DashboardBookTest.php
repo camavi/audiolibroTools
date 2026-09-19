@@ -2,12 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\DashboardBookController;
+use App\Jobs\EncodeBookAudioPublicationMp3;
 use App\Jobs\ProcessBookAudioJob;
 use App\Jobs\ProcessBookCorrectionJob;
 use App\Jobs\ProcessBookTranslationJob;
-use App\Jobs\EncodeBookAudioPublicationMp3;
 use App\Jobs\RenderBookAudioPublication;
-use App\Http\Controllers\DashboardBookController;
 use App\Models\AccountCreditBalance;
 use App\Models\AiChatMessage;
 use App\Models\AiChatThread;
@@ -20,10 +20,10 @@ use App\Models\BookAudioTimelineItem;
 use App\Models\BookBlock;
 use App\Models\BookBlockComment;
 use App\Models\BookBlockReview;
-use App\Models\BookCorrectionJob;
 use App\Models\BookBlockTranslation;
 use App\Models\BookBlockVoiceAssignment;
 use App\Models\BookCategory;
+use App\Models\BookCorrectionJob;
 use App\Models\BookDesignAsset;
 use App\Models\BookDistributionConnection;
 use App\Models\BookEdition;
@@ -31,8 +31,8 @@ use App\Models\BookPublication;
 use App\Models\BookTranslationJob;
 use App\Models\BookVoiceProfile;
 use App\Models\User;
-use App\Services\Ai\EditorAiTranslationService;
 use App\Services\Ai\EditorAiCorrectionService;
+use App\Services\Ai\EditorAiTranslationService;
 use App\Services\BookAudioGenerationService;
 use App\Services\BookBlockService;
 use App\Services\Credits\TranslationCreditService;
@@ -135,6 +135,12 @@ class DashboardBookTest extends TestCase
         Storage::fake('public');
         config()->set('ai_providers.defaults.1.managed_api_key', 'at-server-openai-key');
         $book = $this->createBook();
+        AccountCreditBalance::query()->create([
+            'account_id' => $book->account_id,
+            'available_credits' => 70,
+            'reserved_credits' => 0,
+            'consumed_credits' => 0,
+        ]);
         $source = UploadedFile::fake()->image('generated.png', 1024, 1536);
         Http::fake([
             'https://api.openai.com/v1/images/generations' => Http::response([
@@ -151,11 +157,51 @@ class DashboardBookTest extends TestCase
 
         $asset = BookDesignAsset::query()->sole();
         $this->assertSame('openai', $asset->metadata_json['source']);
+        $this->assertSame(70, $asset->metadata_json['credits']);
         Storage::disk('public')->assertExists($asset->image_path);
+        $this->assertDatabaseHas('account_credit_balances', [
+            'account_id' => $book->account_id,
+            'available_credits' => 0,
+            'reserved_credits' => 0,
+            'consumed_credits' => 70,
+        ]);
         Http::assertSent(fn ($request) => $request->url() === 'https://api.openai.com/v1/images/generations'
             && $request->hasHeader('Authorization', 'Bearer at-server-openai-key')
             && $request['model'] === 'gpt-image-1'
             && $request['size'] === '1024x1536');
+    }
+
+    public function test_dashboard_releases_credits_when_cover_generation_fails(): void
+    {
+        config()->set('ai_providers.defaults.1.managed_api_key', 'at-server-openai-key');
+        $book = $this->createBook();
+        AccountCreditBalance::query()->create([
+            'account_id' => $book->account_id,
+            'available_credits' => 70,
+            'reserved_credits' => 0,
+            'consumed_credits' => 0,
+        ]);
+        Http::fake([
+            'https://api.openai.com/v1/images/generations' => Http::response([
+                'error' => ['message' => 'The image provider is unavailable.'],
+            ], 503),
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/design-assets/generate", [
+            'prompt' => 'A misty Italian hillside at dusk, painted in a deep blue and gold palette.',
+        ])->assertUnprocessable();
+
+        $this->assertDatabaseHas('account_credit_balances', [
+            'account_id' => $book->account_id,
+            'available_credits' => 70,
+            'reserved_credits' => 0,
+            'consumed_credits' => 0,
+        ]);
+        $this->assertDatabaseHas('account_credit_ledger_entries', [
+            'account_id' => $book->account_id,
+            'type' => 'image_released',
+            'credits' => 70,
+        ]);
     }
 
     public function test_dashboard_can_save_and_generate_a_professional_epub(): void
@@ -2939,6 +2985,7 @@ class DashboardBookTest extends TestCase
         $paths = collect(['voice', 'music', 'fx'])->mapWithKeys(function (string $track) use ($book) {
             $path = "audiobooks/{$book->key_book}/releases/v1/{$track}.wav";
             Storage::disk('public')->put($path, 'RIFF test wav master');
+
             return [$track => $path];
         })->all();
         $release = BookAudioPublication::query()->create([

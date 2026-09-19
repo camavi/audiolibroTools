@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Book;
 use App\Models\BookDesignAsset;
 use App\Services\BookCoverImageService;
+use App\Services\Credits\ImageCreditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -46,13 +47,13 @@ class BookDesignController extends Controller
         return response()->json(['data' => ['asset' => $this->serialize($asset)]], 201);
     }
 
-    public function generate(Request $request, string $keyBook, BookCoverImageService $imageGenerator): JsonResponse
+    public function generate(Request $request, string $keyBook, BookCoverImageService $imageGenerator, ImageCreditService $credits): JsonResponse
     {
         $data = $request->validate([
             'prompt' => ['required', 'string', 'min:3', 'max:2000'],
         ]);
         $book = $this->book($keyBook);
-        $asset = $imageGenerator->generate($book, trim($data['prompt']));
+        $asset = $imageGenerator->generate($book, trim($data['prompt']), $credits);
 
         return response()->json(['data' => ['asset' => $this->serialize($asset)]], 201);
     }

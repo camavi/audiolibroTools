@@ -148,6 +148,148 @@
     gap: .85rem;
 }
 
+.at-aiPricingCalculator {
+    display: grid;
+    gap: 1rem;
+}
+
+.at-aiPricingSimulationFields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .7rem;
+    padding: .85rem;
+    border: 1px solid var(--at-border);
+    border-radius: 10px;
+    background: var(--at-surface-subtle);
+}
+
+.at-aiPricingSimulationFields:has(.cms-input:only-child) {
+    grid-template-columns: minmax(0, 330px);
+}
+
+.at-aiPricingCalculatorSection {
+    display: grid;
+    gap: .7rem;
+}
+
+.at-aiPricingCalculatorSection h4,
+.at-aiPricingCalculatorSection p {
+    margin: 0;
+}
+
+.at-aiPricingCalculatorSection>div>span,
+.at-aiPricingCalculatorEmpty {
+    color: var(--at-muted);
+    font-size: .84rem;
+}
+
+.at-aiPricingCalculatorProducts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: .7rem;
+}
+
+.at-aiPricingCalculatorProduct {
+    overflow: hidden;
+    border: 1px solid var(--at-border);
+    border-radius: 10px;
+    background: var(--at-surface-subtle);
+}
+
+.at-aiPricingCalculatorProductHeader,
+.at-aiPricingCalculatorAction {
+    display: flex;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .72rem .8rem;
+}
+
+.at-aiPricingCalculatorProductHeader {
+    border-bottom: 1px solid var(--at-border);
+}
+
+.at-aiPricingCalculatorProductHeader>div:last-child,
+.at-aiPricingCalculatorAction>div:last-child {
+    text-align: right;
+}
+
+.at-aiPricingCalculatorProduct strong,
+.at-aiPricingCalculatorProduct span {
+    display: block;
+}
+
+.at-aiPricingCalculatorProduct span {
+    margin-top: .14rem;
+    color: var(--at-muted);
+    font-size: .78rem;
+}
+
+.at-aiPricingCalculatorAction + .at-aiPricingCalculatorAction {
+    border-top: 1px solid var(--at-border);
+}
+
+.at-aiPricingCalculatorTotal {
+    display: flex;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .72rem .8rem;
+    border-top: 1px solid var(--at-border);
+    background: color-mix(in srgb, var(--at-primary) 9%, var(--at-surface));
+}
+
+.at-aiPricingCalculatorTotal>div:last-child {
+    text-align: right;
+}
+
+.at-aiPricingCalculatorTotal strong,
+.at-aiPricingCalculatorTotal span {
+    display: block;
+}
+
+.at-aiPricingCalculatorTotal span {
+    margin-top: .14rem;
+    color: var(--at-muted);
+    font-size: .78rem;
+}
+
+.at-aiPricingCalculatorMargin {
+    display: flex;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .72rem .8rem;
+    border-top: 1px solid var(--at-border);
+    background: color-mix(in srgb, #16a34a 10%, var(--at-surface));
+}
+
+.at-aiPricingCalculatorMargin.is-loss {
+    border-color: #dc2626;
+    background: color-mix(in srgb, #dc2626 14%, var(--at-surface));
+}
+
+.at-aiPricingCalculatorMargin.is-loss strong,
+.at-aiPricingCalculatorMargin.is-loss span {
+    color: #fca5a5;
+}
+
+.at-aiPricingCalculatorMargin.is-profit strong {
+    color: #86efac;
+}
+
+.at-aiPricingCalculatorMargin>div:last-child {
+    text-align: right;
+}
+
+.at-aiPricingCalculatorMargin strong,
+.at-aiPricingCalculatorMargin span {
+    display: block;
+}
+
+.at-aiPricingCalculatorMargin span {
+    margin-top: .14rem;
+    color: var(--at-muted);
+    font-size: .78rem;
+}
+
 @media (max-width: 720px) {
     .at-aiPricingPage {
         padding: 14px;
@@ -160,5 +302,9 @@
 
     .at-aiPricingHero .cms-btn {
         width: 100%;
+    }
+
+    .at-aiPricingSimulationFields {
+        grid-template-columns: 1fr;
     }
 }
