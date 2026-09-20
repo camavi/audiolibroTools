@@ -162,8 +162,20 @@ function configuredActions(item, simulation) {
     const models = priceModels.get(item.key);
     if (item.modality === 'text') {
         return [
-            { label: 'Input', tokens: Math.ceil((Number(simulation.input.value || 0) / 1000) * Number(models?.input.value || 0)) },
-            { label: 'Output', tokens: Math.ceil((Number(simulation.output.value || 0) / 1000) * Number(models?.output.value || 0)) },
+            {
+                label: 'Input · 1K',
+                tokens: Number(simulation.customerInput.value || 0),
+                supplierCostCents: Math.round(Number(simulation.providerInput.value || 0) * 100),
+                hasSupplierCost: simulation.providerInput.value !== '',
+                supplierLabel: 'LLM cost',
+            },
+            {
+                label: 'Output · 1K',
+                tokens: Number(simulation.customerOutput.value || 0),
+                supplierCostCents: Math.round(Number(simulation.providerOutput.value || 0) * 100),
+                hasSupplierCost: simulation.providerOutput.value !== '',
+                supplierLabel: 'LLM cost',
+            },
         ].filter((action) => action.tokens > 0);
     }
 
@@ -176,7 +188,7 @@ function configuredActions(item, simulation) {
         ? Math.round(Number(simulation.providerCost.value || 0) * 100)
         : 0;
 
-    return tokens > 0 ? [{ label: unit, tokens, supplierCostCents }] : [];
+    return tokens > 0 ? [{ label: unit, tokens, supplierCostCents, hasSupplierCost: item.modality === 'image' && simulation.providerCost.value !== '', supplierLabel: 'GPT cost' }] : [];
 }
 
 function money(cents, currency) {
@@ -189,21 +201,12 @@ function tokenRate(product) {
     return `${new Intl.NumberFormat('it-IT', { minimumFractionDigits: 4, maximumFractionDigits: 6 }).format(rate)} ${product.currency || 'EUR'} / token`;
 }
 
-function productCalculation(product, action) {
-    const credits = Number(product.credits || 0);
-    const tokenValueCents = credits > 0 ? Number(product.price_cents || 0) / credits : 0;
-
-    return {
-        value: money(tokenValueCents * action.tokens, product.currency),
-        uses: credits > 0 ? Math.floor(credits / action.tokens) : 0,
-    };
+function moneyPrecise(cents, currency) {
+    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: currency || 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(Number(cents || 0) / 100);
 }
 
 function productCard(product, actions, type) {
-    const total = actions.reduce((sum, action) => sum + action.tokens, 0);
-    const supplierCostCents = actions.reduce((sum, action) => sum + Number(action.supplierCostCents || 0), 0);
-    const totalCalculation = productCalculation(product, { tokens: total });
-    const valueCents = (Number(product.price_cents || 0) / Number(product.credits || 1)) * total;
+    const tokenValueCents = Number(product.price_cents || 0) / Number(product.credits || 1);
 
     return _.article({ class: 'at-aiPricingCalculatorProduct' },
         _.div({ class: 'at-aiPricingCalculatorProductHeader' },
@@ -211,21 +214,24 @@ function productCard(product, actions, type) {
             _.div(_.strong(money(product.price_cents, product.currency)), _.span(type === 'plan' ? '/ month' : 'one-time')),
         ),
         _.div({ class: 'at-aiPricingCalculatorActions' }, actions.map((action) => {
-            const calculation = productCalculation(product, action);
+            const customerValueCents = tokenValueCents * action.tokens;
+            const marginCents = customerValueCents - Number(action.supplierCostCents || 0);
+            const breakEvenTokens = action.hasSupplierCost && tokenValueCents > 0
+                ? Math.ceil(Number(action.supplierCostCents || 0) / tokenValueCents)
+                : null;
 
-            return _.div({ class: 'at-aiPricingCalculatorAction' },
-                _.div(_.strong(action.label), _.span(`${action.tokens.toLocaleString('it-IT')} tokens`)),
-                _.div(_.strong(calculation.value), _.span(`${calculation.uses.toLocaleString('it-IT')} uses`)),
+            return _.div({ class: `at-aiPricingCalculatorAction ${action.hasSupplierCost ? (marginCents < 0 ? 'is-loss' : 'is-profit') : ''}` },
+                _.div(
+                    _.strong(action.label),
+                    _.span(action.hasSupplierCost ? `Provider cost ${moneyPrecise(action.supplierCostCents, product.currency)} · minimum ${breakEvenTokens.toLocaleString('it-IT')} tokens` : 'Enter provider cost to calculate the minimum charge'),
+                ),
+                _.div(
+                    _.strong(`${action.tokens.toLocaleString('it-IT')} customer tokens`),
+                    _.span(`${moneyPrecise(customerValueCents, product.currency)} customer value`),
+                    action.hasSupplierCost ? _.span({ class: 'at-aiPricingCalculatorActionMargin' }, `${marginCents < 0 ? 'Loss' : 'Margin'} ${moneyPrecise(marginCents, product.currency)}`) : null,
+                ),
             );
         })),
-        actions.length > 1 ? _.div({ class: 'at-aiPricingCalculatorTotal' },
-            _.div(_.strong('Total simulated usage'), _.span(`${total.toLocaleString('it-IT')} tokens`)),
-            _.div(_.strong(totalCalculation.value), _.span(`${totalCalculation.uses.toLocaleString('it-IT')} simulations`)),
-        ) : null,
-        supplierCostCents > 0 ? _.div({ class: `at-aiPricingCalculatorMargin ${valueCents - supplierCostCents < 0 ? 'is-loss' : 'is-profit'}` },
-            _.div(_.strong('GPT cost'), _.span(money(supplierCostCents, product.currency))),
-            _.div(_.strong('Estimated gross margin'), _.span(money(valueCents - supplierCostCents, product.currency))),
-        ) : null,
     );
 }
 
@@ -243,8 +249,10 @@ function calculationSection(title, products, actions, type) {
 function simulationControls(item, simulation) {
     if (item.modality === 'text') {
         return _.div({ class: 'at-aiPricingSimulationFields' },
-            _.Input({ label: 'Input tokens to simulate', type: 'number', min: 0, step: 1, model: simulation.input }),
-            _.Input({ label: 'Output tokens to simulate', type: 'number', min: 0, step: 1, model: simulation.output }),
+            _.Input({ label: 'Provider cost in / 1K (€)', type: 'number', min: 0, step: '0.000001', model: simulation.providerInput, placeholder: 'e.g. 0.0010' }),
+            _.Input({ label: 'Provider cost out / 1K (€)', type: 'number', min: 0, step: '0.000001', model: simulation.providerOutput, placeholder: 'e.g. 0.0040' }),
+            _.Input({ label: 'Customer tokens in / 1K', type: 'number', min: 1, step: 1, model: simulation.customerInput }),
+            _.Input({ label: 'Customer tokens out / 1K', type: 'number', min: 1, step: 1, model: simulation.customerOutput }),
         );
     }
 
@@ -262,7 +270,12 @@ function simulationControls(item, simulation) {
 
 function openCalculator(item) {
     const simulation = item.modality === 'text'
-        ? { input: _.rod('1000'), output: _.rod('1000') }
+        ? {
+            providerInput: _.rod(''),
+            providerOutput: _.rod(''),
+            customerInput: _.rod(priceValue(priceModels.get(item.key)?.input.value)),
+            customerOutput: _.rod(priceValue(priceModels.get(item.key)?.output.value)),
+        }
         : item.modality === 'image'
             ? { customerTokens: _.rod(priceValue(priceModels.get(item.key)?.credits.value)), providerCost: _.rod('') }
             : { units: _.rod('1') };
@@ -270,7 +283,7 @@ function openCalculator(item) {
     _.Dialog({ size: 'xl', stickyActions: true, slots: {
         header: _.div(_.span('Token calculator'), _.h3(item.model), _.p('See this model’s configured token charge across monthly plans and one-time packages.')),
         content: _.div({ class: 'at-aiPricingCalculator' },
-            _.Alert({ type: 'info', icon: 'calculate', message: item.modality === 'image' ? 'This calculation is for one generated image. Adjust the customer token charge and current GPT cost in EUR to compare customer value, provider cost and estimated gross margin.' : 'Choose the usage to simulate. The value uses the configured customer-token charge and does not include provider costs.' }),
+            _.Alert({ type: 'info', icon: 'calculate', message: item.modality === 'image' ? 'This calculation is for one generated image. Adjust the customer token charge and current GPT cost in EUR to compare customer value, provider cost and estimated gross margin.' : item.modality === 'text' ? 'Enter the provider cost and customer token charge for one thousand input/output tokens. Each card shows the minimum token charge to break even and the profit or loss from your chosen charge.' : 'Choose the usage to simulate. The value uses the configured customer-token charge and does not include provider costs.' }),
             simulationControls(item, simulation),
             () => {
                 const actions = configuredActions(item, simulation);

@@ -228,6 +228,27 @@
     border-top: 1px solid var(--at-border);
 }
 
+.at-aiPricingCalculatorAction.is-loss {
+    background: color-mix(in srgb, #dc2626 14%, var(--at-surface));
+}
+
+.at-aiPricingCalculatorAction.is-loss strong,
+.at-aiPricingCalculatorAction.is-loss .at-aiPricingCalculatorActionMargin {
+    color: #fca5a5;
+}
+
+.at-aiPricingCalculatorAction.is-profit {
+    background: color-mix(in srgb, #16a34a 10%, var(--at-surface));
+}
+
+.at-aiPricingCalculatorAction.is-profit .at-aiPricingCalculatorActionMargin {
+    color: #86efac;
+}
+
+.at-aiPricingCalculatorActionMargin {
+    font-weight: 800;
+}
+
 .at-aiPricingCalculatorTotal {
     display: flex;
     justify-content: space-between;

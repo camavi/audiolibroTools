@@ -6,6 +6,7 @@
 - Il catalogo AI non usa più USD: per i modelli testo configura token in ingresso e uscita; per TTS e immagini configura token per unità generata. Rimossi dal database e dall'interfaccia i campi dei costi in dollari.
 - Aggiunto il calcolatore su ogni riga nella pagina degli addebiti AI: compara quel modello con piani mensili e pacchetti token attivi, mostrando valore cliente per azione e numero di utilizzi disponibili.
 - Per le immagini il calcolatore include ora il costo GPT modificabile per una singola immagine, così visualizza costo e margine lordo stimato senza fissare un prezzo fornitore nel catalogo cliente.
+- Semplificato il calcolatore LLM a quattro input per 1K token: costo provider e token cliente, entrambi input/output. Le card mostrano il minimo numero di token per pareggiare e il margine o la perdita per piano/pacchetto.
 
 ## 2026-09-18
 
