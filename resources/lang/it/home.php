@@ -2,6 +2,7 @@
 
 return [
     'meta_title' => 'Audiobook Tools',
+    'meta_description' => 'Scrivi, correggi, traduci e produci audiolibri professionali in un unico spazio di lavoro per autori ed editori.',
     'brand' => 'Audiobook Tools',
     'nav' => [
         ['label' => 'Funzionalita', 'target' => 'features'],

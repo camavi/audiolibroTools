@@ -5,6 +5,7 @@ const loading = _.rod(true);
 const savingDetails = _.rod(false);
 const pageStatus = _.rod(null);
 const name = _.rod('');
+const resendingVerification = _.rod(false);
 
 function dataOf(payload) { return payload?.data?.data || payload?.data || payload || {}; }
 function errorMessage(error, fallback) { return error?.data?.message || error?.message || fallback; }
@@ -15,9 +16,22 @@ async function loadProfile() {
         const data = dataOf(await _.http.getJSON('/dashboard/api/profile'));
         profile.value = data;
         JSswift.reactive.untracked(() => { name.value = data.user?.name || ''; });
+        if (new URLSearchParams(window.location.search).get('verification') === 'sent') {
+            pageStatus.value = { type: 'success', message: 'Verification email sent. Check your inbox and follow the secure link to confirm your address.' };
+        }
     } catch (error) {
         pageStatus.value = { type: 'danger', message: errorMessage(error, 'Unable to load your profile.') };
     } finally { loading.value = false; }
+}
+
+async function resendVerification() {
+    if (resendingVerification.value || profile.value?.user?.email_verified_at) return;
+    resendingVerification.value = true; pageStatus.value = null;
+    try {
+        const data = dataOf(await _.http.postJSON('/auth/email/verification-notification', {}));
+        pageStatus.value = { type: 'success', message: data.message || 'A new verification link has been sent.' };
+    } catch (error) { pageStatus.value = { type: 'danger', message: errorMessage(error, 'Unable to resend the verification link.') }; }
+    finally { resendingVerification.value = false; }
 }
 
 async function saveDetails() {
@@ -92,6 +106,11 @@ export default function profilePage() {
         _.section({ class: 'at-profileHero' }, _.div(_.span({ class: 'at-profileEyebrow' }, 'Account'), _.h2('Profile & security'), _.p('Manage your personal details, password and account data.'))),
         () => pageStatus.value ? _.Alert(pageStatus.value) : null,
         () => loading.value ? _.div({ class: 'at-profileLoading' }, 'Loading profile…') : profile.value ? _.div({ class: 'at-profileGrid' },
+            () => !profile.value?.user?.email_verified_at ? _.section({ class: 'at-profileCard at-profileVerificationCard' },
+                _.div({ class: 'at-profileCardHead' }, _.div(_.span('Email verification'), _.h3('Confirm your email address')), _.Icon({ name: 'mark_email_unread' })),
+                _.p('Open the verification link sent to ' + (profile.value?.user?.email || 'your email address') + '. You can keep working while you wait.'),
+                _.Btn({ color: 'secondary', icon: 'forward_to_inbox', loading: resendingVerification, onClick: resendVerification }, 'Resend verification email'),
+            ) : null,
             _.section({ class: 'at-profileCard at-profileDetails' },
                 _.div({ class: 'at-profileCardHead' }, _.div(_.span('Personal details'), _.h3('Your account')), _.Icon({ name: 'person' })),
                 _.div({ class: 'at-profileFields' },

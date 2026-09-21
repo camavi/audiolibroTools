@@ -2,6 +2,7 @@
 
 return [
     'meta_title' => 'Audiobook Tools',
+    'meta_description' => 'Write, revise, translate and produce professional audiobooks in one workspace for authors and publishers.',
     'brand' => 'Audiobook Tools',
     'nav' => [
         ['label' => 'Features', 'target' => 'features'],

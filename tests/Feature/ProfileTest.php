@@ -30,6 +30,15 @@ class ProfileTest extends TestCase
         $this->assertTrue(Hash::check('new-password', $user->fresh()->password));
     }
 
+    public function test_profile_exposes_the_email_verification_state(): void
+    {
+        $user = User::factory()->unverified()->create();
+
+        $this->actingAs($user)->getJson('/dashboard/api/profile')
+            ->assertOk()
+            ->assertJsonPath('data.user.email_verified_at', null);
+    }
+
     public function test_account_deletion_removes_workspace_records_and_files(): void
     {
         Storage::fake('public'); Storage::fake('local');

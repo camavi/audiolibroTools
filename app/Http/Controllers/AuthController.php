@@ -26,7 +26,7 @@ class AuthController extends Controller
         $request->session()->regenerate();
         $user->sendEmailVerificationNotification();
 
-        return response()->json(['data' => ['user' => $user->only('id', 'name', 'email'), 'redirect' => '/dashboard', 'email_verification_sent' => true]], 201);
+        return response()->json(['data' => ['user' => $user->only('id', 'name', 'email'), 'redirect' => '/dashboard/profile?verification=sent', 'email_verification_sent' => true]], 201);
     }
 
     public function login(Request $request): JsonResponse

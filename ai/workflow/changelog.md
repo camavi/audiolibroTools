@@ -7,6 +7,7 @@
 - Aggiunto menu mobile della Home e localizzato il modal login/register in inglese e italiano, compresi stati di invio e messaggio di errore generico.
 - Evoluto il menu mobile della Home in drawer accessibile con backdrop, focus management e chiusura da tastiera.
 - Completati reset password e verifica email Laravel: link di reset anti-enumerazione dalla Home, pagina di nuova password, notifica di verifica alla registrazione e link firmato di conferma.
+- Aggiunto il pacchetto SEO locale della Home: canonical, description, Open Graph/Twitter, favicon SVG, robots e sitemap per le localizzazioni pubbliche.
 
 ## 2026-09-20
 

@@ -5,6 +5,19 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
         <title>{{ __('home.meta_title') }}</title>
+        <meta name="description" content="{{ __('home.meta_description') }}">
+        <link rel="canonical" href="{{ url('/' . app()->getLocale()) }}">
+        <link rel="icon" href="{{ asset('assets/images/favicon.svg') }}" type="image/svg+xml">
+        <meta property="og:type" content="website">
+        <meta property="og:site_name" content="{{ __('home.brand') }}">
+        <meta property="og:title" content="{{ __('home.meta_title') }}">
+        <meta property="og:description" content="{{ __('home.meta_description') }}">
+        <meta property="og:url" content="{{ url('/' . app()->getLocale()) }}">
+        <meta property="og:image" content="{{ asset('assets/images/hero-audiobook-tool.png') }}">
+        <meta name="twitter:card" content="summary_large_image">
+        <meta name="twitter:title" content="{{ __('home.meta_title') }}">
+        <meta name="twitter:description" content="{{ __('home.meta_description') }}">
+        <meta name="twitter:image" content="{{ asset('assets/images/hero-audiobook-tool.png') }}">
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,0,0" rel="stylesheet">

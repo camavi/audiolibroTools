@@ -24,6 +24,7 @@
 - Home pubblica: su mobile la navigazione usa un menu espandibile accessibile; il modal login/register riceve tutte le etichette e gli stati da `resources/lang/*/home.php`.
 - Home pubblica: il menu mobile e' un drawer con backdrop, chiusura da pulsante/Esc/selezione della voce e focus riportato al comando Menu.
 - Autenticazione: la Home può inviare un link anti-enumerazione per il reset password; la nuova password viene impostata dalla pagina con token Laravel. I nuovi account ricevono una email di verifica firmata, con endpoint di reinvio autenticato.
+- Home pubblica: metadata SEO e social per pagina, favicon SVG, `robots.txt` e sitemap XML multilingua sono disponibili localmente; Dashboard esclusa dall'indicizzazione.
 
 ## 3. Libri
 

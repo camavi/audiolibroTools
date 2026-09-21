@@ -22,7 +22,7 @@ class AuthTest extends TestCase
 
         $this->postJson('/auth/register', ['name' => 'Ada Writer', 'email' => 'ada@example.com', 'password' => 'secure-password', 'password_confirmation' => 'secure-password'])
             ->assertCreated()
-            ->assertJsonPath('data.redirect', '/dashboard')
+            ->assertJsonPath('data.redirect', '/dashboard/profile?verification=sent')
             ->assertJsonPath('data.email_verification_sent', true);
 
         $this->assertAuthenticated();

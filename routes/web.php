@@ -62,6 +62,14 @@ Route::get('/project-plan/file/{path}', function (string $path) {
     ]);
 })->where('path', '.*')->name('project-plan.file');
 
+Route::get('/robots.txt', function () {
+    return response("User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /auth\nSitemap: ".url('/sitemap.xml')."\n", 200, ['Content-Type' => 'text/plain; charset=UTF-8']);
+})->name('robots');
+
+Route::get('/sitemap.xml', function () {
+    return response()->view('sitemap', ['locales' => array_keys(config('audiobook.locales'))], 200, ['Content-Type' => 'application/xml; charset=UTF-8']);
+})->name('sitemap');
+
 Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:auth')->name('auth.register');
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:auth')->name('auth.login');
 Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth')->name('auth.logout');
