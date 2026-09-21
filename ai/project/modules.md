@@ -20,6 +20,9 @@
 - Ruoli e permessi.
 - Dashboard post-login JSswift.
 - Home pubblica: per gli utenti autenticati le azioni `Login` e `Inizia gratis` sono sostituite da un menu utente e da CTA verso Dashboard; il menu offre Dashboard, Profilo e logout sicuro via POST.
+- Home pubblica: navigazione con ancore reali per funzionalità, demo del workflow, piani mensili attivi, risorse e journal in arrivo; i prezzi e i token sono letti dal catalogo `SubscriptionPlan` attivo. Footer informativo incluso.
+- Home pubblica: su mobile la navigazione usa un menu espandibile accessibile; il modal login/register riceve tutte le etichette e gli stati da `resources/lang/*/home.php`.
+- Home pubblica: il menu mobile e' un drawer con backdrop, chiusura da pulsante/Esc/selezione della voce e focus riportato al comando Menu.
 
 ## 3. Libri
 

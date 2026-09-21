@@ -3,6 +3,9 @@
 ## 2026-09-21
 
 - La Home riconosce la sessione Laravel: un utente autenticato vede il proprio menu (Dashboard, Profilo e logout) al posto delle CTA Login/registrazione.
+- Completato il primo blocco della Home: tutte le ancore di navigazione portano a sezioni reali; demo del workflow, piani mensili dinamici, risorse, journal in arrivo e footer sono ora presenti.
+- Aggiunto menu mobile della Home e localizzato il modal login/register in inglese e italiano, compresi stati di invio e messaggio di errore generico.
+- Evoluto il menu mobile della Home in drawer accessibile con backdrop, focus management e chiusura da tastiera.
 
 ## 2026-09-20
 

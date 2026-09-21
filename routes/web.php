@@ -29,6 +29,7 @@ use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\SupportTicketController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TokenWalletController;
+use App\Models\SubscriptionPlan;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/project-plan', function () {
@@ -277,5 +278,7 @@ Route::get('/{locale?}', function (?string $locale = null) {
         app()->setLocale($locale);
     }
 
-    return view('welcome');
+    return view('welcome', [
+        'plans' => SubscriptionPlan::query()->where('is_active', true)->orderBy('sort_order')->get(),
+    ]);
 })->where('locale', 'en|it|es|fr|de|pt|pl|tr|ru|nl|cs|ar|zh|ja|hu|ko');

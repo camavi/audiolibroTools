@@ -63,4 +63,33 @@ class AuthTest extends TestCase
             ->assertSee('data-auth-mode="register"', false)
             ->assertDontSee('home-user-menu', false);
     }
+
+    public function test_home_exposes_every_navigation_section_and_active_subscription_plans(): void
+    {
+        $this->get('/en')
+            ->assertOk()
+            ->assertSee('id="features"', false)
+            ->assertSee('id="demo"', false)
+            ->assertSee('id="pricing"', false)
+            ->assertSee('id="resources"', false)
+            ->assertSee('id="blog"', false)
+            ->assertSee('class="site-footer"', false)
+            ->assertSeeText('Menu')
+            ->assertSeeText('Starter')
+            ->assertSeeText('Creator')
+            ->assertSeeText('Studio');
+    }
+
+    public function test_italian_home_localizes_the_auth_dialog_and_exposes_mobile_navigation(): void
+    {
+        $this->get('/it')
+            ->assertOk()
+            ->assertSee('class="mobile-nav-trigger"', false)
+            ->assertSee('id="mobile-nav-drawer"', false)
+            ->assertSeeText('Menu')
+            ->assertSeeText('Bentornato')
+            ->assertSeeText('Accedi per continuare nel tuo spazio di lavoro.')
+            ->assertSeeText('Resta connesso')
+            ->assertSeeText('Crea un account');
+    }
 }
