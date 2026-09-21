@@ -6,6 +6,7 @@
 - Completato il primo blocco della Home: tutte le ancore di navigazione portano a sezioni reali; demo del workflow, piani mensili dinamici, risorse, journal in arrivo e footer sono ora presenti.
 - Aggiunto menu mobile della Home e localizzato il modal login/register in inglese e italiano, compresi stati di invio e messaggio di errore generico.
 - Evoluto il menu mobile della Home in drawer accessibile con backdrop, focus management e chiusura da tastiera.
+- Completati reset password e verifica email Laravel: link di reset anti-enumerazione dalla Home, pagina di nuova password, notifica di verifica alla registrazione e link firmato di conferma.
 
 ## 2026-09-20
 

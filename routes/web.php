@@ -31,6 +31,7 @@ use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TokenWalletController;
 use App\Models\SubscriptionPlan;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Foundation\Auth\EmailVerificationRequest;
 
 Route::get('/project-plan', function () {
     $documents = [
@@ -64,6 +65,21 @@ Route::get('/project-plan/file/{path}', function (string $path) {
 Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:auth')->name('auth.register');
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:auth')->name('auth.login');
 Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth')->name('auth.logout');
+Route::post('/auth/forgot-password', [AuthController::class, 'sendPasswordResetLink'])->middleware('throttle:auth')->name('password.email');
+Route::get('/auth/reset-password/{token}', [AuthController::class, 'showResetPasswordForm'])->middleware('guest')->name('password.reset');
+Route::post('/auth/reset-password', [AuthController::class, 'resetPassword'])->middleware(['guest', 'throttle:auth'])->name('password.update');
+Route::get('/auth/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
+    if (! $request->user()->hasVerifiedEmail()) $request->fulfill();
+
+    return redirect('/en')->with('auth_message', 'Your email address has been verified.');
+})->middleware(['auth', 'signed', 'throttle:6,1'])->name('verification.verify');
+Route::post('/auth/email/verification-notification', function (Request $request): JsonResponse {
+    $user = $request->user();
+    if ($user->hasVerifiedEmail()) return response()->json(['data' => ['message' => 'This email address is already verified.']]);
+    $user->sendEmailVerificationNotification();
+
+    return response()->json(['data' => ['message' => 'A new verification link has been sent.']]);
+})->middleware(['auth', 'throttle:6,1'])->name('verification.send');
 Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])->name('stripe.webhook');
 
 Route::get('/listen/{keyBook}/{release}', [PublicAudiobookController::class, 'show'])->name('public.audiobooks.show');

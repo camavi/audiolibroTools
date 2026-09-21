@@ -74,6 +74,10 @@
                 </div>
             </header>
 
+            @if (session('auth_message'))
+                <p class="home-auth-flash" role="status">{{ session('auth_message') }}</p>
+            @endif
+
             <div class="mobile-nav-drawer" id="mobile-nav-drawer" hidden>
                 <button class="mobile-nav-drawer-backdrop" type="button" tabindex="-1" data-mobile-nav-close aria-label="{{ __('home.close_mobile_menu') }}"></button>
                 <aside class="mobile-nav-drawer-panel" role="dialog" aria-modal="true" aria-label="{{ __('home.mobile_menu') }}">
@@ -309,9 +313,10 @@
                 <form id="home-auth-form" novalidate>
                     <div class="home-auth-field home-auth-name" hidden><label for="home-auth-name">{{ __('home.auth.name') }}</label><input id="home-auth-name" name="name" autocomplete="name"></div>
                     <div class="home-auth-field"><label for="home-auth-email">{{ __('home.auth.email') }}</label><input id="home-auth-email" name="email" type="email" autocomplete="email" required></div>
-                    <div class="home-auth-field"><label for="home-auth-password">{{ __('home.auth.password') }}</label><input id="home-auth-password" name="password" type="password" autocomplete="current-password" required></div>
+                    <div class="home-auth-field home-auth-password"><label for="home-auth-password">{{ __('home.auth.password') }}</label><input id="home-auth-password" name="password" type="password" autocomplete="current-password" required></div>
                     <div class="home-auth-field home-auth-confirm" hidden><label for="home-auth-confirm">{{ __('home.auth.password_confirmation') }}</label><input id="home-auth-confirm" name="password_confirmation" type="password" autocomplete="new-password"></div>
                     <label class="home-auth-remember"><input id="home-auth-remember" type="checkbox"> {{ __('home.auth.remember') }}</label>
+                    <button class="home-auth-forgot" type="button" id="home-auth-forgot">{{ __('home.auth.forgot_password') }}</button>
                     <p class="home-auth-error" id="home-auth-error" role="alert" hidden></p>
                     <button class="button button-primary home-auth-submit" type="submit">{{ __('home.auth.login_submit') }}</button>
                 </form>

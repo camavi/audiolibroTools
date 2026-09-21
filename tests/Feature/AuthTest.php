@@ -3,8 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
 class AuthTest extends TestCase
@@ -13,12 +18,16 @@ class AuthTest extends TestCase
 
     public function test_user_can_register_from_the_home_dialog(): void
     {
+        Notification::fake();
+
         $this->postJson('/auth/register', ['name' => 'Ada Writer', 'email' => 'ada@example.com', 'password' => 'secure-password', 'password_confirmation' => 'secure-password'])
             ->assertCreated()
-            ->assertJsonPath('data.redirect', '/dashboard');
+            ->assertJsonPath('data.redirect', '/dashboard')
+            ->assertJsonPath('data.email_verification_sent', true);
 
         $this->assertAuthenticated();
         $this->assertDatabaseHas('users', ['email' => 'ada@example.com']);
+        Notification::assertSentTo(User::query()->where('email', 'ada@example.com')->firstOrFail(), VerifyEmail::class);
     }
 
     public function test_user_can_log_in_and_invalid_credentials_are_rejected(): void
@@ -91,5 +100,39 @@ class AuthTest extends TestCase
             ->assertSeeText('Accedi per continuare nel tuo spazio di lavoro.')
             ->assertSeeText('Resta connesso')
             ->assertSeeText('Crea un account');
+    }
+
+    public function test_user_can_request_a_password_reset_link_without_revealing_whether_the_email_exists(): void
+    {
+        Notification::fake();
+        $user = User::factory()->create(['email' => 'ada@example.com']);
+
+        $this->postJson('/auth/forgot-password', ['email' => $user->email])
+            ->assertOk()
+            ->assertJsonPath('data.message', 'If an account matches this email address, we have sent instructions to reset its password.');
+        $this->postJson('/auth/forgot-password', ['email' => 'missing@example.com'])->assertOk();
+
+        Notification::assertSentTo($user, ResetPassword::class);
+    }
+
+    public function test_user_can_reset_their_password_from_a_valid_token(): void
+    {
+        $user = User::factory()->create(['email' => 'ada@example.com', 'password' => Hash::make('old-password')]);
+        $token = Password::createToken($user);
+
+        $this->post('/auth/reset-password', ['token' => $token, 'email' => $user->email, 'password' => 'new-secure-password', 'password_confirmation' => 'new-secure-password'])
+            ->assertRedirect('/en');
+
+        $this->assertTrue(Hash::check('new-secure-password', $user->fresh()->password));
+    }
+
+    public function test_authenticated_user_can_verify_a_signed_email_link(): void
+    {
+        $user = User::factory()->unverified()->create(['email' => 'ada@example.com']);
+        $url = URL::temporarySignedRoute('verification.verify', now()->addMinutes(30), ['id' => $user->id, 'hash' => sha1($user->email)]);
+
+        $this->actingAs($user)->get($url)->assertRedirect('/en');
+
+        $this->assertNotNull($user->fresh()->email_verified_at);
     }
 }

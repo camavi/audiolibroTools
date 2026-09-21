@@ -454,6 +454,43 @@ body.home-mobile-nav-open {
     font-size: .78rem;
 }
 
+.home-auth-error[data-type="success"] {
+    color: #bbf7d0;
+    background: rgb(20 83 45 / 40%);
+}
+
+.home-auth-forgot {
+    width: fit-content;
+    border: 0;
+    padding: 0;
+    color: var(--brand-cyan);
+    background: transparent;
+    font: inherit;
+    font-size: .78rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.home-auth-forgot[hidden] { display: none; }
+
+.home-auth-flash {
+    width: min(1320px, calc(100% - 44px));
+    margin: 16px auto 0;
+    padding: 11px 14px;
+    border: 1px solid rgba(74, 222, 128, .4);
+    border-radius: var(--radius-sm);
+    color: #dcfce7;
+    background: rgb(20 83 45 / 38%);
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.auth-reset-page { display: grid; min-height: 100vh; place-content: center; gap: 24px; padding: 28px; }
+.auth-reset-page > .brand { justify-self: center; }
+.auth-reset-card { width: min(100%, 27rem); padding: 2rem; border: 1px solid rgba(133, 159, 218, .36); border-radius: 1rem; color: var(--text-primary); background: #0a1935; box-shadow: 0 24px 70px rgb(0 0 0 / 45%); }
+.auth-reset-card h1 { margin: .45rem 0 .35rem; font-size: 1.55rem; }.auth-reset-card > p { margin: 0; color: var(--text-secondary); font-size: .9rem; line-height: 1.5; }
+.auth-reset-card form { display: grid; gap: .9rem; margin-top: 1.5rem; }.auth-reset-card label { display: grid; gap: .35rem; color: var(--text-secondary); font-size: .76rem; font-weight: 700; }.auth-reset-card input { width: 100%; min-height: 2.8rem; padding: 0 .8rem; border: 1px solid rgba(135, 159, 215, .34); border-radius: .55rem; outline: 0; color: var(--text-primary); background: rgb(3 13 34 / 82%); }.auth-reset-card input:focus { border-color: var(--brand-cyan); box-shadow: 0 0 0 3px rgb(54 211 235 / 12%); }.auth-reset-card .button { width: 100%; }.auth-reset-error { margin: 0; padding: .65rem .75rem; border-radius: .5rem; color: #fecaca; background: rgb(127 29 29 / 36%); font-size: .78rem; }
+
 .home-auth-switch {
     margin-top: 1.25rem !important;
     text-align: center;
