@@ -759,7 +759,12 @@ class DashboardBookController extends Controller
                 ->whereColumn('source_book_block_version_id', 'book_blocks.current_version_id')))
             ->get(['id', 'block_uuid', 'text_plain']);
         abort_if($blocks->isEmpty(), 422, 'Save at least one text block before starting a translation batch.');
-        $estimatedCredits = $blocks->sum(fn (BookBlock $block) => $credits->quote($validated['model'], str_word_count($block->text_plain ?: '')));
+        $pricing = $credits->pricing($validated['provider_key'], $validated['model']);
+        $estimatedCredits = $blocks->sum(function (BookBlock $block) use ($credits, $pricing): int {
+            $usage = $credits->estimateUsage($block->text_plain ?: '');
+
+            return $credits->quote($pricing, $usage['input_tokens'], $usage['output_tokens']);
+        });
 
         $job = BookTranslationJob::query()->create([
             'book_id' => $book->id,
@@ -772,6 +777,7 @@ class DashboardBookController extends Controller
                 'source_locale' => $book->lang,
                 'estimated_source_words' => $blocks->sum(fn (BookBlock $block) => str_word_count($block->text_plain ?: '')),
                 'estimated_credits' => $estimatedCredits,
+                'token_pricing' => $pricing,
                 'scope' => $scope,
                 'block_uuids' => $blocks->pluck('block_uuid')->all(),
             ],

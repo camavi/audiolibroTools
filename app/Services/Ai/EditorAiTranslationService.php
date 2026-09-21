@@ -93,6 +93,10 @@ class EditorAiTranslationService
                 'response_id' => $response->json('id'),
                 'glossary_terms_count' => $terms->count(),
             ],
+            'usage' => [
+                'input_tokens' => (int) $response->json('usage.input_tokens', 0),
+                'output_tokens' => (int) $response->json('usage.output_tokens', 0),
+            ],
         ];
     }
 

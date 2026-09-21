@@ -4,23 +4,49 @@ namespace App\Services\Credits;
 
 use App\Models\AccountCreditBalance;
 use App\Models\AccountCreditLedgerEntry;
-use App\Models\Book;
+use App\Models\AiModelPrice;
 use App\Models\BookTranslationJob;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class TranslationCreditService
 {
-    public function quote(string $model, int $words): int
+    public function pricing(string $providerKey, string $model): array
     {
-        $provider = collect(config('ai_providers.defaults', []))->firstWhere('provider_key', 'at-openai');
-        $rate = (int) ($provider['translation_credits_per_1000_words'][$model] ?? 0);
+        $price = AiModelPrice::query()
+            ->where(['provider_key' => $providerKey, 'model' => $model, 'modality' => 'text'])
+            ->where('is_enabled', true)
+            ->where('is_hidden', false)
+            ->first();
 
-        if ($rate < 1 || $words < 1) {
-            return 0;
+        if (! $price || ! $price->input_tokens || ! $price->output_tokens) {
+            throw ValidationException::withMessages([
+                'model' => ['Configure customer token charges for both input and output before starting this translation.'],
+            ]);
         }
 
-        return (int) ceil(($words / 1000) * $rate);
+        return [
+            'provider_key' => $providerKey,
+            'model' => $model,
+            'input_tokens_per_1000' => (int) $price->input_tokens,
+            'output_tokens_per_1000' => (int) $price->output_tokens,
+        ];
+    }
+
+    public function estimateUsage(string $text): array
+    {
+        $characters = mb_strlen($text);
+
+        return [
+            'input_tokens' => max(1, (int) ceil($characters / 3) + 500),
+            'output_tokens' => max(1, (int) ceil($characters / 3) + 500),
+        ];
+    }
+
+    public function quote(array $pricing, int $inputTokens, int $outputTokens): int
+    {
+        return (int) ceil(max(0, $inputTokens) / 1000 * (int) ($pricing['input_tokens_per_1000'] ?? 0))
+            + (int) ceil(max(0, $outputTokens) / 1000 * (int) ($pricing['output_tokens_per_1000'] ?? 0));
     }
 
     public function balance(?int $accountId): AccountCreditBalance
@@ -49,30 +75,38 @@ class TranslationCreditService
         });
     }
 
-    public function consume(BookTranslationJob $job, int $credits): void
+    public function consume(BookTranslationJob $job, int $credits, array $metadata = []): void
     {
-        if ($credits < 1) return;
+        if ($credits < 1) {
+            return;
+        }
 
-        DB::transaction(function () use ($job, $credits) {
+        DB::transaction(function () use ($job, $credits, $metadata) {
             $balance = $this->lockedBalance($job->created_by ?: $job->book->account_id);
             $amount = min($credits, max(0, $job->reserved_credits - $job->consumed_credits - $job->released_credits));
-            if ($amount < 1) return;
+            if ($amount < 1) {
+                return;
+            }
 
             $balance->decrement('reserved_credits', $amount);
             $balance->increment('consumed_credits', $amount);
             $job->increment('consumed_credits', $amount);
-            $this->entry($job, 'consumed', $amount, ['reason' => 'translation_block_completed']);
+            $this->entry($job, 'consumed', $amount, ['reason' => 'translation_block_completed', ...$metadata]);
         });
     }
 
     public function release(BookTranslationJob $job, int $credits, string $reason): void
     {
-        if ($credits < 1) return;
+        if ($credits < 1) {
+            return;
+        }
 
         DB::transaction(function () use ($job, $credits, $reason) {
             $balance = $this->lockedBalance($job->created_by ?: $job->book->account_id);
             $amount = min($credits, max(0, $job->reserved_credits - $job->consumed_credits - $job->released_credits));
-            if ($amount < 1) return;
+            if ($amount < 1) {
+                return;
+            }
 
             $balance->increment('available_credits', $amount);
             $balance->decrement('reserved_credits', $amount);

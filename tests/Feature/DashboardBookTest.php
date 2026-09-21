@@ -11,6 +11,7 @@ use App\Jobs\RenderBookAudioPublication;
 use App\Models\AccountCreditBalance;
 use App\Models\AiChatMessage;
 use App\Models\AiChatThread;
+use App\Models\AiModelPrice;
 use App\Models\AudioMediaAsset;
 use App\Models\Book;
 use App\Models\BookAudioJob;
@@ -457,6 +458,7 @@ class DashboardBookTest extends TestCase
     {
         config()->set('ai_providers.defaults.1.is_configured', true);
         config()->set('ai_providers.defaults.1.managed_api_key', 'at-server-openai-key');
+        $this->configureTranslationModel();
         Queue::fake();
         AccountCreditBalance::query()->create(['account_id' => $this->user->id, 'available_credits' => 100]);
         $book = $this->createBook();
@@ -491,6 +493,7 @@ class DashboardBookTest extends TestCase
     {
         config()->set('ai_providers.defaults.1.is_configured', true);
         config()->set('ai_providers.defaults.1.managed_api_key', 'at-server-openai-key');
+        $this->configureTranslationModel();
         Queue::fake();
         AccountCreditBalance::query()->create(['account_id' => $this->user->id, 'available_credits' => 100]);
         $book = $this->createBook();
@@ -547,6 +550,52 @@ class DashboardBookTest extends TestCase
             'translated_text' => 'Traduci questa riga.',
         ]);
         Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer at-server-openai-key'));
+    }
+
+    public function test_dashboard_background_batch_charges_actual_openai_token_usage(): void
+    {
+        config()->set('ai_providers.defaults.1.is_configured', true);
+        config()->set('ai_providers.defaults.1.managed_api_key', 'at-server-openai-key');
+        $this->configureTranslationModel(inputTokens: 2, outputTokens: 3);
+        Queue::fake();
+        AccountCreditBalance::query()->create(['account_id' => $this->user->id, 'available_credits' => 100]);
+        $book = $this->createBook();
+        app(BookBlockService::class)->saveBlock($book, [
+            'block_uuid' => (string) Str::uuid(),
+            'type' => 'paragraph',
+            'sort_order' => 1000,
+            'content_json' => $this->paragraphJson('Translate this line.'),
+            'text_plain' => 'Translate this line.',
+        ]);
+        Http::fake([
+            'https://api.openai.com/v1/responses' => Http::response([
+                'id' => 'resp_usage_123',
+                'output_text' => 'Traduci questa riga.',
+                'usage' => ['input_tokens' => 1300, 'output_tokens' => 100],
+            ]),
+        ]);
+
+        $this->postJson("/dashboard/api/books/{$book->key_book}/translation-jobs", [
+            'target_locale' => 'it',
+            'provider_key' => 'at-openai',
+            'model' => 'gpt-5-mini',
+            'confirmed' => true,
+        ])->assertStatus(202);
+
+        $job = BookTranslationJob::query()->sole();
+        (new ProcessBookTranslationJob($job->id))->handle(
+            app(EditorAiTranslationService::class),
+            app(TranslationCreditService::class),
+        );
+
+        $this->assertSame(4, $job->refresh()->consumed_credits);
+        $this->assertSame(0, $job->reserved_credits - $job->consumed_credits - $job->released_credits);
+        $this->assertSame(96, AccountCreditBalance::query()->sole()->available_credits);
+        $this->assertDatabaseHas('account_credit_ledger_entries', [
+            'book_translation_job_id' => $job->id,
+            'type' => 'consumed',
+            'credits' => 4,
+        ]);
     }
 
     public function test_dashboard_can_create_blank_book(): void
@@ -3353,6 +3402,21 @@ class DashboardBookTest extends TestCase
             'name' => 'Editor Book',
             'description' => '',
             'categories' => [],
+        ]);
+    }
+
+    private function configureTranslationModel(int $inputTokens = 2, int $outputTokens = 3): void
+    {
+        AiModelPrice::query()->create([
+            'provider_key' => 'at-openai',
+            'provider_name' => 'AT · OpenAI',
+            'model' => 'gpt-5-mini',
+            'modality' => 'text',
+            'pricing_unit' => 'per_thousand_tokens',
+            'input_tokens' => $inputTokens,
+            'output_tokens' => $outputTokens,
+            'is_enabled' => true,
+            'is_hidden' => false,
         ]);
     }
 

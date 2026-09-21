@@ -1,5 +1,13 @@
 # Registro Avanzamento
 
+## 2026-09-21
+
+- La Home riconosce la sessione Laravel: un utente autenticato vede il proprio menu (Dashboard, Profilo e logout) al posto delle CTA Login/registrazione.
+
+## 2026-09-20
+
+- Collegati i batch di traduzione OpenAI al catalogo AI pricing: il job salva le tariffe token input/output della riga configurata, prenota una stima e addebita nel ledger solo i token `usage` effettivi restituiti dal provider, liberando il residuo.
+
 ## 2026-09-19
 
 - Collegato il wallet alla generazione di copertine GPT: `gpt-image-1` medium (1024×1536) addebita 70 token configurabili dall'Administration → AI pricing. I token vengono riservati prima della chiamata, consumati solo dopo il salvataggio dell'immagine e rilasciati integralmente se il provider fallisce.

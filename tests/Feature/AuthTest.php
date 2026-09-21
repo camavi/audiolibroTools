@@ -39,4 +39,28 @@ class AuthTest extends TestCase
 
         $this->assertGuest();
     }
+
+    public function test_home_shows_the_user_menu_to_an_authenticated_user(): void
+    {
+        $user = User::factory()->create(['name' => 'Ada Writer', 'email' => 'ada@example.com']);
+
+        $this->actingAs($user)->get('/en')
+            ->assertOk()
+            ->assertSee('home-user-menu', false)
+            ->assertSee('Ada Writer')
+            ->assertSee('ada@example.com')
+            ->assertSee('href="'.url('/dashboard').'"', false)
+            ->assertDontSee('data-auth-mode="login"', false)
+            ->assertDontSee('data-auth-mode="register"', false)
+            ->assertDontSee('Start free');
+    }
+
+    public function test_home_shows_auth_actions_to_a_guest(): void
+    {
+        $this->get('/en')
+            ->assertOk()
+            ->assertSee('data-auth-mode="login"', false)
+            ->assertSee('data-auth-mode="register"', false)
+            ->assertDontSee('home-user-menu', false);
+    }
 }

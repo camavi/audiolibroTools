@@ -19,6 +19,7 @@
 - Organizzazioni/team.
 - Ruoli e permessi.
 - Dashboard post-login JSswift.
+- Home pubblica: per gli utenti autenticati le azioni `Login` e `Inizia gratis` sono sostituite da un menu utente e da CTA verso Dashboard; il menu offre Dashboard, Profilo e logout sicuro via POST.
 
 ## 3. Libri
 
@@ -130,6 +131,7 @@
 - Costi/consumi.
 - Catalogo addebiti AI: pagina amministrativa per modello, espressa esclusivamente in token cliente. I modelli testo hanno token separati in ingresso e uscita; TTS e immagini hanno token per unità generata. La prima copertina GPT (`gpt-image-1`, medium, 1024×1536) costa 70 token: il saldo li prenota prima della richiesta, li consuma solo quando l'asset è salvato e li restituisce se la generazione fallisce.
 - Calcolatore valore token: ogni riga del catalogo admin ha una dialog che confronta esclusivamente quell'addebito AI con i piani mensili e i pacchetti token attivi. Per LLM usa quattro input modificabili senza salvare: costo fornitore input/output e token cliente input/output, tutti per 1K token; ogni card mostra il prezzo di un token, il minimo numero di token per pareggiare e il margine o perdita separati per input e output. Per audio calcola minuti; per le immagini calcola sempre una generazione e accetta token cliente e costo GPT corrente in EUR.
+- Traduzioni AI gestite: prima di avviare un batch OpenAI, il job salva lo snapshot dei token cliente input/output configurati per quel modello e prenota una stima prudenziale. La risposta OpenAI fornisce i token effettivi: il ledger consuma solo l'addebito corrispondente e restituisce al saldo la differenza o l'intera prenotazione in caso di errore.
 - Abbonamenti mensili: catalogo amministrativo iniziale di tre piani (`Starter`, `Creator`, `Studio`) con prezzo EUR e token inclusi al mese. Il comando `billing:sync-stripe-subscription-plans` crea nel Sandbox Stripe i prodotti/prezzi mensili e collega gli ID al catalogo locale. Il portale cliente può aprire Stripe Checkout per un primo abbonamento, vedere e confermare in una dialog l’anteprima esatta della prorata prima di cambiare piano con addebito immediato Stripe, programmare o annullare una disdetta a fine periodo e aprire il Customer Portal per fatture e metodo di pagamento. Webhook `customer.subscription.*` sincronizzano stato, piano e periodo, mentre `invoice.paid` conferma il credito mensile idempotente.
 - Test rinnovo Stripe: i comandi `billing:create-subscription-clock-test` e `billing:advance-stripe-subscription-clock-test {clock_id}` creano un utente locale isolato, Customer Stripe con carta test e Test Clock, quindi avanzano un mese simulato per validare webhook e grant mensile senza aspettare il rinnovo reale.
 - Pacchetti token: catalogo amministrativo separato per top-up una tantum, visibile già nel wallet cliente con solo i pacchetti attivi. Stripe Checkout crea l'acquisto; il webhook firmato accredita i token in modo idempotente solo dopo conferma. Richiede chiavi Stripe e configurazione endpoint webhook prima dell'uso reale.

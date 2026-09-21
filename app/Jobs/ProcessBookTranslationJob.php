@@ -44,6 +44,7 @@ class ProcessBookTranslationJob implements ShouldQueue
             ->whereNotNull('current_version_id')
             ->when(data_get($job->request_json, 'block_uuids'), fn ($query, $blockUuids) => $query->whereIn('block_uuid', $blockUuids))
             ->get();
+        $pricing = data_get($job->request_json, 'token_pricing');
 
         foreach ($blocks as $block) {
             $job->refresh();
@@ -52,7 +53,11 @@ class ProcessBookTranslationJob implements ShouldQueue
             }
 
             $job->forceFill(['current_block_uuid' => $block->block_uuid])->save();
-            $blockCredits = $credits->quote($job->model, str_word_count($block->currentVersion->text_plain ?: $block->text_plain ?: ''));
+            $sourceText = $block->currentVersion->text_plain ?: $block->text_plain ?: '';
+            $estimatedUsage = $credits->estimateUsage($sourceText);
+            $blockCredits = is_array($pricing)
+                ? $credits->quote($pricing, $estimatedUsage['input_tokens'], $estimatedUsage['output_tokens'])
+                : 0;
 
             try {
                 $approved = $block->translations()
@@ -83,7 +88,10 @@ class ProcessBookTranslationJob implements ShouldQueue
                     $job->model,
                     $accountId,
                 );
-                $sourceText = $block->currentVersion->text_plain ?: $block->text_plain ?: '';
+                $usage = $generated['usage'] ?? $estimatedUsage;
+                $actualCredits = is_array($pricing)
+                    ? $credits->quote($pricing, (int) ($usage['input_tokens'] ?? 0), (int) ($usage['output_tokens'] ?? 0))
+                    : 0;
 
                 BookBlockTranslation::query()->create([
                     'book_id' => $book->id,
@@ -106,7 +114,14 @@ class ProcessBookTranslationJob implements ShouldQueue
                     'created_by' => $accountId,
                 ]);
 
-                $credits->consume($job, $blockCredits);
+                $credits->consume($job, $actualCredits, [
+                    'provider_key' => $job->provider_key,
+                    'model' => $job->model,
+                    'input_tokens' => (int) ($usage['input_tokens'] ?? 0),
+                    'output_tokens' => (int) ($usage['output_tokens'] ?? 0),
+                    'usage_source' => isset($generated['usage']) ? 'provider' : 'estimated',
+                ]);
+                $credits->release($job, max(0, $blockCredits - $actualCredits), 'translation_usage_below_estimate');
                 $this->advance($job);
             } catch (Throwable $exception) {
                 $credits->release($job, $blockCredits, 'block_failed');
@@ -122,15 +137,25 @@ class ProcessBookTranslationJob implements ShouldQueue
             'current_block_uuid' => null,
             'completed_at' => now(),
         ])->save();
+        $remainingCredits = max(0, $job->reserved_credits - $job->consumed_credits - $job->released_credits);
+        $credits->release($job, $remainingCredits, 'translation_batch_completed');
     }
 
     public function failed(Throwable $exception): void
     {
-        BookTranslationJob::query()->whereKey($this->translationJobId)->update([
+        $job = BookTranslationJob::query()->with('book')->find($this->translationJobId);
+        if (! $job) {
+            return;
+        }
+        $remainingCredits = max(0, $job->reserved_credits - $job->consumed_credits - $job->released_credits);
+        if ($remainingCredits > 0 && $job->book) {
+            app(TranslationCreditService::class)->release($job, $remainingCredits, 'translation_job_failed');
+        }
+        $job->forceFill([
             'status' => 'failed',
             'error_message' => $exception->getMessage(),
             'completed_at' => now(),
-        ]);
+        ])->save();
     }
 
     private function advance(BookTranslationJob $job, bool $skipped = false): void

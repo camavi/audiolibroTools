@@ -35,8 +35,36 @@
                             @endforeach
                         </select>
                     </label>
-                    <button class="login-link home-auth-trigger" type="button" data-auth-mode="login">{{ __('home.login') }}</button>
-                    <button class="button button-primary home-auth-trigger" type="button" data-auth-mode="register">{{ __('home.primary_cta') }}</button>
+                    @auth
+                        <details class="home-user-menu">
+                            <summary aria-label="{{ __('home.user_menu') }}">
+                                <span class="material-symbols-rounded" aria-hidden="true">account_circle</span>
+                                <span class="home-user-menu-name">{{ auth()->user()->name }}</span>
+                                <span class="material-symbols-rounded home-user-menu-chevron" aria-hidden="true">expand_more</span>
+                            </summary>
+                            <div class="home-user-menu-panel">
+                                <p class="home-user-menu-email">{{ auth()->user()->email }}</p>
+                                <a href="{{ url('/dashboard') }}">
+                                    <span class="material-symbols-rounded" aria-hidden="true">dashboard</span>
+                                    {{ __('home.dashboard') }}
+                                </a>
+                                <a href="{{ url('/dashboard/profile') }}">
+                                    <span class="material-symbols-rounded" aria-hidden="true">person</span>
+                                    {{ __('home.profile') }}
+                                </a>
+                                <form action="{{ route('auth.logout') }}" method="post">
+                                    @csrf
+                                    <button type="submit">
+                                        <span class="material-symbols-rounded" aria-hidden="true">logout</span>
+                                        {{ __('home.logout') }}
+                                    </button>
+                                </form>
+                            </div>
+                        </details>
+                    @else
+                        <button class="login-link home-auth-trigger" type="button" data-auth-mode="login">{{ __('home.login') }}</button>
+                        <button class="button button-primary home-auth-trigger" type="button" data-auth-mode="register">{{ __('home.primary_cta') }}</button>
+                    @endauth
                 </div>
             </header>
 
@@ -49,10 +77,17 @@
                             <p class="hero-copy">{{ __('home.copy') }}</p>
 
                             <div class="hero-actions">
-                                <button class="button button-primary button-large home-auth-trigger" type="button" data-auth-mode="register">
-                                    {{ __('home.primary_cta') }}
-                                    <span class="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
-                                </button>
+                                @auth
+                                    <a class="button button-primary button-large" href="{{ url('/dashboard') }}">
+                                        {{ __('home.dashboard') }}
+                                        <span class="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
+                                    </a>
+                                @else
+                                    <button class="button button-primary button-large home-auth-trigger" type="button" data-auth-mode="register">
+                                        {{ __('home.primary_cta') }}
+                                        <span class="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
+                                    </button>
+                                @endauth
                                 <a class="button button-ghost button-large" href="#demo">
                                     {{ __('home.demo_cta') }}
                                     <span class="material-symbols-rounded" aria-hidden="true">play_circle</span>
@@ -129,10 +164,17 @@
                 <section class="final-cta" id="signup">
                     <h2>{{ __('home.final_cta_title') }}</h2>
                     <p>{{ __('home.final_cta_copy') }}</p>
-                    <button class="button button-primary button-large home-auth-trigger" type="button" data-auth-mode="register">
-                        {{ __('home.primary_cta') }}
-                        <span class="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
-                    </button>
+                    @auth
+                        <a class="button button-primary button-large" href="{{ url('/dashboard') }}">
+                            {{ __('home.dashboard') }}
+                            <span class="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
+                        </a>
+                    @else
+                        <button class="button button-primary button-large home-auth-trigger" type="button" data-auth-mode="register">
+                            {{ __('home.primary_cta') }}
+                            <span class="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
+                        </button>
+                    @endauth
                 </section>
             </main>
         </div>
